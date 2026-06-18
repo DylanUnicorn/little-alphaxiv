@@ -9,7 +9,7 @@
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ChatMessage, Paper, Attachment, StylePreset } from "../types";
+import type { ChatMessage, Paper, Attachment, StylePreset, ModelInfo } from "../types";
 import { STYLE_PRESETS } from "../types";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
@@ -41,9 +41,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   const conv = useConversations((s) => s.conversations.find((c) => c.id === conversationId));
   const appendMessages = useConversations((s) => s.appendMessages);
   const rename = useConversations((s) => s.rename);
-  // settings are updated via ChatToolbar callbacks
-  const _updateSettings = useConversations((s) => s.updateSettings);
-  void _updateSettings;
+  // settings are updated via ChatToolbar callbacks or model selector
   const provider = useSettings((s) => s.getProvider(conv?.provider_id ?? null));
 
   const [input, setInput] = useState("");
@@ -57,6 +55,22 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Stable callback so memoized MessageRows don't re-render on every keystroke.
   const onOpenPaper = useCallback((id: string) => navigate(`/paper/${id}`), [navigate]);
+
+  // Model selector: use cached models from settings, or fall back to text input
+  const cachedModels = useSettings((s) =>
+    provider ? s.getCachedModels(provider.id) : []
+  );
+  const fetchAndCacheModels = useSettings((s) => s.fetchAndCacheModels);
+  const [modelsFetched, setModelsFetched] = useState(false);
+  const _updateSettings = useConversations((s) => s.updateSettings);
+
+  // Lazily fetch models when panel mounts (if not yet cached)
+  useEffect(() => {
+    if (provider && cachedModels.length === 0 && !modelsFetched) {
+      setModelsFetched(true);
+      fetchAndCacheModels(provider.id, provider.base_url, provider.api_key);
+    }
+  }, [provider?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -107,6 +121,15 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   if (!conv) return <div className="chat-panel"><p>No conversation.</p></div>;
 
   const c = conv;
+
+  // Model selector derived values (need `c` which is assigned above)
+  const currentModel = c.model || provider?.model || "";
+  const availableModels: ModelInfo[] = cachedModels;
+
+  function handleModelChange(newModel: string) {
+    if (!c.id) return;
+    _updateSettings(c.id, { model: newModel });
+  }
 
   // Build the effective system prompt with style preset modifier
   const stylePreset: StylePreset = c.style_preset || "default";
@@ -240,20 +263,42 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
       <div className="chat-status">
         {streaming ? (<><span className="streaming-cursor" /> Generating…</>) : status}
       </div>
-      {/* Attachment previews */}
-      {attachments.length > 0 && (
-        <div className="attachment-previews">
-          {attachments.map((att, i) => (
-            <div key={i} className="attachment-preview">
-              <img src={att.data_url} alt={att.name || "attachment"} />
-              <button
-                className="attachment-remove"
-                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+      {/* Model selector */}
+      {provider && (
+        <div className="chat-model-selector">
+          <span className="chat-model-label">Model:</span>
+          {availableModels.length > 0 ? (
+            <select
+              className="chat-model-select"
+              value={currentModel}
+              onChange={(e) => handleModelChange(e.target.value)}
+              title="Select model for this conversation"
+            >
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.id}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="chat-model-input"
+              value={currentModel}
+              onChange={(e) => handleModelChange(e.target.value)}
+              placeholder="Enter model id…"
+              title="Model for this conversation"
+            />
+          )}
+          {availableModels.length === 0 && !modelsFetched && (
+            <button
+              className="chat-model-fetch-btn"
+              onClick={() => {
+                setModelsFetched(true);
+                fetchAndCacheModels(provider.id, provider.base_url, provider.api_key);
+              }}
+              title="Fetch available models from provider"
+            >
+              Fetch
+            </button>
+          )}
         </div>
       )}
       <div className="chat-input-row">
@@ -286,6 +331,22 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           {busy ? "…" : "Send"}
         </button>
       </div>
+      {/* Attachment previews — rendered below input row */}
+      {attachments.length > 0 && (
+        <div className="attachment-previews">
+          {attachments.map((att, i) => (
+            <div key={i} className="attachment-preview">
+              <img src={att.data_url} alt={att.name || "attachment"} />
+              <button
+                className="attachment-remove"
+                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
