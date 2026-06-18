@@ -2,7 +2,7 @@
 // All data lives in the user's browser. No server storage.
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { Conversation, Paper } from "../types";
+import type { Conversation, Paper, Annotation } from "../types";
 
 interface LaxDB extends DBSchema {
   conversations: {
@@ -14,17 +14,32 @@ interface LaxDB extends DBSchema {
     key: string; // arxiv_id
     value: Paper & { full_text?: string; fetched_at: number };
   };
+  annotations: {
+    key: string; // annot.id
+    value: Annotation;
+    indexes: {
+      "by-paper": string; // arxiv_id
+      "by-paper-page": [string, number]; // [arxiv_id, page]
+    };
+  };
 }
 
 let dbp: Promise<IDBPDatabase<LaxDB>> | null = null;
 
 function db(): Promise<IDBPDatabase<LaxDB>> {
   if (!dbp) {
-    dbp = openDB<LaxDB>("little-alphaxiv", 1, {
-      upgrade(d) {
-        const c = d.createObjectStore("conversations", { keyPath: "id" });
-        c.createIndex("by-updated", "updated_at");
-        d.createObjectStore("papers", { keyPath: "arxiv_id" });
+    dbp = openDB<LaxDB>("little-alphaxiv", 2, {
+      upgrade(d, oldVersion) {
+        if (oldVersion < 1) {
+          const c = d.createObjectStore("conversations", { keyPath: "id" });
+          c.createIndex("by-updated", "updated_at");
+          d.createObjectStore("papers", { keyPath: "arxiv_id" });
+        }
+        if (oldVersion < 2) {
+          const a = d.createObjectStore("annotations", { keyPath: "id" });
+          a.createIndex("by-paper", "arxiv_id");
+          a.createIndex("by-paper-page", ["arxiv_id", "page"]);
+        }
       },
     });
   }
@@ -68,4 +83,29 @@ export async function savePaper(
 ): Promise<void> {
   const d = await db();
   await d.put("papers", p);
+}
+
+// ---- Annotations (per-paper PDF annotation layer) ----
+
+export async function listAnnotations(arxivId: string): Promise<Annotation[]> {
+  const d = await db();
+  return d.getAllFromIndex("annotations", "by-paper", arxivId);
+}
+
+export async function putAnnotation(a: Annotation): Promise<void> {
+  const d = await db();
+  await d.put("annotations", a);
+}
+
+export async function deleteAnnotation(id: string): Promise<void> {
+  const d = await db();
+  await d.delete("annotations", id);
+}
+
+export async function clearAnnotations(arxivId: string): Promise<void> {
+  const d = await db();
+  const ids = await d.getAllKeysFromIndex("annotations", "by-paper", arxivId);
+  const tx = d.transaction("annotations", "readwrite");
+  await Promise.all(ids.map((id) => tx.store.delete(id)));
+  await tx.done;
 }
