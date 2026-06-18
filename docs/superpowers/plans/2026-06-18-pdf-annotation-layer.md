@@ -617,7 +617,16 @@ import { commit, undoOp, redoOp, type AnnotState } from "../lib/opstack";
 import { listAnnotations, putAnnotation, deleteAnnotation } from "../lib/db";
 import { newId } from "../lib/annotations";
 
-interface AnnotationUIState extends AnnotState {
+// NOTE on naming: the op-stack (AnnotState) uses `undo: Op[]` / `redo: Op[]`
+// arrays. This store exposes `undo()` / `redo()` *actions* of the same names,
+// so the arrays are stored as `undoStack` / `redoStack` and converted to/from
+// AnnotState at the opstack boundary (toOpState / fromOpState). Do NOT name the
+// arrays `undo`/`redo` — that collides with the action methods and breaks both
+// the typecheck and the reducer.
+interface AnnotationUIState {
+  annots: Annotation[];
+  undoStack: Op[];
+  redoStack: Op[];
   arxivId: string | null;
   tool: Tool;
   color: string;
@@ -636,6 +645,14 @@ interface AnnotationUIState extends AnnotState {
   setColor: (c: string) => void;
   toggleHighlight: () => void;
   select: (id: string | null) => void;
+}
+
+// Bridge between the store's named arrays and the op-stack's AnnotState shape.
+function toOpState(s: AnnotationUIState): AnnotState {
+  return { annots: s.annots, undo: s.undoStack, redo: s.redoStack };
+}
+function fromOpState(n: AnnotState) {
+  return { annots: n.annots, undoStack: n.undo, redoStack: n.redo };
 }
 
 // Persist the net effect of an op to IndexedDB.
@@ -657,8 +674,8 @@ function persistOp(arxivId: string, op: Op): void {
 
 export const useAnnotations = create<AnnotationUIState>((set, get) => ({
   annots: [],
-  undo: [],
-  redo: [],
+  undoStack: [],
+  redoStack: [],
   arxivId: null,
   tool: "none",
   color: "#FFEB3B",
@@ -667,7 +684,7 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
 
   load: async (arxivId) => {
     const annots = await listAnnotations(arxivId);
-    set({ arxivId, annots, undo: [], redo: [], selectedId: null });
+    set({ arxivId, annots, undoStack: [], redoStack: [], selectedId: null });
   },
 
   addAnnot: (partial) => {
@@ -682,7 +699,7 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     };
     const op: Op = { kind: "add", annot };
     persistOp(arxivId, op);
-    set((s) => commit(s, op));
+    set((s) => fromOpState(commit(toOpState(s), op)));
   },
 
   removeAnnot: (id) => {
@@ -693,7 +710,7 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     const op: Op = { kind: "remove", annot };
     persistOp(arxivId, op);
     set((s) => {
-      const next = commit(s, op);
+      const next = fromOpState(commit(toOpState(s), op));
       return { ...next, selectedId: selectedId === id ? null : selectedId };
     });
   },
@@ -703,7 +720,7 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     if (!arxivId) return;
     const op: Op = { kind: "move", before, after };
     persistOp(arxivId, op);
-    set((s) => commit(s, op));
+    set((s) => fromOpState(commit(toOpState(s), op)));
   },
 
   resizeAnnot: (before, after) => {
@@ -711,7 +728,7 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     if (!arxivId) return;
     const op: Op = { kind: "resize", before, after };
     persistOp(arxivId, op);
-    set((s) => commit(s, op));
+    set((s) => fromOpState(commit(toOpState(s), op)));
   },
 
   editAnnot: (before, after) => {
@@ -719,13 +736,13 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     if (!arxivId) return;
     const op: Op = { kind: "edit", before, after };
     persistOp(arxivId, op);
-    set((s) => commit(s, op));
+    set((s) => fromOpState(commit(toOpState(s), op)));
   },
 
   undo: () => {
-    const { arxivId, undo } = get();
-    if (!arxivId || undo.length === 0) return;
-    const op = undo[undo.length - 1];
+    const { arxivId, undoStack } = get();
+    if (!arxivId || undoStack.length === 0) return;
+    const op = undoStack[undoStack.length - 1];
     // persist the inverse effect
     switch (op.kind) {
       case "add": // inverse = remove
@@ -740,15 +757,15 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
         void putAnnotation({ ...op.before, arxiv_id: arxivId });
         break;
     }
-    set((s) => undoOp(s));
+    set((s) => fromOpState(undoOp(toOpState(s))));
   },
 
   redo: () => {
-    const { arxivId, redo } = get();
-    if (!arxivId || redo.length === 0) return;
-    const op = redo[redo.length - 1];
+    const { arxivId, redoStack } = get();
+    if (!arxivId || redoStack.length === 0) return;
+    const op = redoStack[redoStack.length - 1];
     persistOp(arxivId, op);
-    set((s) => redoOp(s));
+    set((s) => fromOpState(redoOp(toOpState(s))));
   },
 
   setTool: (t) => set({ tool: t, selectedId: t === "none" ? get().selectedId : null }),
@@ -761,8 +778,8 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
 export const usePageAnnotations = (page: number) =>
   useAnnotations((s) => s.annots.filter((a) => a.page === page));
 
-export const useCanUndo = () => useAnnotations((s) => s.undo.length > 0);
-export const useCanRedo = () => useAnnotations((s) => s.redo.length > 0);
+export const useCanUndo = () => useAnnotations((s) => s.undoStack.length > 0);
+export const useCanRedo = () => useAnnotations((s) => s.redoStack.length > 0);
 ```
 
 - [ ] **Step 2: Typecheck**
@@ -809,6 +826,8 @@ export function AnnotationToolbar() {
   const toggleHighlight = useAnnotations((s) => s.toggleHighlight);
   const undo = useAnnotations((s) => s.undo);
   const redo = useAnnotations((s) => s.redo);
+  const canUndo = useCanUndo();
+  const canRedo = useCanRedo();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const onTool = (t: Tool) => setTool(tool === t ? "none" : t);
@@ -864,13 +883,13 @@ export function AnnotationToolbar() {
       <button
         className="annot-tool-btn"
         title="Undo (Ctrl+Z)"
-        disabled={!useCanUndo()}
+        disabled={!canUndo}
         onClick={undo}
       >↶</button>
       <button
         className="annot-tool-btn"
         title="Redo (Ctrl+Shift+Z)"
-        disabled={!useCanRedo()}
+        disabled={!canRedo}
         onClick={redo}
       >↷</button>
     </div>
@@ -945,15 +964,19 @@ export function HighlightLayer({ pageNumber, pageSize }: Props) {
         return;
       }
       const range = sel.getRangeAt(0);
-      // Only act if the selection is inside this page's wrap.
-      if (!wrap.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== wrap) {
+      // The text the user selects lives in .pdf-textlayer, a SIBLING of this
+      // .highlight-layer (both children of .pdf-page-canvas-wrap). So the "is this
+      // selection in my page?" check must use the page container, not wrap.
+      const pageWrap = wrap.parentElement; // pdf-page-canvas-wrap
+      if (!pageWrap) return;
+      if (!pageWrap.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== pageWrap) {
         return;
       }
+      const pageRect = pageWrap.getBoundingClientRect();
       const clientRects = Array.from(range.getClientRects()).map((r) => {
-        const wrapRect = wrap.getBoundingClientRect();
         return {
-          left: r.left - wrapRect.left,
-          top: r.top - wrapRect.top,
+          left: r.left - pageRect.left,
+          top: r.top - pageRect.top,
           width: r.width,
           height: r.height,
         };
