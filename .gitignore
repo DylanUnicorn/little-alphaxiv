@@ -53,3 +53,5 @@ Desktop.ini
 
 # ---- Claude Code (machine-local only) ----
 .claude/settings.local.json
+.claude/worktrees/
+.worktrees/
