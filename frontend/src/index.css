@@ -36,9 +36,22 @@
   --pdf-filter: invert(1) hue-rotate(180deg);
   --pdf-page-bg: #1a1d24;
 
-  /* ---- Code blocks (kept dark across all themes for consistency) ---- */
+  /* ---- Code blocks: theme-aware. Dark surface + github-dark syntax tokens
+       by default; light themes override --code-bg/--code-fg + --hljs-* below. ---- */
   --code-bg: #0b0d12;
   --code-fg: #e6e8ee;
+  /* highlight.js token colors (github-dark palette). Light themes override. */
+  --hljs-keyword: #ff7b72;
+  --hljs-title: #d2a8ff;
+  --hljs-attr: #79c0ff;
+  --hljs-string: #a5d6ff;
+  --hljs-built_in: #ffa657;
+  --hljs-comment: #8b949e;
+  --hljs-name: #7ee787;
+  --hljs-section: #1f6feb;
+  --hljs-bullet: #f2cc60;
+  --hljs-add-fg: #aff5b4; --hljs-add-bg: #033a16;
+  --hljs-del-fg: #ffdcd7; --hljs-del-bg: #67060c;
   --reasoning-bg: var(--bg-2);
 
   /* ---- Shape / depth / motion (global defaults) ---- */
@@ -163,19 +176,20 @@
 }
 
 /* ============================================================
-   Per-theme PDF canvas filter + code-block tinting
+   Per-theme PDF canvas filter + code-block surface
    Dark themes invert the PDF bitmap (white paper → dark) via a
    GPU-accelerated CSS filter on <canvas> only; the transparent
    text-selection layer above is untouched.  Light themes leave
    the paper natural.  Sepia applies a warm tint.  Code blocks
-   stay dark across all themes (compatible with github-dark
-   syntax highlighting) but are tinted to each theme's own
-   palette so they feel native instead of generic near-black.
+   follow the theme: dark themes get a dark surface with github-
+   dark syntax tokens; the three light themes (light, solarized-
+   light, sepia) get a light surface with github-light tokens, so
+   the code box harmonizes with the page instead of clashing.
    ============================================================ */
 
 [data-theme="light"] {
   --pdf-filter: none; --pdf-page-bg: #ffffff;
-  --code-bg: #1e2230; --code-fg: #e6e8ee;
+  --code-bg: #f6f8fa; --code-fg: #24292f;
   --pdf-page-shadow: 0 2px 10px rgba(0,0,0,0.12);
 }
 [data-theme="nord"] {
@@ -200,17 +214,35 @@
 }
 [data-theme="solarized-light"] {
   --pdf-filter: none; --pdf-page-bg: #fdf6e3;
-  --code-bg: #002b36; --code-fg: #93a1a1;
+  --code-bg: #eee8d5; --code-fg: #073642;
   --pdf-page-shadow: 0 2px 10px rgba(0,0,0,0.12);
 }
 [data-theme="sepia"] {
   --pdf-filter: sepia(0.35) brightness(0.95); --pdf-page-bg: #f4ecd8;
-  --code-bg: #2a2018; --code-fg: #e8dcc4;
+  --code-bg: #ece0c4; --code-fg: #4a3621;
   --pdf-page-shadow: 0 2px 10px rgba(74,54,33,0.18);
 }
 [data-theme="dracula"] {
   --pdf-filter: invert(1) hue-rotate(180deg); --pdf-page-bg: #21222c;
   --code-bg: #21222c; --code-fg: #f8f8f2;
+}
+
+/* ---- Light-theme code: light syntax tokens (github palette) shared by the
+   three light themes, layered on each theme's own light --code-bg/--code-fg. ---- */
+[data-theme="light"],
+[data-theme="solarized-light"],
+[data-theme="sepia"] {
+  --hljs-keyword: #d73a49;
+  --hljs-title: #6f42c1;
+  --hljs-attr: #005cc5;
+  --hljs-string: #032f62;
+  --hljs-built_in: #e36209;
+  --hljs-comment: #6a737d;
+  --hljs-name: #22863a;
+  --hljs-section: #005cc5;
+  --hljs-bullet: #735c0f;
+  --hljs-add-fg: #22863a; --hljs-add-bg: #f0fff4;
+  --hljs-del-fg: #b31d28; --hljs-del-bg: #ffeef0;
 }
 
 /* ============================================================
@@ -719,19 +751,46 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .annot-tool-btn:disabled { opacity: 0.4; cursor: default; }
 .annot-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
 
-/* code block (appended) */
+/* code block (appended) — theme-aware: --code-bg/--code-fg surface + scoped
+   --hljs-* syntax tokens (dark by default, light for the three light themes). */
 .code-block { position: relative; margin: 8px 0; }
 .code-block-copy {
   position: absolute; top: 6px; right: 6px; z-index: 2;
-  border: none; background: rgba(255,255,255,0.1); color: var(--text);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--code-fg) 12%, transparent);
+  color: var(--code-fg);
   border-radius: 4px; cursor: pointer; font-size: 12px; padding: 2px 6px;
   opacity: 0; transition: opacity 0.15s;
 }
 .code-block:hover .code-block-copy { opacity: 1; }
 .code-block pre {
   margin: 0; padding: 12px; overflow-x: auto;
-  background: #0d1117; border-radius: 6px; font-size: 13px; line-height: 1.5;
+  background: var(--code-bg); color: var(--code-fg);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  font-size: 13px; line-height: 1.5;
 }
-.code-block code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
-/* override github-dark.css `pre code.hljs { padding: 1em }` so the code isn't double-padded (the .code-block pre already has 12px) */
-.code-block pre code.hljs { padding: 0; background: transparent; }
+.code-block code { font-family: var(--font-mono); }
+/* hljs emits `pre code.hljs { padding: 1em }`; cancel it so the .code-block pre
+   padding (12px) isn't doubled, and keep --code-bg showing through transparently. */
+.code-block pre code.hljs { display: block; padding: 0; background: transparent; color: var(--code-fg); }
+
+/* ---- highlight.js syntax tokens (replaces the former github-dark.css import).
+   Colors via --hljs-* vars: github-dark by default, github-light for light themes.
+   Background stays transparent so .code-block pre's --code-bg shows through. ---- */
+.hljs { color: var(--code-fg); background: transparent; }
+.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag,
+.hljs-template-variable, .hljs-type, .hljs-variable.language_ { color: var(--hljs-keyword); }
+.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_ { color: var(--hljs-title); }
+.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator,
+.hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id { color: var(--hljs-attr); }
+.hljs-regexp, .hljs-string, .hljs-meta .hljs-string { color: var(--hljs-string); }
+.hljs-built_in, .hljs-symbol { color: var(--hljs-built_in); }
+.hljs-comment, .hljs-code, .hljs-formula { color: var(--hljs-comment); }
+.hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo { color: var(--hljs-name); }
+.hljs-subst { color: var(--code-fg); }
+.hljs-section { color: var(--hljs-section); font-weight: bold; }
+.hljs-bullet { color: var(--hljs-bullet); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+.hljs-addition { color: var(--hljs-add-fg); background: var(--hljs-add-bg); }
+.hljs-deletion { color: var(--hljs-del-fg); background: var(--hljs-del-bg); }
