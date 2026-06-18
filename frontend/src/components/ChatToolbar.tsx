@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from "react";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { fetchModels } from "../lib/api";
+import { THEMES } from "../themes";
 import { STYLE_PRESETS, type StylePreset, type ModelInfo } from "../types";
 
 interface Props {
@@ -160,24 +161,15 @@ export function ChatToolbar({
               {/* Theme */}
               <div className="settings-section">
                 <label className="settings-label">Theme</label>
-                <div className="style-presets">
-                  <button
-                    className={`style-preset-btn ${theme === "dark" ? "active" : ""}`}
-                    onClick={() => setTheme("dark")}
-                    title="Dark theme"
-                  >
-                    <span className="style-icon">🌙</span>
-                    <span className="style-label-text">Dark</span>
-                  </button>
-                  <button
-                    className={`style-preset-btn ${theme === "light" ? "active" : ""}`}
-                    onClick={() => setTheme("light")}
-                    title="Light theme"
-                  >
-                    <span className="style-icon">☀</span>
-                    <span className="style-label-text">Light</span>
-                  </button>
-                </div>
+                <select
+                  className="settings-select"
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value)}
+                >
+                  {THEMES.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
               </div>
             </div>
           )}

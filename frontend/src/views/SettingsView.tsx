@@ -1,8 +1,9 @@
-// Settings: configure OpenAI-compatible providers (name, base_url, api_key,
-// model). Stored in localStorage. One provider can be default.
+// Settings: theme picker + OpenAI-compatible providers (name, base_url,
+// api_key, model). Stored in localStorage. One provider can be default.
 
 import { useState } from "react";
 import { useSettings } from "../store/settings";
+import { THEMES } from "../themes";
 import type { Provider } from "../types";
 
 const EMPTY: Omit<Provider, "id"> = {
@@ -33,22 +34,26 @@ export function SettingsView() {
     <main className="main-pane">
       <div className="settings-shell">
         <h2>Appearance</h2>
-        <p className="settings-hint">Choose the interface color scheme.</p>
-        <div className="style-presets" style={{ marginTop: 8 }}>
-          <button
-            className={`style-preset-btn ${theme === "dark" ? "active" : ""}`}
-            onClick={() => setTheme("dark")}
-          >
-            <span className="style-icon">🌙</span>
-            <span className="style-label-text">Dark</span>
-          </button>
-          <button
-            className={`style-preset-btn ${theme === "light" ? "active" : ""}`}
-            onClick={() => setTheme("light")}
-          >
-            <span className="style-icon">☀</span>
-            <span className="style-label-text">Light</span>
-          </button>
+        <p className="settings-hint">Choose an interface theme. Each is a complete palette — the PDF viewer, code blocks, and scrollbars all follow it.</p>
+        <div className="theme-grid">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              className={`theme-card ${theme === t.id ? "active" : ""}`}
+              onClick={() => setTheme(t.id)}
+              title={t.label}
+            >
+              <div className="theme-swatches">
+                {t.swatch.map((c, i) => (
+                  <span key={i} className="theme-swatch" style={{ background: c }} />
+                ))}
+              </div>
+              <div className="theme-card-foot">
+                <span className="theme-card-label">{t.label}</span>
+                <span className="theme-mode-chip">{t.mode === "dark" ? "🌙" : "☀"}</span>
+              </div>
+            </button>
+          ))}
         </div>
 
         <h2>Providers</h2>
@@ -59,13 +64,15 @@ export function SettingsView() {
         </p>
 
         <div className="provider-list">
-          {providers.length === 0 && <div className="conv-empty">No providers yet.</div>}
+          {providers.length === 0 && <div className="conv-empty">No providers yet — add one below to start chatting.</div>}
           {providers.map((p) => (
             <div key={p.id} className={`provider-item ${p.id === defaultProviderId ? "default" : ""}`}>
               <div className="provider-row">
                 <strong>{p.name}</strong>
                 {p.id === defaultProviderId && <span className="badge">default</span>}
-                <button className="link-btn" onClick={() => setDefault(p.id)}>set default</button>
+                {p.id !== defaultProviderId && (
+                  <button className="link-btn" onClick={() => setDefault(p.id)}>set default</button>
+                )}
                 <button className="link-btn danger" onClick={() => removeProvider(p.id)}>remove</button>
               </div>
               <div className="provider-detail">{p.base_url} · model: {p.model}</div>

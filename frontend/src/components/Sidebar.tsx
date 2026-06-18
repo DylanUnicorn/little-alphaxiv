@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { useUi } from "../store/ui";
+import { THEMES } from "../themes";
 import type { Conversation } from "../types";
 
 type Item =
@@ -29,6 +30,8 @@ export function Sidebar() {
   const removeMany = useConversations((s) => s.removeMany);
   const providers = useSettings((s) => s.providers);
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
+  const theme = useSettings((s) => s.theme);
+  const setTheme = useSettings((s) => s.setTheme);
   const collapsed = useUi((s) => s.sidebarCollapsed);
   const collapse = useUi((s) => s.collapseSidebar);
   const expand = useUi((s) => s.expandSidebar);
@@ -80,7 +83,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <span className="logo">📚 little alphaxiv</span>
+        <span className="logo"><span className="logo-mark">α</span> little alphaxiv</span>
         <button className="icon-btn head-collapse" title="Collapse sidebar" onClick={collapse}>«</button>
       </div>
       <button className="new-chat-btn" onClick={newChat}>+ New chat</button>
@@ -99,6 +102,7 @@ export function Sidebar() {
                   navigate(`/chat/${it.conv.id}`);
                 }}
               >
+                <span className="conv-tag">💬</span>
                 <span className="conv-title">{it.conv.title || "New chat"}</span>
                 <button
                   className="conv-del"
@@ -143,6 +147,14 @@ export function Sidebar() {
           ) : (
             <span>{providers.length} provider(s) configured</span>
           )}
+        </div>
+        <div className="theme-quick">
+          <label htmlFor="sb-theme">Theme</label>
+          <select id="sb-theme" value={theme} onChange={(e) => setTheme(e.target.value)}>
+            {THEMES.map((t) => (
+              <option key={t.id} value={t.id}>{t.label}</option>
+            ))}
+          </select>
         </div>
         <button className="settings-btn" onClick={() => navigate("/settings")}>⚙ Settings</button>
       </div>
