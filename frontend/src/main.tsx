@@ -4,7 +4,6 @@ import App from "./App";
 import { useSettings } from "./store/settings";
 import "katex/dist/katex.min.css";
 import "./index.css";
-import "highlight.js/styles/github-dark.css";
 
 // NOTE: React.StrictMode is intentionally disabled. It double-mounts effects in
 // dev, which aborts in-flight streaming fetches (the LLM SSE stream) on the

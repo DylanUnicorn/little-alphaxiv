@@ -1,9 +1,10 @@
 // Provider settings store. Persisted to localStorage. Each user keeps their
-// own API keys in their own browser.
+// own API keys in their own browser. Also caches fetched model lists per
+// provider so we don't re-fetch on every dropdown open.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Provider } from "../types";
+import type { Provider, ModelInfo } from "../types";
 import { coerceTheme, DEFAULT_THEME } from "../themes";
 
 /** A theme id from `THEMES` (see themes.ts). Typed as string so the catalog
@@ -14,12 +15,20 @@ interface SettingsState {
   providers: Provider[];
   defaultProviderId: string | null;
   theme: Theme;
+  /** Cached model lists per provider id (persisted, avoids re-fetching). */
+  providerModels: Record<string, ModelInfo[]>;
   addProvider: (p: Omit<Provider, "id">) => Provider;
   updateProvider: (id: string, patch: Partial<Provider>) => void;
   removeProvider: (id: string) => void;
   setDefault: (id: string) => void;
   setTheme: (t: Theme) => void;
   getProvider: (id?: string | null) => Provider | undefined;
+  /** Fetch models from a provider and cache the result. Returns the model list. */
+  fetchAndCacheModels: (providerId: string, baseUrl: string, apiKey: string) => Promise<ModelInfo[]>;
+  /** Get cached models for a provider (empty array if not yet fetched). */
+  getCachedModels: (providerId: string) => ModelInfo[];
+  /** Clear cached models for a provider (e.g. after changing base_url/key). */
+  clearCachedModels: (providerId: string) => void;
 }
 
 function uid(): string {
@@ -34,6 +43,7 @@ export const useSettings = create<SettingsState>()(
       providers: [],
       defaultProviderId: null,
       theme: DEFAULT_THEME,
+      providerModels: {},
       addProvider: (p) => {
         const provider: Provider = { ...p, id: uid() };
         set((s) => {
@@ -49,6 +59,10 @@ export const useSettings = create<SettingsState>()(
           providers: s.providers.map((p) =>
             p.id === id ? { ...p, ...patch } : p
           ),
+          // If base_url or api_key changed, stale the model cache.
+          ...(patch.base_url || patch.api_key
+            ? { providerModels: { ...s.providerModels, [id]: [] } }
+            : {}),
         })),
       removeProvider: (id) =>
         set((s) => {
@@ -56,7 +70,9 @@ export const useSettings = create<SettingsState>()(
           let defaultProviderId = s.defaultProviderId;
           if (defaultProviderId === id)
             defaultProviderId = providers[0]?.id ?? null;
-          return { providers, defaultProviderId };
+          // Also clean up cached models for removed provider
+          const { [id]: _, ...rest } = s.providerModels;
+          return { providers, defaultProviderId, providerModels: rest };
         }),
       setDefault: (id) => set({ defaultProviderId: id }),
       setTheme: (theme) => set({ theme }),
@@ -65,6 +81,29 @@ export const useSettings = create<SettingsState>()(
         const targetId = id ?? s.defaultProviderId;
         return s.providers.find((p) => p.id === targetId);
       },
+      fetchAndCacheModels: async (providerId, baseUrl, apiKey) => {
+        try {
+          const { fetchModels } = await import("../lib/api");
+          const models = await fetchModels(baseUrl, apiKey);
+          set((s) => ({
+            providerModels: { ...s.providerModels, [providerId]: models },
+          }));
+          return models;
+        } catch {
+          // Fetch failed — cache empty so we don't retry on every re-render
+          set((s) => ({
+            providerModels: { ...s.providerModels, [providerId]: [] },
+          }));
+          return [];
+        }
+      },
+      getCachedModels: (providerId) => {
+        return get().providerModels[providerId] ?? [];
+      },
+      clearCachedModels: (providerId) =>
+        set((s) => ({
+          providerModels: { ...s.providerModels, [providerId]: [] },
+        })),
     }),
     {
       name: "little-alphaxiv-settings",
