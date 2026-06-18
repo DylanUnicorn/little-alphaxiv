@@ -12,6 +12,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { pdfUrl } from "../lib/api";
 import { renderTextLayer, type TextLayerRenderTask } from "../lib/textlayer";
+import * as db from "../lib/db";
 import { AnnotationToolbar } from "./AnnotationToolbar";
 import { HighlightLayer } from "./HighlightLayer";
 import { AnnotLayer } from "./AnnotLayer";
@@ -53,8 +54,23 @@ export function PdfViewer({ arxivId, onLoaded, onTextExtracted }: Props) {
         setDoc(d);
         setNumPages(d.numPages);
         onLoaded?.(d.numPages);
-        // Extract full text in the background (for the chat context).
+        // The PDF is ready to render NOW. Clear the spinner BEFORE the (slow)
+        // full-text extraction so the user sees the first page immediately
+        // instead of staring at "Loading PDF…" while we mine text for the
+        // chat context. Extraction below is best-effort and must not block
+        // the loading indicator or the first-page render.
+        setLoading(false);
+
         try {
+          // Repeat visit? The full text is already cached in IndexedDB (saved
+          // by PaperView's onTextExtracted last time). Re-extracting would
+          // re-walk every page on the worker for nothing — skip it.
+          const cached = await db.getPaper(arxivId);
+          if (cancelled) return;
+          if (cached?.full_text) {
+            onTextExtracted?.(cached.full_text);
+            return;
+          }
           const text = await extractText(d);
           if (!cancelled) onTextExtracted?.(text);
         } catch {
