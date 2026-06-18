@@ -6,7 +6,7 @@
 // the result as a tool-role message, and re-stream — repeating until the
 // model answers with plain text.
 
-import { streamChat, searchArxiv, webSearch } from "./api";
+import { streamChat, completeChat, searchArxiv, webSearch } from "./api";
 import type { ChatMessage, Paper, Provider, ToolDef } from "../types";
 
 export const SEARCH_TOOLS: ToolDef[] = [
@@ -206,4 +206,102 @@ export async function runConversation(opts: {
   }
 
   return { newMessages };
+}
+
+// ---------- Conversation title generation ----------
+//
+// The sidebar/history index used to be the user's first message truncated to
+// 48 chars — too blunt. Instead we ask the configured model to summarize the
+// first exchange (user question + assistant reply), grounded in the paper's
+// title/abstract/text when it's a paper chat, into a short descriptive title.
+//
+// Design notes:
+//   - Non-streaming, no tools: a title is a one-shot ~10-word string; the SSE
+//     + tool-loop machinery of runConversation is wasted overhead here.
+//   - Fires once, after the first turn completes (caller guards). On any
+//     failure (no provider, network, bad output) it returns null and the
+//     caller keeps the instant truncated-first-message fallback title.
+//   - Never throws to the caller; title generation must never break a chat.
+
+export interface TitlePaperContext {
+  arxivId?: string;
+  title?: string;
+  abstract?: string;
+  /** A short excerpt of the extracted PDF full text (caller trims). */
+  fullTextSnippet?: string;
+}
+
+/** Generate a short descriptive title for a conversation from its first
+ *  exchange. Returns null on any failure so callers can fall back. */
+export async function generateConversationTitle(opts: {
+  provider: Provider;
+  model?: string;
+  firstUserMessage: string;
+  firstAssistantMessage: string;
+  paperContext?: TitlePaperContext;
+  signal?: AbortSignal;
+}): Promise<string | null> {
+  const { provider, model, firstUserMessage, firstAssistantMessage, paperContext, signal } = opts;
+  const userQ = (firstUserMessage || "").trim();
+  const assistantA = (firstAssistantMessage || "").trim();
+  if (!userQ && !assistantA) return null;
+
+  const paperBlock = paperContext
+    ? "\n\nPaper being discussed:\n" +
+      `arxiv id: ${paperContext.arxivId ?? ""}\n` +
+      `title: ${paperContext.title ?? ""}\n` +
+      `abstract: ${(paperContext.abstract ?? "").slice(0, 1200)}\n` +
+      `full text excerpt: ${(paperContext.fullTextSnippet ?? "").slice(0, 1500)}`
+    : "";
+
+  const system =
+    "You are a title generator for a research-chat app (an alphaxiv-style reader). " +
+    "Given a conversation's first exchange — a user question and the assistant's reply — " +
+    "produce a concise descriptive title that captures what the conversation is about. " +
+    "Rules: at most 10 words; plain text; no quotation marks; no trailing period; " +
+    "no prefix such as 'Title:'; do not start with 'Discussion of' or 'Chat about'. " +
+    "When paper context is provided, reflect the paper's topic. " +
+    "Respond with the title only, nothing else.";
+
+  const user =
+    `User asked: ${userQ.slice(0, 1000)}\n\n` +
+    `Assistant answered:\n${assistantA.slice(0, 2000)}${paperBlock}\n\n` +
+    `Respond with only a short title.`;
+
+  try {
+    const raw = await completeChat({
+      provider,
+      model,
+      signal,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    });
+    return cleanTitle(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Normalize a model's title output: strip quotes/labels, collapse whitespace,
+ *  drop a trailing period, cap at ~80 chars on a word boundary. Returns null
+ *  if nothing usable remains. */
+export function cleanTitle(raw: string): string | null {
+  let t = (raw || "").trim();
+  if (!t) return null;
+  // Strip a leading "Title:" label (model sometimes echoes the instruction).
+  t = t.replace(/^title\s*[:：]\s*/i, "");
+  // Strip surrounding quotation marks (straight + curly + guillemets).
+  t = t.replace(/^["'“”«»]+|["'“”«»]+$/g, "");
+  t = t.replace(/\s+/g, " ").trim();
+  // Drop a trailing period.
+  t = t.replace(/[.。]+$/, "").trim();
+  if (!t) return null;
+  if (t.length > 80) {
+    const cut = t.slice(0, 80);
+    const lastSpace = cut.lastIndexOf(" ");
+    t = (lastSpace > 30 ? cut.slice(0, lastSpace) : cut).trim();
+  }
+  return t;
 }

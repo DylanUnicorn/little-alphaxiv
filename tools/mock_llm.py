@@ -30,11 +30,64 @@ def _has_tool_result(messages: list) -> bool:
     return any(m.get("role") == "tool" for m in messages)
 
 
+def _is_title_request(messages: list) -> bool:
+    """The frontend's title generator sends a system prompt containing the
+    phrase 'title generator'. Detect it so the mock returns a canned short
+    title instead of a search_arxiv tool_call (which is the default turn-1
+    behavior and would be wrong for a title request)."""
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, str) and "title generator" in c.lower():
+            return True
+    return False
+
+
+def _is_paper_title_request(messages: list) -> bool:
+    """The paper-chat title prompt includes a 'Paper being discussed:' block
+    (arxiv id + title + abstract + excerpt). Detect it so the mock returns a
+    paper-specific canned title, distinct from the general-chat title, which
+    lets the verification script tell the two apart."""
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, str) and "paper being discussed" in c.lower():
+            return True
+    return False
+
+
+_MOCK_TITLE_GENERAL = "Vision transformer paper search"
+_MOCK_TITLE_PAPER = "Attention mechanism in transformers"
+
+
 @app.post("/v1/chat/completions")
 async def completions(request: Request):
     body = await request.json()
     messages = body.get("messages", [])
     stream = body.get("stream", False)
+
+    if _is_title_request(messages):
+        # Title-generation request: return a short canned title. Paper chats
+        # get a distinct title so verification can tell them apart from
+        # general chats.
+        title = _MOCK_TITLE_PAPER if _is_paper_title_request(messages) else _MOCK_TITLE_GENERAL
+        if not stream:
+            return JSONResponse(
+                {
+                    "id": "chatcmpl-mock-title",
+                    "object": "chat.completion",
+                    "model": "mock-model",
+                    "choices": [
+                        {"index": 0, "message": {"role": "assistant", "content": title}, "finish_reason": "stop"}
+                    ],
+                }
+            )
+
+        async def gen_title():
+            yield _sse({"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]})
+            yield _sse({"choices": [{"index": 0, "delta": {"content": title}, "finish_reason": None}]})
+            yield _sse({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(gen_title(), media_type="text/event-stream")
 
     if not _has_tool_result(messages):
         # Turn 1: emit a search_arxiv tool call.

@@ -65,6 +65,49 @@ export async function streamChat(opts: {
   return parseSSE(resp.body, onDelta, onToolCallDelta, onReasoning);
 }
 
+/** Non-streaming chat completion from the user's configured provider.
+ *  Used for short, single-shot calls (e.g. generating a conversation title)
+ *  where the streaming/SSE overhead isn't worth it. The /api/llm proxy forwards
+ *  `stream:false` and returns the upstream JSON verbatim.
+ *  Returns the assistant's text content ("" if absent). */
+export async function completeChat(opts: {
+  provider: Provider;
+  messages: unknown[];
+  model?: string;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const { provider, messages, model: modelOverride, signal } = opts;
+
+  const payload: Record<string, unknown> = {
+    // Honor per-conversation model override; fall back to provider default
+    // (same precedence as streamChat).
+    model: modelOverride || provider.model,
+    messages,
+    stream: false,
+  };
+
+  const resp = await fetch(`${BASE}/api/llm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      base_url: provider.base_url,
+      api_key: provider.api_key,
+      payload,
+    }),
+    signal,
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`LLM proxy error ${resp.status}: ${text.slice(0, 300)}`);
+  }
+
+  const data = await resp.json();
+  const choice = data?.choices?.[0];
+  const content = choice?.message?.content;
+  return typeof content === "string" ? content : "";
+}
+
 /** Parse the OpenAI SSE stream. Accumulates content + tool_call argument
  *  fragments across chunks (OpenAI streams tool args in pieces). */
 async function parseSSE(

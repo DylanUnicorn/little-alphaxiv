@@ -12,12 +12,12 @@ Run:
     python tools/mock_llm.py &   # :5050
     conda run -n Agent_env python tools/drive_fixes.py
 """
-import codecs, json, sys, time
+import codecs, json, os, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, errors="replace")
-APP = "http://127.0.0.1:5173"
+APP = os.environ.get("APP_URL", "http://127.0.0.1:5173")
 PROV = {
     "name": "mock",
     "base_url": "http://127.0.0.1:5050/v1",

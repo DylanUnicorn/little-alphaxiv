@@ -9,11 +9,12 @@
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ChatMessage, Paper, Attachment, StylePreset } from "../types";
+import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider } from "../types";
 import { STYLE_PRESETS } from "../types";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
-import { runConversation } from "../lib/llm";
+import { runConversation, generateConversationTitle } from "../lib/llm";
+import * as db from "../lib/db";
 import { PaperCard } from "./PaperCard";
 import { Markdown } from "./Markdown";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
@@ -34,6 +35,56 @@ interface Props {
   conversationId: string;
   systemPrompt?: string;
   showPaperLinks?: boolean;
+}
+
+/** After the first turn of a conversation, ask the configured model to summarize
+ *  the exchange (grounded in the paper for paper chats) into a short title and
+ *  rename the conversation. Fire-and-forget: never blocks the chat, never
+ *  throws. The instant truncated-first-message title set in send() stays in
+ *  place if this fails or is slow. */
+async function maybeSummarizeTitle(args: {
+  convId: string;
+  type: ConversationType;
+  paperId?: string;
+  model?: string;
+  provider: Provider;
+  firstUserText: string;
+  newMessages: ChatMessage[];
+  rename: (id: string, title: string) => Promise<void>;
+}): Promise<void> {
+  try {
+    // The final text answer is the last assistant message with real content;
+    // earlier assistant messages in the tool loop carry tool_calls (content null).
+    const lastAnswer = [...args.newMessages]
+      .reverse()
+      .find((m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim());
+    const firstAssistant = (lastAnswer?.content as string | null) ?? "";
+
+    let paperContext;
+    if (args.type === "paper" && args.paperId) {
+      const p = await db.getPaper(args.paperId);
+      // Always ground the title in the arxiv id for paper chats — even before
+      // metadata/full text has been cached — so the model knows it's a paper
+      // thread and can reflect the paper's topic.
+      paperContext = {
+        arxivId: args.paperId,
+        ...(p
+          ? { title: p.title, abstract: p.abstract, fullTextSnippet: p.full_text }
+          : {}),
+      };
+    }
+
+    const title = await generateConversationTitle({
+      provider: args.provider,
+      model: args.model,
+      firstUserMessage: args.firstUserText,
+      firstAssistantMessage: firstAssistant,
+      paperContext,
+    });
+    if (title) await args.rename(args.convId, title);
+  } catch {
+    // Title generation is best-effort; never surface to the user.
+  }
 }
 
 export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true }: Props) {
@@ -141,7 +192,11 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     setBusy(true);
     setStatus("Thinking…");
 
-    if (c.messages.length === 0) {
+    // First turn: set an instant title from the question (so the sidebar
+    // updates immediately), then refine it with an LLM summary once the
+    // assistant replies (see maybeSummarizeTitle below).
+    const wasFirstTurn = c.messages.length === 0;
+    if (wasFirstTurn) {
       rename(c.id, text.slice(0, 48) || (attachments.length > 0 ? "Image chat" : "New chat"));
     }
 
@@ -149,7 +204,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
       const contextMsgs = getContextMessages();
       const history: ChatMessage[] = [...contextMsgs, userMsg];
       let buf = "";
-      await runConversation({
+      const { newMessages } = await runConversation({
         provider,
         messages: history,
         systemPrompt: effectiveSystemPrompt,
@@ -179,6 +234,20 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         },
       });
       setStatus("");
+      // Refine the first-turn title into a short LLM summary. Fire-and-forget;
+      // the truncated fallback stays if this is slow or fails.
+      if (wasFirstTurn) {
+        void maybeSummarizeTitle({
+          convId: c.id,
+          type: c.type,
+          paperId: c.paper_id,
+          model: c.model,
+          provider,
+          firstUserText: text,
+          newMessages,
+          rename,
+        });
+      }
     } catch (e: any) {
       setStreaming("");
       setReasoning("");
