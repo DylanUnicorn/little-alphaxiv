@@ -21,6 +21,18 @@ import { runConversation } from "../lib/llm";
 import { PaperCard } from "./PaperCard";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
 
+const GENERAL_SUGGESTIONS = [
+  "Find recent papers on retrieval-augmented generation",
+  "What's new in efficient LLM inference?",
+  "Summarize trending research on multimodal learning",
+];
+const PAPER_SUGGESTIONS = [
+  "Summarize this paper",
+  "What are the key contributions?",
+  "Explain the methodology",
+  "What are the limitations?",
+];
+
 interface Props {
   conversationId: string;
   systemPrompt?: string;
@@ -42,6 +54,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   const [status, setStatus] = useState("");
   const [streaming, setStreaming] = useState("");
   const [reasoning, setReasoning] = useState("");
+  const [reasoningOpen, setReasoningOpen] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,8 +123,8 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     return c.messages;
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(override?: string) {
+    const text = (override ?? input).trim();
     if ((!text && attachments.length === 0) || busy) return;
     if (!provider) {
       setStatus("No provider configured. Add one in Settings.");
@@ -192,9 +205,17 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         <div className="chat-messages" ref={scrollRef}>
           {conv.messages.length === 0 && !streaming && (
             <div className="chat-empty">
-              {conv.type === "paper"
-                ? "Ask anything about this paper — methods, results, limitations…"
-                : "Describe what you're looking for. I'll search arXiv and give you clickable links to preview papers."}
+              <div className="empty-title">{conv.type === "paper" ? "Discuss this paper" : "Find papers with AI"}</div>
+              <div className="empty-sub">
+                {conv.type === "paper"
+                  ? "Ask about methods, results, or limitations — the full text is in context."
+                  : "Describe a topic and I'll search arXiv, returning clickable links to preview papers."}
+              </div>
+              <div className="chat-suggestions">
+                {(conv.type === "paper" ? PAPER_SUGGESTIONS : GENERAL_SUGGESTIONS).map((s) => (
+                  <button key={s} className="suggestion-chip" onClick={() => send(s)} disabled={busy}>{s}</button>
+                ))}
+              </div>
             </div>
           )}
           {conv.messages.map((m, i) => (
@@ -207,13 +228,19 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           )}
           {reasoning && !streaming && (
             <div className="msg msg-reasoning">
-              <span className="reasoning-label">thinking</span>
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{reasoning}</ReactMarkdown>
+              <span className="reasoning-label" onClick={() => setReasoningOpen((o) => !o)}>
+                <span>{reasoningOpen ? "▾" : "▸"}</span> thinking
+              </span>
+              {reasoningOpen && (
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{reasoning}</ReactMarkdown>
+              )}
             </div>
           )}
         </div>
       </ChatErrorBoundary>
-      <div className="chat-status">{status}</div>
+      <div className="chat-status">
+        {streaming ? (<><span className="streaming-cursor" /> Generating…</>) : status}
+      </div>
       {/* Attachment previews */}
       {attachments.length > 0 && (
         <div className="attachment-previews">
@@ -256,7 +283,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           rows={1}
           disabled={busy}
         />
-        <button onClick={send} disabled={busy || (!input.trim() && attachments.length === 0)}>
+        <button onClick={() => send()} disabled={busy || (!input.trim() && attachments.length === 0)}>
           {busy ? "…" : "Send"}
         </button>
       </div>

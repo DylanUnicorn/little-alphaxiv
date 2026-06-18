@@ -4,8 +4,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Provider } from "../types";
+import { coerceTheme, DEFAULT_THEME } from "../themes";
 
-export type Theme = "dark" | "light";
+/** A theme id from `THEMES` (see themes.ts). Typed as string so the catalog
+ *  can grow without churn; validity is enforced at runtime via coerceTheme. */
+export type Theme = string;
 
 interface SettingsState {
   providers: Provider[];
@@ -30,7 +33,7 @@ export const useSettings = create<SettingsState>()(
     (set, get) => ({
       providers: [],
       defaultProviderId: null,
-      theme: "dark",
+      theme: DEFAULT_THEME,
       addProvider: (p) => {
         const provider: Provider = { ...p, id: uid() };
         set((s) => {
@@ -63,6 +66,14 @@ export const useSettings = create<SettingsState>()(
         return s.providers.find((p) => p.id === targetId);
       },
     }),
-    { name: "little-alphaxiv-settings" }
+    {
+      name: "little-alphaxiv-settings",
+      // Coerce a stale/corrupt theme id (e.g. after a catalog rename) back to
+      // a valid one on rehydration. Old "dark"/"light" values are already
+      // valid ids and pass through unchanged.
+      onRehydrateStorage: () => (state) => {
+        if (state) state.theme = coerceTheme(state.theme);
+      },
+    }
   )
 );
