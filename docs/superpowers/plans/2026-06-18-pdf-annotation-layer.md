@@ -1918,23 +1918,29 @@ Expected: `added N packages`, no error.
 Create `frontend/src/components/CodeBlock.tsx`:
 ```tsx
 // Markdown code renderer: syntax-highlight fenced code blocks with highlight.js.
-// Inline code (no language / not in a <pre>) is returned unchanged.
-import { useMemo, useState } from "react";
+// react-markdown v10 does NOT pass an `inline` prop to the `code` component
+// (removed after v8), and it wraps block code in its own <pre>. So we override
+// BOTH `pre` (adds copy button + .code-block wrapper) and `code` (highlights
+// block code, leaves inline code plain). Block-vs-inline is detected in `code`
+// via: has a language- class OR contains a newline (inline backtick code is
+// always single-line with no language class). This avoids (a) misdetecting
+// inline code as a block and (b) nesting a <pre> inside react-markdown's outer <pre>.
+import { useMemo, useRef, useState } from "react";
 import hljs from "highlight.js";
 
 interface CodeProps {
-  inline?: boolean;
   className?: string;
   children?: React.ReactNode;
 }
 
-export function CodeBlock({ inline, className, children }: CodeProps) {
-  const [copied, setCopied] = useState(false);
-  const code = String(children ?? "").replace(/\n$/, "");
+export function CodeBlock({ className, children }: CodeProps) {
+  const raw = String(children ?? "");
+  const code = raw.replace(/\n$/, "");
   const lang = /language-(\w+)/.exec(className || "")?.[1];
+  const isBlock = !!lang || raw.includes("\n");
 
   const html = useMemo(() => {
-    if (inline || !code) return null;
+    if (!isBlock || !code) return null;
     try {
       if (lang && hljs.getLanguage(lang)) {
         return hljs.highlight(code, { language: lang }).value;
@@ -1943,14 +1949,32 @@ export function CodeBlock({ inline, className, children }: CodeProps) {
     } catch {
       return null;
     }
-  }, [inline, code, lang]);
+  }, [isBlock, code, lang]);
 
-  if (inline) {
+  if (!isBlock) {
     return <code className={className}>{children}</code>;
   }
+  return (
+    <code
+      className={lang ? `hljs language-${lang}` : "hljs"}
+      dangerouslySetInnerHTML={html ? { __html: html } : undefined}
+    >
+      {html ? undefined : code}
+    </code>
+  );
+}
+
+interface PreProps {
+  children?: React.ReactNode;
+}
+
+export function CodePre({ children }: PreProps) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
 
   function copy() {
-    navigator.clipboard?.writeText(code).then(() => {
+    const text = preRef.current?.textContent ?? "";
+    navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -1961,19 +1985,12 @@ export function CodeBlock({ inline, className, children }: CodeProps) {
       <button className="code-block-copy" onClick={copy} title="Copy">
         {copied ? "✓" : "⧉"}
       </button>
-      <pre>
-        <code
-          className={lang ? `hljs language-${lang}` : "hljs"}
-          dangerouslySetInnerHTML={html ? { __html: html } : undefined}
-        >
-          {html ? undefined : code}
-        </code>
-      </pre>
+      <pre ref={preRef}>{children}</pre>
     </div>
   );
 }
 
-export const markdownCodeComponents = { code: CodeBlock };
+export const markdownCodeComponents = { code: CodeBlock, pre: CodePre };
 ```
 
 - [ ] **Step 3: Wire into ChatPanel's 3 ReactMarkdown usages**
