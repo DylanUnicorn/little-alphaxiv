@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
     "idb": "^8.0.0",
     "katex": "^0.17.0",
     "pdfjs-dist": "^4.7.76",

@@ -20,6 +20,7 @@ import { useSettings } from "../store/settings";
 import { runConversation } from "../lib/llm";
 import { PaperCard } from "./PaperCard";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
+import { markdownCodeComponents } from "./CodeBlock";
 
 interface Props {
   conversationId: string;
@@ -202,13 +203,13 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           ))}
           {streaming && (
             <div className="msg msg-assistant pending">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streaming}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownCodeComponents}>{streaming}</ReactMarkdown>
             </div>
           )}
           {reasoning && !streaming && (
             <div className="msg msg-reasoning">
               <span className="reasoning-label">thinking</span>
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{reasoning}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownCodeComponents}>{reasoning}</ReactMarkdown>
             </div>
           )}
         </div>
@@ -301,7 +302,7 @@ function MessageRow({
   return (
     <div className="msg msg-assistant">
       {msg.content ? (
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{msg.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownCodeComponents}>{msg.content}</ReactMarkdown>
       ) : (
         ""
       )}
