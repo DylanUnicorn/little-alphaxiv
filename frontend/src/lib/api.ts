@@ -30,10 +30,14 @@ export async function streamChat(opts: {
   onToolCallDelta?: (name: string, argsDelta: string) => void;
 }): Promise<StreamResult> {
   const { provider, messages, tools, model: modelOverride, signal, onDelta, onReasoning, onToolCallDelta } = opts;
-  void modelOverride;
 
   const payload: Record<string, unknown> = {
-    model: provider.model,
+    // Honor the per-conversation model override (e.g. a vision model the user
+    // picked for image chat); fall back to the provider default. Previously
+    // this was hardcoded to provider.model, silently dropping the override —
+    // which sent image turns to a non-vision default and made providers reject
+    // the attachment with "does not support image".
+    model: modelOverride || provider.model,
     messages,
     stream: true,
   };

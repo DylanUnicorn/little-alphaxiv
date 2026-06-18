@@ -9,16 +9,13 @@
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import type { ChatMessage, Paper, Attachment, StylePreset } from "../types";
 import { STYLE_PRESETS } from "../types";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { runConversation } from "../lib/llm";
 import { PaperCard } from "./PaperCard";
+import { Markdown } from "./Markdown";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
 
 const GENERAL_SUGGESTIONS = [
@@ -225,7 +222,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           ))}
           {streaming && (
             <div className="msg msg-assistant pending">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streaming}</ReactMarkdown>
+              <Markdown>{streaming}</Markdown>
             </div>
           )}
           {reasoning && !streaming && (
@@ -234,7 +231,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
                 <span>{reasoningOpen ? "▾" : "▸"}</span> thinking
               </span>
               {reasoningOpen && (
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{reasoning}</ReactMarkdown>
+                <Markdown>{reasoning}</Markdown>
               )}
             </div>
           )}
@@ -330,7 +327,7 @@ const MessageRow = memo(function MessageRow({
   return (
     <div className="msg msg-assistant">
       {msg.content ? (
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{msg.content}</ReactMarkdown>
+        <Markdown>{msg.content}</Markdown>
       ) : (
         ""
       )}
