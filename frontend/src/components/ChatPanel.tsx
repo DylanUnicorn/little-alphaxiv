@@ -7,7 +7,7 @@
 //   - Per-conversation model override, style preset, context window
 //   - GLM reasoning_content display as "thinking" block
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -58,6 +58,8 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Stable callback so memoized MessageRows don't re-render on every keystroke.
+  const onOpenPaper = useCallback((id: string) => navigate(`/paper/${id}`), [navigate]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -219,7 +221,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
             </div>
           )}
           {conv.messages.map((m, i) => (
-            <MessageRow key={i} msg={m} showPaperLinks={showPaperLinks} onOpenPaper={(id) => navigate(`/paper/${id}`)} />
+            <MessageRow key={i} msg={m} showPaperLinks={showPaperLinks} onOpenPaper={onOpenPaper} />
           ))}
           {streaming && (
             <div className="msg msg-assistant pending">
@@ -291,7 +293,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   );
 }
 
-function MessageRow({
+const MessageRow = memo(function MessageRow({
   msg,
   showPaperLinks,
   onOpenPaper,
@@ -335,4 +337,4 @@ function MessageRow({
       {msg.ui?.error && <div className="msg-error">{msg.ui.error}</div>}
     </div>
   );
-}
+});

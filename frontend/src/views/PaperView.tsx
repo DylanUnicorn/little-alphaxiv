@@ -179,34 +179,70 @@ function ResizablePanels({ left, right }: { left: React.ReactNode; right: React.
     const saved = Number(localStorage.getItem("lax-paper-ratio"));
     return saved > 0.1 && saved < 0.9 ? saved : 0.58;
   });
-  const dragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const lastX = useRef(0);
+  const rafId = useRef<number | null>(null);
+
+  // Drag listeners attach ONCE (no ratio dep) so we don't tear down and
+  // re-add them on every mousemove. During drag we mutate the --paper-ratio
+  // CSS variable directly (coalesced to one update per animation frame), which
+  // resizes both columns with zero React re-renders. The final ratio is
+  // committed to state on mouseup for persistence + a single re-render.
   useEffect(() => {
+    function apply() {
+      rafId.current = null;
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const r = Math.max(0.2, Math.min(0.8, (lastX.current - rect.left) / rect.width));
+      el.style.setProperty("--paper-ratio", String(r));
+    }
     function onMove(e: MouseEvent) {
-      if (!dragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const r = (e.clientX - rect.left) / rect.width;
-      setRatio(Math.max(0.2, Math.min(0.8, r)));
+      if (!dragging.current) return;
+      lastX.current = e.clientX;
+      if (rafId.current == null) rafId.current = requestAnimationFrame(apply);
     }
     function onUp() {
-      if (dragging.current) {
-        dragging.current = false;
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        localStorage.setItem("lax-paper-ratio", String(ratio));
-      }
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (rafId.current != null) { cancelAnimationFrame(rafId.current); rafId.current = null; }
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const r = Math.max(0.2, Math.min(0.8, (lastX.current - rect.left) / rect.width));
+      setRatio(r);
+      localStorage.setItem("lax-paper-ratio", String(r));
     }
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [ratio]);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (rafId.current != null) cancelAnimationFrame(rafId.current);
+    };
+  }, []);
+
   return (
-    <div className="resizable-panels" ref={containerRef}>
-      <div className="pdf-col" style={{ flexBasis: `${ratio * 100}%` }}>{left}</div>
-      <div className="panel-divider" onMouseDown={() => { dragging.current = true; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}>
+    <div
+      className="resizable-panels"
+      ref={containerRef}
+      style={{ "--paper-ratio": ratio } as React.CSSProperties}
+    >
+      <div className="pdf-col">{left}</div>
+      <div
+        className="panel-divider"
+        onMouseDown={() => {
+          dragging.current = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        }}
+      >
         <div className="panel-divider-grip" />
       </div>
-      <div className="chat-col" style={{ flexBasis: `${(1 - ratio) * 100}%` }}>{right}</div>
+      <div className="chat-col">{right}</div>
     </div>
   );
 }
