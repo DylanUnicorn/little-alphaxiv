@@ -12,6 +12,11 @@ import * as pdfjsLib from "pdfjs-dist";
 import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { pdfUrl } from "../lib/api";
 import { renderTextLayer, type TextLayerRenderTask } from "../lib/textlayer";
+import { AnnotationToolbar } from "./AnnotationToolbar";
+import { HighlightLayer } from "./HighlightLayer";
+import { AnnotLayer } from "./AnnotLayer";
+import { useAnnotations } from "../store/annotations";
+import type { PageSize } from "../types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
 
@@ -70,6 +75,44 @@ export function PdfViewer({ arxivId, onLoaded, onTextExtracted }: Props) {
   const zoomOut = useCallback(() => setZoom((z) => Math.max(0.4, +(z - 0.2).toFixed(2))), []);
   const fitWidth = useCallback(() => setZoom(1), []);
 
+  // Annotation keyboard shortcuts: undo / redo / delete / esc.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      // ignore when typing in an input/textarea/contenteditable (chat or text annot)
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) useAnnotations.getState().redo();
+        else useAnnotations.getState().undo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        useAnnotations.getState().redo();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace")) {
+        const s = useAnnotations.getState();
+        if (s.selectedId) { e.preventDefault(); s.removeAnnot(s.selectedId); }
+        return;
+      }
+      if (e.key === "Escape") {
+        const s = useAnnotations.getState();
+        // priority: clear text selection; clear selection; (highlight toggle stays)
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) { sel.removeAllRanges(); return; }
+        if (s.selectedId) { s.select(null); return; }
+        if (s.tool !== "none") { s.setTool("none"); }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="pdf-viewer">
       <div className="pdf-toolbar">
@@ -78,6 +121,7 @@ export function PdfViewer({ arxivId, onLoaded, onTextExtracted }: Props) {
           {Math.round(zoom * 100)}%
         </button>
         <button onClick={zoomIn} title="Zoom in">+</button>
+        <AnnotationToolbar />
         <span className="pdf-pagecount">{numPages ? `${numPages} pages` : "…"}</span>
       </div>
       <div className="pdf-scroll" ref={containerRef}>
@@ -155,8 +199,7 @@ function PdfPage({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
-  const viewportSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
-  void viewportSizeRef;
+  const [pageSize, setPageSize] = useState<PageSize>({ w: 0, h: 0 });
 
   // Lazy-mount: only render when the page scrolls near the viewport.
   useEffect(() => {
@@ -191,7 +234,7 @@ function PdfPage({
       const baseViewport = page.getViewport({ scale: 1 });
       const scale = ((containerWidth - 24) / baseViewport.width) * zoom;
       const viewport = page.getViewport({ scale });
-      viewportSizeRef.current = { w: viewport.width, h: viewport.height };
+      setPageSize({ w: viewport.width, h: viewport.height });
 
       const canvas = canvasRef.current;
       if (canvas) {
@@ -244,7 +287,9 @@ function PdfPage({
     <div className="pdf-page-wrap" ref={wrapRef}>
       <div className="pdf-page-canvas-wrap" style={{ minHeight: rendered ? undefined : 1000 }}>
         <canvas ref={canvasRef} />
+        <HighlightLayer pageNumber={pageNumber} pageSize={pageSize} />
         <div className="pdf-textlayer" ref={textLayerRef} />
+        <AnnotLayer pageNumber={pageNumber} pageSize={pageSize} />
       </div>
     </div>
   );

@@ -128,3 +128,35 @@ export const STYLE_PRESETS: Record<
       "\n\nBe a critical and skeptical reader. Question assumptions, identify potential flaws in methodology or reasoning, point out missing controls or alternative explanations, and distinguish what the paper claims from what the evidence actually supports. Don't be afraid to disagree.",
   },
 };
+
+// ---------- PDF annotations ----------
+
+export type AnnotationType = "highlight" | "rect" | "draw" | "text";
+export type Tool = "none" | "text" | "rect" | "draw" | "highlight";
+
+/** Page-normalized rect (0..1 relative to page width/height). */
+export interface NormRect { x: number; y: number; w: number; h: number; }
+/** Page-normalized point (0..1). */
+export interface NormPoint { x: number; y: number; }
+
+export interface Annotation {
+  id: string;
+  arxiv_id: string;
+  page: number; // 1-based
+  type: AnnotationType;
+  color: string; // hex from PALETTE
+  createdAt: number;
+  highlight?: { rects: NormRect[] };
+  rect?: NormRect;
+  draw?: { points: NormPoint[]; width: number }; // width normalized
+  text?: { x: number; y: number; w: number; h: number; content: string; fontSize: number };
+}
+
+export type Op =
+  | { kind: "add"; annot: Annotation }
+  | { kind: "remove"; annot: Annotation }
+  | { kind: "edit"; before: Annotation; after: Annotation }
+  | { kind: "move"; before: Annotation; after: Annotation }
+  | { kind: "resize"; before: Annotation; after: Annotation };
+
+export interface PageSize { w: number; h: number; }

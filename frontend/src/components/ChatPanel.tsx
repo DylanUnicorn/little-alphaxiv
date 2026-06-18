@@ -20,6 +20,7 @@ import { useSettings } from "../store/settings";
 import { runConversation } from "../lib/llm";
 import { PaperCard } from "./PaperCard";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
+import { markdownCodeComponents } from "./CodeBlock";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -225,7 +226,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           ))}
           {streaming && (
             <div className="msg msg-assistant pending">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{streaming}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownCodeComponents}>{streaming}</ReactMarkdown>
             </div>
           )}
           {reasoning && !streaming && (
@@ -234,7 +235,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
                 <span>{reasoningOpen ? "▾" : "▸"}</span> thinking
               </span>
               {reasoningOpen && (
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{reasoning}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownCodeComponents}>{reasoning}</ReactMarkdown>
               )}
             </div>
           )}
@@ -330,7 +331,7 @@ const MessageRow = memo(function MessageRow({
   return (
     <div className="msg msg-assistant">
       {msg.content ? (
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{msg.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownCodeComponents}>{msg.content}</ReactMarkdown>
       ) : (
         ""
       )}

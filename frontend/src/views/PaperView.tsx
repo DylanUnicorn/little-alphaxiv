@@ -19,6 +19,7 @@ import { HistoryPanel } from "../components/HistoryPanel";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { useUi } from "../store/ui";
+import { useAnnotations } from "../store/annotations";
 import * as db from "../lib/db";
 import type { StylePreset } from "../types";
 
@@ -46,6 +47,12 @@ export function PaperView() {
       if (p?.full_text) { setFullText(p.full_text); setExtracting(false); }
     });
   }, [arxivId]);
+
+  const loadAnnots = useAnnotations((s) => s.load);
+  useEffect(() => {
+    if (!arxivId) return;
+    loadAnnots(arxivId);
+  }, [arxivId, loadAnnots]);
 
   // Resolve which thread to show once data is loaded (or on paper change).
   // Uses a ref guard so message appends / thread switches don't re-trigger.
