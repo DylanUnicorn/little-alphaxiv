@@ -123,9 +123,24 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     }
   }, [provider?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Stick-to-bottom: auto-follow new content only while the user is already
+  // near the bottom. Checking the live scroll position at effect time (rather
+  // than a flag toggled by onScroll) means a streamed token's render can never
+  // race ahead of the scroll event and yank the user back down while they're
+  // reading earlier messages. Instant scroll (not smooth): smooth-per-token
+  // never settles and thrashes the main thread.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 120) return;
+    el.scrollTop = el.scrollHeight;
   }, [conv?.messages.length, streaming, status]);
+
+  // Switching conversations: jump to the bottom of the new thread.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [conversationId]);
 
   // Handle paste — extract images from clipboard
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -223,10 +238,10 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
       rename(c.id, text.slice(0, 48) || (attachments.length > 0 ? "Image chat" : "New chat"));
     }
 
+    let buf = "";
     try {
       const contextMsgs = getContextMessages();
       const history: ChatMessage[] = [...contextMsgs, userMsg];
-      let buf = "";
       const { newMessages } = await runConversation({
         provider,
         messages: history,
@@ -272,11 +287,23 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         });
       }
     } catch (e: any) {
+      const errMsg = e?.message || "error";
       setStreaming("");
       setReasoning("");
-      await appendMessages(c.id, [
-        { role: "assistant", content: `⚠️ ${e?.message || "error"}`, ui: { error: String(e?.message || e) } },
-      ]);
+      // Preserve whatever had already streamed before the error so the user
+      // doesn't lose the in-progress answer when a stream is interrupted (e.g.
+      // the connection dropped while the tab was backgrounded). Previously the
+      // partial buffer was discarded and replaced with a bare error message,
+      // so the output the user was reading would vanish mid-reply.
+      if (buf.trim()) {
+        await appendMessages(c.id, [
+          { role: "assistant", content: buf, ui: { error: `Response interrupted: ${errMsg}` } },
+        ]);
+      } else {
+        await appendMessages(c.id, [
+          { role: "assistant", content: `⚠️ ${errMsg}`, ui: { error: String(errMsg) } },
+        ]);
+      }
       setStatus("");
     } finally {
       setBusy(false);
