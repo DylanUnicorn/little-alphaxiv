@@ -9,7 +9,7 @@ import { useAnnotations } from "../store/annotations";
 import {
   denormalizeRect, denormalizePoint, normalizePoint, normalizeRect,
 } from "../lib/annotations";
-import type { PageSize, NormPoint } from "../types";
+import type { PageSize, NormPoint, Annotation } from "../types";
 
 interface Props {
   pageNumber: number;
@@ -28,6 +28,8 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
   const addAnnot = useAnnotations((s) => s.addAnnot);
   const setTool = useAnnotations((s) => s.setTool);
   const select = useAnnotations((s) => s.select);
+  const moveAnnot = useAnnotations((s) => s.moveAnnot);
+  const resizeAnnot = useAnnotations((s) => s.resizeAnnot);
   const layerRef = useRef<HTMLDivElement>(null);
 
   // in-progress creation state
@@ -35,6 +37,14 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
   const [draftPoints, setDraftPoints] = useState<{ x: number; y: number }[]>([]);
   const [textBox, setTextBox] = useState<{ x: number; y: number } | null>(null);
   const drawingRef = useRef(false);
+
+  // selection drag state
+  const dragRef = useRef<
+    | { mode: "move"; annot: Annotation; startPx: { x: number; y: number }; orig: Annotation }
+    | { mode: "resize"; annot: Annotation; handle: string; startPx: { x: number; y: number }; orig: Annotation }
+    | null
+  >(null);
+  const [dragPreview, setDragPreview] = useState<Annotation | null>(null);
 
   function toLayerPx(e: React.PointerEvent): { x: number; y: number } {
     const rect = layerRef.current!.getBoundingClientRect();
@@ -107,6 +117,47 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
     setTool("none");
   }
 
+  // ---- selection / move / resize (tool === "none") ----
+  function startMove(e: React.PointerEvent, a: Annotation) {
+    if (tool !== "none") return;
+    e.stopPropagation();
+    select(a.id);
+    const p = toLayerPx(e);
+    dragRef.current = { mode: "move", annot: a, startPx: p, orig: a };
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+
+  function startResize(e: React.PointerEvent, a: Annotation, handle: string) {
+    if (tool !== "none") return;
+    e.stopPropagation();
+    const p = toLayerPx(e);
+    dragRef.current = { mode: "resize", annot: a, handle, startPx: p, orig: a };
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+
+  function onDragMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    const p = toLayerPx(e);
+    const dxN = (p.x - d.startPx.x) / pageSize.w;
+    const dyN = (p.y - d.startPx.y) / pageSize.h;
+    if (d.mode === "move") {
+      setDragPreview(moveAnnotGeom(d.orig, dxN, dyN));
+    } else {
+      setDragPreview(resizeAnnotGeom(d.orig, d.handle, dxN, dyN));
+    }
+  }
+
+  function onDragUp() {
+    const d = dragRef.current;
+    if (!d) return;
+    const preview = dragPreview ?? d.orig;
+    if (d.mode === "move") moveAnnot(d.orig, preview);
+    else resizeAnnot(d.orig, preview);
+    dragRef.current = null;
+    setDragPreview(null);
+  }
+
   const interactive = tool === "rect" || tool === "draw" || tool === "text";
 
   return (
@@ -115,8 +166,8 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
       ref={layerRef}
       style={{ pointerEvents: interactive ? "auto" : "none", cursor: tool === "text" ? "text" : interactive ? "crosshair" : "default" }}
       onPointerDown={interactive ? onPointerDown : undefined}
-      onPointerMove={interactive ? onPointerMove : undefined}
-      onPointerUp={interactive ? onPointerUp : undefined}
+      onPointerMove={interactive ? onPointerMove : onDragMove}
+      onPointerUp={interactive ? onPointerUp : onDragUp}
     >
       <svg
         className="annot-svg"
@@ -125,13 +176,39 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
         preserveAspectRatio="none"
       >
         {annots.map((a) => {
-          if (a.type === "rect" && a.rect) {
-            const p = denormalizeRect(a.rect, pageSize);
-            return <rect key={a.id} x={p.x} y={p.y} width={p.w} height={p.h} fill={a.color} fillOpacity={0.2} stroke={a.color} strokeWidth={1.5} />;
+          const cur = dragPreview && dragPreview.id === a.id ? dragPreview : a;
+          if (cur.type === "rect" && cur.rect) {
+            const p = denormalizeRect(cur.rect, pageSize);
+            return (
+              <g key={a.id}>
+                <rect
+                  x={p.x} y={p.y} width={p.w} height={p.h}
+                  fill={a.color} fillOpacity={0.2} stroke={a.color} strokeWidth={1.5}
+                  style={{ pointerEvents: tool === "none" ? "stroke" : "none", cursor: tool === "none" ? "move" : "default" }}
+                  onPointerDown={(e) => startMove(e, a)}
+                />
+                {selectedId === a.id && tool === "none" && (
+                  <SelectionHandles rect={p} onHandleDown={(h, e) => startResize(e, a, h)} />
+                )}
+              </g>
+            );
           }
-          if (a.type === "draw" && a.draw) {
-            const pts = a.draw.points.map((pt) => { const dp = denormalizePoint(pt, pageSize); return `${dp.x},${dp.y}`; }).join(" ");
-            return <polyline key={a.id} points={pts} fill="none" stroke={a.color} strokeWidth={a.draw.width * pageSize.w} strokeLinejoin="round" strokeLinecap="round" />;
+          if (cur.type === "draw" && cur.draw) {
+            const pts = cur.draw.points.map((pt) => { const dp = denormalizePoint(pt, pageSize); return `${dp.x},${dp.y}`; }).join(" ");
+            const bbox = denormalizeRect(bboxOf(cur.draw.points), pageSize);
+            return (
+              <g key={a.id}>
+                <polyline
+                  points={pts} fill="none" stroke={a.color}
+                  strokeWidth={cur.draw.width * pageSize.w} strokeLinejoin="round" strokeLinecap="round"
+                  style={{ pointerEvents: tool === "none" ? "stroke" : "none", cursor: tool === "none" ? "move" : "default" }}
+                  onPointerDown={(e) => startMove(e, a)}
+                />
+                {selectedId === a.id && tool === "none" && (
+                  <SelectionHandles rect={bbox} onHandleDown={(h, e) => startResize(e, a, h)} />
+                )}
+              </g>
+            );
           }
           return null;
         })}
@@ -152,13 +229,16 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
       </svg>
 
       {annots.filter((a) => a.type === "text" && a.text).map((a) => {
-        const t = a.text!;
+        const cur = dragPreview && dragPreview.id === a.id ? dragPreview : a;
+        const t = cur.text!;
         const px = denormalizeRect({ x: t.x, y: t.y, w: t.w, h: t.h }, pageSize);
         const selected = a.id === selectedId;
         return (
-          <div key={a.id} className={"annot-text" + (selected ? " selected" : "")}
-            style={{ left: px.x, top: px.y, width: px.w, minHeight: px.h, color: a.color, fontSize: t.fontSize * pageSize.w }}
-            onPointerDown={() => { if (tool === "none") select(a.id); }}
+          <div
+            key={a.id}
+            className={"annot-text" + (selected ? " selected" : "")}
+            style={{ left: px.x, top: px.y, width: px.w, minHeight: px.h, color: a.color, fontSize: t.fontSize * pageSize.w, cursor: tool === "none" ? "move" : "default" }}
+            onPointerDown={(e) => { if (tool === "none") startMove(e, a); }}
           >
             {t.content}
           </div>
@@ -211,4 +291,93 @@ function TextInputBox({
       rows={1}
     />
   );
+}
+
+function SelectionHandles({
+  rect, onHandleDown,
+}: {
+  rect: { x: number; y: number; w: number; h: number };
+  onHandleDown: (handle: string, e: React.PointerEvent) => void;
+}) {
+  const hs = 8;
+  const handles: [string, number, number][] = [
+    ["nw", rect.x, rect.y],
+    ["n", rect.x + rect.w / 2, rect.y],
+    ["ne", rect.x + rect.w, rect.y],
+    ["e", rect.x + rect.w, rect.y + rect.h / 2],
+    ["se", rect.x + rect.w, rect.y + rect.h],
+    ["s", rect.x + rect.w / 2, rect.y + rect.h],
+    ["sw", rect.x, rect.y + rect.h],
+    ["w", rect.x, rect.y + rect.h / 2],
+  ];
+  return (
+    <>
+      <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="3 2" />
+      {handles.map(([h, hx, hy]) => (
+        <rect
+          key={h}
+          x={hx - hs / 2} y={hy - hs / 2} width={hs} height={hs}
+          fill="#fff" stroke="var(--accent)" strokeWidth={1}
+          style={{ cursor: "pointer" }}
+          onPointerDown={(e) => onHandleDown(h, e)}
+        />
+      ))}
+    </>
+  );
+}
+
+// Move an annotation's geometry by normalized delta.
+function moveAnnotGeom(a: Annotation, dxN: number, dyN: number): Annotation {
+  if (a.type === "rect" && a.rect) {
+    return { ...a, rect: { ...a.rect, x: a.rect.x + dxN, y: a.rect.y + dyN } };
+  }
+  if (a.type === "draw" && a.draw) {
+    return { ...a, draw: { ...a.draw, points: a.draw.points.map((p) => ({ x: p.x + dxN, y: p.y + dyN })) } };
+  }
+  if (a.type === "text" && a.text) {
+    return { ...a, text: { ...a.text, x: a.text.x + dxN, y: a.text.y + dyN } };
+  }
+  return a;
+}
+
+// Resize by handle. handle in {nw,n,ne,e,se,s,sw,w}. For draw, scale the bounding box.
+function resizeAnnotGeom(a: Annotation, handle: string, dxN: number, dyN: number): Annotation {
+  if (a.type === "rect" && a.rect) {
+    return { ...a, rect: resizeRect(a.rect, handle, dxN, dyN) };
+  }
+  if (a.type === "text" && a.text) {
+    const r = resizeRect({ x: a.text.x, y: a.text.y, w: a.text.w, h: a.text.h }, handle, dxN, dyN);
+    // scale font with width
+    const scale = a.text.w > 0 ? r.w / a.text.w : 1;
+    return { ...a, text: { ...a.text, x: r.x, y: r.y, w: r.w, h: r.h, fontSize: a.text.fontSize * scale, content: a.text.content } };
+  }
+  if (a.type === "draw" && a.draw) {
+    const bbox = bboxOf(a.draw.points);
+    const r = resizeRect(bbox, handle, dxN, dyN);
+    return { ...a, draw: { ...a.draw, points: rescalePoints(a.draw.points, bbox, r) } };
+  }
+  return a;
+}
+
+function resizeRect(r: { x: number; y: number; w: number; h: number }, handle: string, dxN: number, dyN: number) {
+  let { x, y, w, h } = r;
+  if (handle.includes("w")) { x += dxN; w -= dxN; }
+  if (handle.includes("e")) { w += dxN; }
+  if (handle.includes("n")) { y += dyN; h -= dyN; }
+  if (handle.includes("s")) { h += dyN; }
+  return { x, y, w: Math.max(0.01, w), h: Math.max(0.01, h) };
+}
+
+function bboxOf(points: { x: number; y: number }[]) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  return { x: minX, y: minY, w: Math.max(0.001, maxX - minX), h: Math.max(0.001, maxY - minY) };
+}
+
+function rescalePoints(points: { x: number; y: number }[], oldBox: { x: number; y: number; w: number; h: number }, newBox: { x: number; y: number; w: number; h: number }) {
+  const sx = newBox.w / oldBox.w;
+  const sy = newBox.h / oldBox.h;
+  return points.map((p) => ({ x: newBox.x + (p.x - oldBox.x) * sx, y: newBox.y + (p.y - oldBox.y) * sy }));
 }
