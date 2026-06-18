@@ -855,3 +855,125 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .hljs-strong { font-weight: bold; }
 .hljs-addition { color: var(--hljs-add-fg); background: var(--hljs-add-bg); }
 .hljs-deletion { color: var(--hljs-del-fg); background: var(--hljs-del-bg); }
+
+/* ============================================================
+   Per-theme PDF page character + paper texture
+   Goal: each theme's PDF page reads as "paper that belongs to
+   this theme" — not the blanket invert that made all 8 dark themes
+   look identical. Hard rule: never blur canvas text. Three levers,
+   all clarity-safe (per-pixel filters, overlays off the text path):
+
+   1. --pdf-filter  per-theme tuned invert. Dark themes keep
+      invert(1) hue-rotate(180deg) (color-preserving) as the base
+      and add subtle brightness/contrast/saturate; warm themes get
+      a faint sepia cast, cool themes a brighter/frostier lift.
+      No blur, contrast-positive → text stays crisp.
+   2. --pdf-page-shadow  tinted toward each theme's hue so the page
+      floats on that theme's surface. Sits OUTSIDE the page → zero
+      text impact.
+   3. .pdf-page-canvas-wrap::after vignette (+ sepia/solarized-
+      light ::before grain). pointer-events:none, z-index:1 → above
+      the canvas bitmap, below the transparent text layer (z2) and
+      annotation layers (z3+). Selection + annotations untouched.
+
+   Appended (not inline-edited) so it overrides the earlier blanket
+   invert via source order at equal specificity, and stays merge-
+   friendly with concurrent PdfViewer work.
+   ============================================================ */
+
+:root { --pdf-vignette: rgba(0, 0, 0, 0.22); }
+
+[data-theme="dark"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) contrast(1.03);
+  --pdf-page-shadow: 0 2px 14px rgba(8, 10, 26, 0.50);
+  --pdf-vignette: rgba(0, 0, 0, 0.22);
+}
+[data-theme="nord"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) brightness(1.04) saturate(1.05) contrast(1.02);
+  --pdf-page-shadow: 0 2px 14px rgba(18, 28, 48, 0.50);
+  --pdf-vignette: rgba(20, 30, 50, 0.26);
+}
+[data-theme="tokyo-night"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) brightness(1.03) saturate(1.06) contrast(1.02);
+  --pdf-page-shadow: 0 2px 14px rgba(14, 18, 48, 0.52);
+  --pdf-vignette: rgba(18, 22, 52, 0.26);
+}
+[data-theme="gruvbox-dark"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) sepia(0.10) saturate(1.08) contrast(1.02);
+  --pdf-page-shadow: 0 2px 14px rgba(40, 30, 8, 0.50);
+  --pdf-vignette: rgba(40, 30, 8, 0.24);
+}
+[data-theme="catppuccin-mocha"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) saturate(1.04) brightness(1.02) contrast(1.02);
+  --pdf-page-shadow: 0 2px 14px rgba(30, 26, 50, 0.46);
+  --pdf-vignette: rgba(30, 26, 50, 0.24);
+}
+[data-theme="solarized-dark"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) saturate(1.07) brightness(1.03) contrast(1.02);
+  --pdf-page-shadow: 0 2px 14px rgba(0, 40, 50, 0.50);
+  --pdf-vignette: rgba(0, 42, 52, 0.26);
+}
+[data-theme="dracula"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) saturate(1.08) brightness(1.02) contrast(1.03);
+  --pdf-page-shadow: 0 2px 14px rgba(40, 20, 60, 0.54);
+  --pdf-vignette: rgba(40, 22, 62, 0.26);
+}
+[data-theme="rose-pine"] {
+  --pdf-filter: invert(1) hue-rotate(180deg) sepia(0.07) saturate(1.05) hue-rotate(-10deg) brightness(1.01) contrast(1.02);
+  --pdf-page-shadow: 0 2px 14px rgba(40, 25, 45, 0.50);
+  --pdf-vignette: rgba(40, 26, 46, 0.24);
+}
+[data-theme="light"] {
+  --pdf-filter: none;
+  --pdf-page-shadow: 0 2px 12px rgba(20, 24, 40, 0.14);
+  --pdf-vignette: rgba(20, 24, 40, 0.05);
+}
+[data-theme="solarized-light"] {
+  --pdf-filter: sepia(0.12) brightness(1.02) contrast(1.01);
+  --pdf-page-shadow: 0 2px 12px rgba(120, 96, 40, 0.18);
+  --pdf-vignette: rgba(120, 96, 40, 0.07);
+}
+[data-theme="sepia"] {
+  --pdf-filter: sepia(0.42) brightness(0.96) contrast(1.03);
+  --pdf-page-shadow: 0 2px 12px rgba(74, 54, 33, 0.22);
+  --pdf-vignette: rgba(74, 54, 33, 0.10);
+}
+
+/* ---- Lever 3: paper-texture overlays (clarity-safe) ----
+   ::after = edge vignette for every theme. Radial gradient keeps
+   the page center (where text lives) fully transparent; only the
+   outer band picks up the theme tint. z-index:1 → above the canvas
+   bitmap, below the transparent text layer (z2) and annotation
+   layers (z3+); pointer-events:none so selection / annotation
+   pointer handling never hits it. */
+.pdf-page-canvas-wrap::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(ellipse at center, transparent 70%, var(--pdf-vignette, transparent) 100%);
+}
+
+/* Sepia + Solarized Light get a faint paper grain via ::before so
+   the reading surface feels like paper, not a flat screen. ~4.5%
+   opacity, multiply blend; same z-index/placement as the vignette.
+   Only the warm/paper light themes, where it reads as texture and
+   never approaches a text-legibility risk. */
+[data-theme="sepia"] .pdf-page-canvas-wrap::before,
+[data-theme="solarized-light"] .pdf-page-canvas-wrap::before {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
+  background-size: 120px 120px;
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+}
+
+/* Users who prefer more contrast get a clean, unornamented page. */
+@media (prefers-contrast: more) {
+  .pdf-page-canvas-wrap::after,
+  [data-theme="sepia"] .pdf-page-canvas-wrap::before,
+  [data-theme="solarized-light"] .pdf-page-canvas-wrap::before { display: none; }
+}
