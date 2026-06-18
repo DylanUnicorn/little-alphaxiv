@@ -69,18 +69,18 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
 
   function onPointerUp() {
     if (tool === "rect" && draftRect) {
-      const r = normalizeRect(
-        draftRect.x, draftRect.y, draftRect.w, draftRect.h, pageSize
-      );
-      // normalize negative width/height (drag up/left)
-      const fixed = {
-        x: r.w < 0 ? r.x + r.w : r.x,
-        y: r.h < 0 ? r.y + r.h : r.y,
-        w: Math.abs(r.w),
-        h: Math.abs(r.h),
+      // Canonicalize the px rect BEFORE normalizeRect: dragging up/left yields
+      // negative w/h, and normalizeRect clamps w/h to [0,1] via clamp01 — which
+      // would zero out a negative width and silently drop the annotation.
+      const px = {
+        x: draftRect.w < 0 ? draftRect.x + draftRect.w : draftRect.x,
+        y: draftRect.h < 0 ? draftRect.y + draftRect.h : draftRect.y,
+        w: Math.abs(draftRect.w),
+        h: Math.abs(draftRect.h),
       };
-      if (fixed.w >= MIN_SIZE && fixed.h >= MIN_SIZE) {
-        addAnnot({ type: "rect", page: pageNumber, rect: fixed, color });
+      const r = normalizeRect(px.x, px.y, px.w, px.h, pageSize);
+      if (r.w >= MIN_SIZE && r.h >= MIN_SIZE) {
+        addAnnot({ type: "rect", page: pageNumber, rect: r, color });
       }
       setDraftRect(null);
       setTool("none");
