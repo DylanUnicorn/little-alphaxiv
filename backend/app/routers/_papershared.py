@@ -55,7 +55,7 @@ def abstract_from_inverted_index(inv: dict | None) -> str:
 def is_safe_external_url(url: str) -> tuple[bool, str]:
     """SSRF guard for the open PDF proxy. Returns (ok, reason).
     Rejects non-http(s) schemes, unparseable URLs, and hosts that resolve to
-    private / loopback / link-local / multicast IPs."""
+    private / loopback / link-local / multicast / reserved / unspecified IPs."""
     if not url:
         return False, "empty url"
     try:
@@ -78,6 +78,6 @@ def is_safe_external_url(url: str) -> tuple[bool, str]:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
             continue
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
             return False, f"host resolves to non-public ip: {ip}"
     return True, "ok"

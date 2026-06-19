@@ -59,6 +59,7 @@ check("unsafe http-not-scheme", is_safe_external_url("ftp://example.org/x")[0], 
 check("unsafe no-scheme", is_safe_external_url("example.org/x")[0], False)
 check("unsafe loopback", is_safe_external_url("http://127.0.0.1/x")[0], False)
 check("unsafe private", is_safe_external_url("http://10.0.0.1/x")[0], False)
+check("unsafe unspecified", is_safe_external_url("http://0.0.0.0/x")[0], False)
 check("unsafe empty", is_safe_external_url("")[0], False)
 
 print(f"\nVERDICT: {'PASS' if not errors else 'FAIL'} ({len(errors)} failures)")
