@@ -224,6 +224,39 @@ export async function searchArxiv(
   return r.json();
 }
 
+/** OpenAlex search via the backend proxy. */
+export async function searchOpenAlex(
+  query: string,
+  maxResults = 8,
+  opts: { apiKey?: string; email?: string } = {}
+): Promise<{ total: number; results: Paper[] }> {
+  const params = new URLSearchParams({
+    q: query,
+    max_results: String(maxResults),
+  });
+  if (opts.apiKey) params.set("api_key", opts.apiKey);
+  if (opts.email) params.set("email", opts.email);
+  const r = await fetch(`${BASE}/api/openalex?${params.toString()}`);
+  if (!r.ok) throw new Error(`openalex search error ${r.status}`);
+  return r.json();
+}
+
+/** Semantic Scholar search via the backend proxy. */
+export async function searchSemanticScholar(
+  query: string,
+  maxResults = 8,
+  apiKey?: string
+): Promise<{ total: number; results: Paper[] }> {
+  const params = new URLSearchParams({
+    q: query,
+    max_results: String(maxResults),
+  });
+  if (apiKey) params.set("api_key", apiKey);
+  const r = await fetch(`${BASE}/api/semantic_scholar?${params.toString()}`);
+  if (!r.ok) throw new Error(`semantic scholar search error ${r.status}`);
+  return r.json();
+}
+
 /** General web search via anysearch MCP (backend). */
 export async function webSearch(
   query: string,
@@ -239,6 +272,12 @@ export async function webSearch(
 /** URL for a paper's PDF, served through the backend proxy (CORS + cache). */
 export function pdfUrl(arxivId: string): string {
   return `${BASE}/api/pdf/${encodeURIComponent(arxivId)}`;
+}
+
+/** URL for an arbitrary open-access PDF, served through the backend open proxy
+ *  (CORS + cache + SSRF guard). Used by non-arXiv results that carry oa_pdf_url. */
+export function pdfUrlForOa(url: string): string {
+  return `${BASE}/api/pdf-url?url=${encodeURIComponent(url)}`;
 }
 
 /** Fetch available models from the user's provider via the backend proxy. */
