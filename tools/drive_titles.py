@@ -89,7 +89,7 @@ with sync_playwright() as pw:
     page.wait_for_timeout(1200)
     q = "What is the core idea of vision transformers?"
     page.locator("textarea").first.fill(q)
-    page.locator("button:has-text('Send')").click()
+    page.locator(".composer-send-btn").click()
     titles = wait_for_title(page, MOCK_TITLE_GENERAL)
     summarized = any(MOCK_TITLE_GENERAL.lower() in (t or "").lower() for t in titles)
     labels = group_labels(page)
@@ -108,7 +108,7 @@ with sync_playwright() as pw:
     page.wait_for_timeout(400)
     try:
         page.locator(".chat-col textarea").first.fill("Explain the attention mechanism in one sentence")
-        page.locator(".chat-col button:has-text('Send')").click()
+        page.locator(".chat-col .composer-send-btn").click()
     except Exception as e:
         print("STEP2_paper_send_err:", e)
     titles = wait_for_title(page, MOCK_TITLE_PAPER, deadline_s=60)

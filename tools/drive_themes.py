@@ -106,7 +106,7 @@ def main():
             page.wait_for_timeout(800)
             ta = page.locator("textarea").first
             ta.fill("find me papers on vision transformers")
-            page.locator("button:has-text('Send')").click()
+            page.locator(".composer-send-btn").click()
             try:
                 page.wait_for_selector(".paper-card", timeout=20000)
             except Exception:

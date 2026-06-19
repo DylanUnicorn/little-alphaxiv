@@ -19,7 +19,7 @@ with sync_playwright() as pw:
     # chat
     seed(page); page.goto(APP, wait_until="networkidle"); page.wait_for_timeout(1200)
     page.locator("textarea").first.fill("找 vision transformer 论文")
-    page.locator("button:has-text('Send')").click()
+    page.locator(".composer-send-btn").click()
     # wait up to 90s for final assistant text (non-pending) — GLM is slow with reasoning
     deadline=time.time()+90; done=False
     while time.time()<deadline:
@@ -39,7 +39,7 @@ with sync_playwright() as pw:
     # type a question about the paper
     ta = page.locator(".chat-col textarea").first
     ta.fill("这篇论文的核心贡献是什么?一句话总结")
-    page.locator(".chat-col button:has-text('Send')").click()
+    page.locator(".chat-col .composer-send-btn").click()
     deadline=time.time()+90; pdone=False
     while time.time()<deadline:
         n = page.evaluate("""()=>document.querySelectorAll('.chat-col .msg-assistant:not(.pending)').length""")

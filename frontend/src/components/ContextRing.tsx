@@ -1,4 +1,4 @@
-// Context-usage ring mounted in the ChatPanel model-selector row. A small SVG
+// Context-usage ring mounted in the ChatComposer bar. A small SVG
 // donut shows how full the conversation's context window is (used / usable);
 // clicking it opens a popover with the full breakdown (used / total /
 // reserved / usable) and the capacity + reserve controls.

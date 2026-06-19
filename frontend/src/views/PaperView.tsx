@@ -151,7 +151,6 @@ export function PaperView() {
                 showHistory={showHistory}
                 onToggleHistory={() => setShowHistory((v) => !v)}
                 onNewConversation={handleNewConversation}
-                onModelChange={(m) => updateSettings(convIdState, { model: m })}
                 onStyleChange={(s: StylePreset) => updateSettings(convIdState, { style_preset: s })}
               />
             )}
