@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTextareaHeight } from "./chatComposer";
-import { pickImageFiles } from "./chatComposer";
+import { computeTextareaHeight, pickImageFiles } from "./chatComposer";
 
 describe("computeTextareaHeight", () => {
   it("clamps below the minimum to the minimum", () => {

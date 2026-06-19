@@ -70,6 +70,23 @@ export function ChatComposer({
     };
   }, []);
 
+  // Reset the drag overlay if the drop ends OUTSIDE the composer (e.g. released
+  // on the message list or out of the window), where onDrop never fires and the
+  // dragCounter would otherwise stay > 0 and leave the overlay stuck. When the
+  // drop is on the composer, onDrop already resets to 0, so these are no-ops.
+  useEffect(() => {
+    const reset = () => {
+      dragCounter.current = 0;
+      setDragOver(false);
+    };
+    window.addEventListener("drop", reset);
+    window.addEventListener("dragend", reset);
+    return () => {
+      window.removeEventListener("drop", reset);
+      window.removeEventListener("dragend", reset);
+    };
+  }, []);
+
   // Re-measure on value change and on mount: shrink to auto first so a
   // deleted line lets the box collapse, then grow to scrollHeight (clamped).
   const measure = useCallback(() => {
