@@ -26,6 +26,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // Bind IPv4 loopback explicitly. Vite's default host is "localhost", which
+    // on Windows resolves to ::1 (IPv6) only — so the server listens on
+    // [::1]:5173 and IPv4 127.0.0.1:5173 is refused (ERR_CONNECTION_REFUSED),
+    // even though localhost:5173 works. Pinning 127.0.0.1 makes the IPv4
+    // address work directly, keeps localhost working (browsers fall back to
+    // 127.0.0.1 when ::1 refuses), and matches tools/drive.py, which hardcodes
+    // http://127.0.0.1:5173 for the E2E rig. Loopback-only: not exposed to LAN.
+    host: "127.0.0.1",
     fs: {
       allow: [process.cwd(), nodeModulesReal],
     },
