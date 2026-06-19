@@ -30,12 +30,22 @@ const STRONG_RE = /\*\*([^*]+?)\*\*/g;
  *
  * This is a rehype (not remark) plugin — it runs on the HTML AST after
  * markdown→HTML conversion, so it can directly produce <strong> elements.
+ *
+ * Shape: a standard unified plugin is `(options) => transformer`. The binding
+ * itself is the plugin, so `rehypePlugins: [rehypeCjkEmphasis]` has unified
+ * call `rehypeCjkEmphasis()` to obtain the transformer `(tree) => void`. An
+ * earlier version wrapped this as `function rehypeCjkEmphasis(): Plugin {
+ * return () => (tree) => … }` — a factory returning a plugin — which added an
+ * extra call layer: unified's "transformer" returned the inner function
+ * instead of mutating the tree, so unified replaced the whole tree with that
+ * function and react-markdown rendered nothing (blanking ALL assistant
+ * markdown, including the `---` horizontal rule). TypeScript did not catch it
+ * (a `() => Transformer` is assignable to `Transformer`), so the regression is
+ * pinned by a runtime render test — see remark-cjk-emphasis.test.ts.
  */
-export function rehypeCjkEmphasis(): Plugin {
-  return () => (tree: Node) => {
-    if (!tree) return;
-    walk(tree as unknown as Record<string, unknown>);
-  };
+export const rehypeCjkEmphasis: Plugin = () => (tree: Node) => {
+  if (!tree) return;
+  walk(tree as unknown as Record<string, unknown>);
 
   function walk(node: Record<string, unknown>): void {
     if (!node || typeof node !== "object") return;
@@ -94,4 +104,4 @@ export function rehypeCjkEmphasis(): Plugin {
       }
     }
   }
-}
+};
