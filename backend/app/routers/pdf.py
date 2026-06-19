@@ -28,6 +28,10 @@ _CACHE_DIR = Path(
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
 
+# Cap on a single OA PDF fetch through the open proxy — guards against
+# unbounded/OOM responses (arbitrary-URL proxy, unlike the trusted arxiv path).
+_OA_PDF_MAX_BYTES = 100 * 1024 * 1024
+
 
 def _cache_path(arxiv_id: str) -> Path:
     # sanitize: keep alnum + dot + dash only
@@ -66,17 +70,41 @@ async def _fetch_from_url(url: str) -> bytes:
     ok, reason = is_safe_external_url(url)
     if not ok:
         raise HTTPException(status_code=400, detail=f"refused pdf url: {reason}")
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+    # Do NOT follow redirects on the open proxy: a 3xx could redirect to an
+    # internal/metadata host that bypasses the SSRF guard (which only checks
+    # the original URL). OA PDFs that require redirects fail with a clear 502.
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
         try:
             resp = await client.get(url, headers={"User-Agent": "little-alphaxiv/0.1"})
         except httpx.RequestError as exc:
             raise HTTPException(status_code=502, detail=f"pdf url error: {exc}") from exc
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"pdf url returned {resp.status_code} for {url}",
-        )
-    return resp.content
+        if resp.is_redirect:
+            raise HTTPException(
+                status_code=502,
+                detail=f"pdf url redirected (not followed for safety): {resp.status_code}",
+            )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"pdf url returned {resp.status_code} for {url}",
+            )
+        # Guard against unbounded fetches: honor a declared content-length, and
+        # also cap the streamed body (chunked responses have no content-length).
+        cl = resp.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > _OA_PDF_MAX_BYTES:
+            raise HTTPException(
+                status_code=413, detail=f"pdf url too large: {cl} bytes (limit {_OA_PDF_MAX_BYTES})"
+            )
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in resp.aiter_bytes():
+            total += len(chunk)
+            if total > _OA_PDF_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413, detail=f"pdf url exceeded {_OA_PDF_MAX_BYTES} bytes"
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
 
 
 @router.get("/pdf-url")
