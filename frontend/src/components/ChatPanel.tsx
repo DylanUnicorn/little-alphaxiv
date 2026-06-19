@@ -15,6 +15,7 @@ import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { runConversation, generateConversationTitle } from "../lib/llm";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
+import { isAbortError } from "../lib/chatStop";
 import * as db from "../lib/db";
 import { PaperCard } from "./PaperCard";
 import { Markdown } from "./Markdown";
@@ -106,6 +107,11 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // AbortController for the current in-flight turn, if any. Null when idle.
+  // Clicking Stop aborts the streaming fetch (runConversation already threads
+  // the signal through to fetch); the catch block distinguishes that user abort
+  // from a real network/upstream error.
+  const abortRef = useRef<AbortController | null>(null);
   // Stable callback so memoized MessageRows don't re-render on every keystroke.
   const onOpenPaper = useCallback((id: string) => navigate(`/paper/${id}`), [navigate]);
 
@@ -225,6 +231,10 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     return messages;
   }
 
+  function stop() {
+    abortRef.current?.abort();
+  }
+
   async function send(override?: string) {
     const text = (override ?? input).trim();
     if ((!text && attachments.length === 0) || busy) return;
@@ -241,6 +251,8 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     await appendMessages(c.id, [userMsg]);
     setInput("");
     setAttachments([]);
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setStatus("Thinking…");
 
@@ -261,6 +273,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         messages: history,
         systemPrompt: effectiveSystemPrompt,
         model: c.model,
+        signal: controller.signal,
         callbacks: {
           onAssistantStart: () => {
             buf = "";
@@ -319,25 +332,39 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         });
       }
     } catch (e: any) {
-      const errMsg = e?.message || "error";
       setStreaming("");
       setReasoning("");
-      // Preserve whatever had already streamed before the error so the user
-      // doesn't lose the in-progress answer when a stream is interrupted (e.g.
-      // the connection dropped while the tab was backgrounded). Previously the
-      // partial buffer was discarded and replaced with a bare error message,
-      // so the output the user was reading would vanish mid-reply.
-      if (buf.trim()) {
-        await appendMessages(c.id, [
-          { role: "assistant", content: buf, ui: { error: `Response interrupted: ${errMsg}` } },
-        ]);
+      if (isAbortError(controller.signal, e)) {
+        // User clicked Stop. Keep whatever already streamed this round and mark
+        // it "已停止" (dim, not red). If nothing streamed yet (stopped during a
+        // search/tool phase before any assistant text), append nothing — the
+        // turn just ends cleanly and the next send works normally.
+        if (buf.trim()) {
+          await appendMessages(c.id, [
+            { role: "assistant", content: buf, ui: { stopped: true } },
+          ]);
+        }
       } else {
-        await appendMessages(c.id, [
-          { role: "assistant", content: `⚠️ ${errMsg}`, ui: { error: String(errMsg) } },
-        ]);
+        // Real error (network / upstream). Preserve whatever had already
+        // streamed before the error so the user doesn't lose the in-progress
+        // answer when a stream is interrupted (e.g. the connection dropped
+        // while the tab was backgrounded). Previously the partial buffer was
+        // discarded and replaced with a bare error message, so the output the
+        // user was reading would vanish mid-reply.
+        const errMsg = e?.message || "error";
+        if (buf.trim()) {
+          await appendMessages(c.id, [
+            { role: "assistant", content: buf, ui: { error: `Response interrupted: ${errMsg}` } },
+          ]);
+        } else {
+          await appendMessages(c.id, [
+            { role: "assistant", content: `⚠️ ${errMsg}`, ui: { error: String(errMsg) } },
+          ]);
+        }
       }
       setStatus("");
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
   }
@@ -395,6 +422,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         value={input}
         onValueChange={setInput}
         onSend={() => send()}
+        onStop={() => stop()}
         onKeyDown={onKey}
         onPaste={handlePaste}
         onAttach={() => fileInputRef.current?.click()}
@@ -462,6 +490,7 @@ const MessageRow = memo(function MessageRow({
         ""
       )}
       {msg.ui?.error && <div className="msg-error">{msg.ui.error}</div>}
+      {msg.ui?.stopped && <div className="msg-stopped">已停止</div>}
     </div>
   );
 });
