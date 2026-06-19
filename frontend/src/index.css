@@ -554,24 +554,26 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   color: var(--text-dim); background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .msg-assistant a { color: var(--accent); }
-/* Bold emphasis: a soft accent-tinted marker behind the text, so key terms
-   read as deliberately highlighted instead of just a weight bump. Tinted via
-   color-mix on the theme accent, so it stays harmonious across every theme
-   without per-theme overrides. Color is left inherited so the streaming
-   ".pending" dim state still applies — the marker is the emphasis cue, not a
-   color change. box-decoration-break clones the band per wrapped line. */
+/* Bold emphasis: a small bordered box (pill) wrapping the bold text, so key
+   terms read as a distinct tag instead of just a weight bump. The text takes
+   the theme accent for a higher-contrast-but-harmonious color (same hue family
+   as links/blockquote, so it never clashes). The box is sized so adjacent
+   lines never interfere: strong gets its own line-height (1.3) so its border
+   box is shorter than the paragraph line box (held at 1.55 by the strut),
+   leaving a gap above/below — two stacked bold lines get ~3.5px between boxes
+   instead of touching, and a fully-bold line stays the same height as normal
+   text. box-decoration-break:clone gives each wrapped segment its own complete
+   box. Note: this overrides color, so the streaming ".pending" dim no longer
+   tints bold text — acceptable, the box itself is the emphasis cue. */
 .msg-assistant strong,
 .msg-reasoning strong {
   font-weight: 700;
-  background: linear-gradient(
-    to bottom,
-    transparent 45%,
-    color-mix(in srgb, var(--accent) 24%, transparent) 45%,
-    color-mix(in srgb, var(--accent) 24%, transparent) 92%,
-    transparent 92%
-  );
-  padding: 0 0.12em;
-  border-radius: 2px;
+  line-height: 1.3;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  padding: 0 0.42em;
+  border-radius: var(--radius-sm);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
