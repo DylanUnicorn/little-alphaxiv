@@ -3,11 +3,13 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
+import { OriginBanner } from "./components/OriginBanner";
 import { ChatView } from "./views/ChatView";
 import { PaperView } from "./views/PaperView";
 import { SettingsView } from "./views/SettingsView";
 import { useConversations } from "./store/conversations";
 import { useSettings } from "./store/settings";
+import { redirectTargetForCanonicalHost } from "./lib/origin";
 
 export default function App() {
   const load = useConversations((s) => s.load);
@@ -15,12 +17,47 @@ export default function App() {
   const setActive = useConversations((s) => s.setActive);
   const conversations = useConversations((s) => s.conversations);
   const loaded = useConversations((s) => s.loaded);
+  const hasHistory = useConversations((s) => s.hasHistory);
   const navigate = useNavigate();
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Loopback-origin unification: localhost and 127.0.0.1 are different browser
+  // origins with isolated storage. An EMPTY 127.0.0.1 is safe to redirect to
+  // the canonical localhost (never strands data); this is the only redirect
+  // direction. Runs once after load() completes.
+  useEffect(() => {
+    if (!loaded) return;
+    const target = redirectTargetForCanonicalHost(
+      location.hostname,
+      location.protocol,
+      hasHistory,
+      location.origin,
+      location.pathname,
+      location.search,
+      location.hash
+    );
+    if (target) location.replace(target);
+  }, [loaded, hasHistory]);
+
+  // If we arrived on localhost via our own redirect, strip the ?laxredir=1
+  // marker so the URL stays clean. The banner reads its presence to suppress
+  // itself for this arrival (see OriginBanner / shouldShowOriginBanner).
+  useEffect(() => {
+    if (!loaded) return;
+    if (location.hostname !== "localhost" || location.protocol !== "http:") return;
+    const params = new URLSearchParams(location.search);
+    if (!params.has("laxredir")) return;
+    params.delete("laxredir");
+    const qs = params.toString();
+    const cleanSearch = qs ? `?${qs}` : "";
+    if (cleanSearch !== location.search) {
+      history.replaceState(null, "", `${location.pathname}${cleanSearch}${location.hash}`);
+    }
+  }, [loaded]);
 
   // On the root path: open the most recent conversation, or create a fresh
   // general chat. Empty chats are never persisted, so after a reload there are
@@ -39,6 +76,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <OriginBanner />
       <Sidebar />
       <Routes>
         <Route path="/" element={<RootLanding loaded={loaded} onMount={ensureRootChat} />} />
