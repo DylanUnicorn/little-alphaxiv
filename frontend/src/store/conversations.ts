@@ -18,6 +18,14 @@ interface ConvState {
   activeId: string | null;
   loading: boolean;
   loaded: boolean;
+  // True iff IDB held any persisted user data at load() time — conversations
+  // with messages, annotations, OR cached papers. Read-only after load (no
+  // setter). Reflects persisted data, NOT in-memory state — ensureRootChat
+  // creates an empty in-memory general chat that would falsely flip
+  // conversations.length > 0, so the origin-redirect/banner logic reads this
+  // flag instead. Broadened from conversations-only so the redirect never
+  // fires away from an origin holding annotations/cached-papers (no stranding).
+  hasHistory: boolean;
   load: () => Promise<void>;
   setActive: (id: string | null) => void;
   create: (opts: {
@@ -85,6 +93,7 @@ export const useConversations = create<ConvState>((set, get) => ({
   activeId: null,
   loading: false,
   loaded: false,
+  hasHistory: false,
 
   load: async () => {
     set({ loading: true });
@@ -94,7 +103,17 @@ export const useConversations = create<ConvState>((set, get) => ({
     const empties = all.filter((c) => c.messages.length === 0);
     const conversations = all.filter((c) => c.messages.length > 0);
     await Promise.all(empties.map((c) => db.deleteConversation(c.id)));
-    set({ conversations, loading: false, loaded: true });
+    // hasHistory = any persisted user data: conversations (with messages),
+    // annotations, or cached papers. Computed once at load; read-only after.
+    const annotationCount = await db.countAnnotations();
+    const paperCount = await db.countPapers();
+    set({
+      conversations,
+      loading: false,
+      loaded: true,
+      hasHistory:
+        conversations.length > 0 || annotationCount > 0 || paperCount > 0,
+    });
   },
 
   setActive: (id) => set({ activeId: id }),

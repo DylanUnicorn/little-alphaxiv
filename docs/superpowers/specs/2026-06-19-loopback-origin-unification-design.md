@@ -65,7 +65,7 @@ After `localhost` load reads the `?laxredir=1` marker (to suppress the banner fo
 
 ### `store/conversations.ts` — new `hasHistory` flag
 
-`load()` sets a new stable boolean `hasHistory` on the store: `true` iff IDB returned **any** conversation with `messages.length > 0` (the same filter `load()` already applies before returning `conversations`).
+`load()` sets a new stable boolean `hasHistory` on the store: `true` iff IDB holds **any** persisted user data — a conversation with `messages.length > 0` (the same filter `load()` already applies before returning `conversations`), **OR** any annotations, **OR** any cached papers. (Broadened from conversations-only after final review: annotations persist to IDB immediately when a user annotates a PDF, so a conversations-only check would let the redirect fire *away* from an origin holding annotations but no chats — stranding them and producing a confusing bounce. `db.ts` gains two additive read helpers `countAnnotations()` / `countPapers()`; no schema change, no version bump.)
 
 - Why a dedicated flag instead of `conversations.length > 0`: `App.tsx`'s `ensureRootChat` creates an in-memory empty general chat when there is no history. That makes `conversations.length` flip to 1 *without* real history existing, which would wrongly suppress the banner/redirect. `hasHistory` is set once at load from the IDB result and is not affected by the in-memory empty chat.
 - `hasHistory` is read-only after `load()` completes (no setter); it reflects "did persisted history exist at load time."
@@ -165,9 +165,9 @@ New small component. Matches existing empty-state styling (`.chat-empty` / `.con
 7. `localhost` + http + **has** history → no banner.
 8. Real domain (`app.example.com`) + https → no redirect, no banner (dev-only gate).
 9. `siblingHost` symmetry; `siblingOriginUrl` port/path/hash preservation.
-10. `hasHistory` semantics: `load()` sets it true iff IDB returned ≥1 conversation with messages.
+10. `hasHistory` semantics: `load()` sets it true iff IDB holds ≥1 conversation with messages, OR any annotations, OR any cached papers.
 
-No E2E/Playwright test: the two-live-origins scenario is awkward to drive deterministically (needs two dev servers / two origins), and the decision logic is fully covered by pure-function tests. `App.tsx` wiring is verified by `npm run typecheck` (the gate).
+Decision logic is fully covered by pure-function tests (`origin.test.ts`, 24 tests). `App.tsx` wiring is verified by `npm run typecheck`. A Playwright smoke test additionally verifies the user-visible surface (banner renders full-width on an empty `localhost` origin; redirect fires from an empty `127.0.0.1`).
 
 ## Out of scope
 
@@ -178,5 +178,5 @@ No E2E/Playwright test: the two-live-origins scenario is awkward to drive determ
 ## Non-regression notes
 
 - `store/conversations.ts`'s existing empty-conversation purge in `load()` is unchanged; `hasHistory` is computed from the post-purge, pre-empty-chat list.
-- `db.ts` untouched — no schema change, no version bump.
+- `db.ts` gains two additive read helpers (`countAnnotations`, `countPapers`) for the broadened `hasHistory`; no schema change, no version bump.
 - The `?laxredir=1` param is internal and ephemeral; no router changes needed (React Router ignores unknown query params).
