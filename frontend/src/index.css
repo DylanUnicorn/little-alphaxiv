@@ -265,7 +265,8 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--radius-sm); }
 
-.app { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+.app { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+.app-main { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 
 /* ---------- Sidebar ---------- */
 .sidebar {

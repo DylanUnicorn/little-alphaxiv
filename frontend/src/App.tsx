@@ -77,15 +77,17 @@ export default function App() {
   return (
     <div className="app">
       <OriginBanner />
-      <Sidebar />
-      <Routes>
-        <Route path="/" element={<RootLanding loaded={loaded} onMount={ensureRootChat} />} />
-        <Route path="/chat/:id" element={<ChatView />} />
-        <Route path="/paper/:arxivId" element={<PaperView />} />
-        <Route path="/paper/:arxivId/:convId" element={<PaperView />} />
-        <Route path="/settings" element={<SettingsView />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <div className="app-main">
+        <Sidebar />
+        <Routes>
+          <Route path="/" element={<RootLanding loaded={loaded} onMount={ensureRootChat} />} />
+          <Route path="/chat/:id" element={<ChatView />} />
+          <Route path="/paper/:arxivId" element={<PaperView />} />
+          <Route path="/paper/:arxivId/:convId" element={<PaperView />} />
+          <Route path="/settings" element={<SettingsView />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
     </div>
   );
 }

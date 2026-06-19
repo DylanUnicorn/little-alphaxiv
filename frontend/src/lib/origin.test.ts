@@ -101,6 +101,10 @@ describe("shouldShowOriginBanner", () => {
     expect(shouldShowOriginBanner("127.0.0.1", "http:", false, false, false)).toBe(false);
   });
 
+  it("never shows on localhost over https (dev-only: http gate)", () => {
+    expect(shouldShowOriginBanner("localhost", "https:", false, false, false)).toBe(false);
+  });
+
   it("never shows on a real domain", () => {
     expect(shouldShowOriginBanner("app.example.com", "https:", false, false, false)).toBe(false);
   });
