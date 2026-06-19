@@ -78,7 +78,7 @@ with sync_playwright() as pw:
     # We are on an empty general chat. Type a distinctive question + send.
     q = "What is the core idea of vision transformers?"
     page.locator("textarea").first.fill(q)
-    page.locator("button:has-text('Send')").click()
+    page.locator(".composer-send-btn").click()
     # rename happens right after appendMessages, before the LLM answers.
     renamed = False
     deadline = time.time() + 15
@@ -102,7 +102,7 @@ with sync_playwright() as pw:
     # ask a question in the paper chat to title the thread
     try:
         page.locator(".chat-col textarea").first.fill("Explain the attention mechanism in one sentence")
-        page.locator(".chat-col button:has-text('Send')").click()
+        page.locator(".chat-col .composer-send-btn").click()
     except Exception as e:
         print("STEP3_paper_send_err:", e)
     prename = False

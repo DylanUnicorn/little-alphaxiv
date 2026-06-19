@@ -59,7 +59,7 @@ def send_message(page):
     page.goto(APP, wait_until="networkidle")
     page.wait_for_timeout(800)
     page.locator("textarea").first.fill("find me papers on vision transformers")
-    page.locator("button:has-text('Send')").click()
+    page.locator(".composer-send-btn").click()
 
 
 def scenario_background(pw):
