@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef, useEffect, useCallback } from "react";
+import { useLayoutEffect, useRef, useEffect, useCallback, useState } from "react";
 import type { Attachment } from "../types";
-import { computeTextareaHeight } from "../lib/chatComposer";
+import { computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
 
@@ -11,6 +11,7 @@ interface Props {
   onKeyDown: (e: React.KeyboardEvent) => void;
   onPaste: (e: React.ClipboardEvent) => void;
   onAttach: () => void;
+  onDropFiles: (files: File[]) => void;
   busy: boolean;
   placeholder: string;
   attachments: Attachment[];
@@ -40,6 +41,7 @@ export function ChatComposer({
   onKeyDown,
   onPaste,
   onAttach,
+  onDropFiles,
   busy,
   placeholder,
   attachments,
@@ -51,6 +53,22 @@ export function ChatComposer({
   systemPrompt,
 }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Drag-and-drop state. dragCounter ref solves the nested-element flicker:
+  // dragenter on a child fires before dragleave on the parent, so counting
+  // enters/leaves and clearing the overlay only at zero avoids strobing as
+  // the cursor crosses the textarea / previews / bar children.
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+  const [rejectToast, setRejectToast] = useState<string | null>(null);
+  const rejectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel any pending reject-toast timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (rejectTimer.current) clearTimeout(rejectTimer.current);
+    };
+  }, []);
 
   // Re-measure on value change and on mount: shrink to auto first so a
   // deleted line lets the box collapse, then grow to scrollHeight (clamped).
@@ -80,10 +98,70 @@ export function ChatComposer({
     };
   }, [measure]);
 
+  // Only treat drags carrying real files as drop candidates; ignore text/link
+  // drags so normal in-textarea drag-drop of selections is unaffected.
+  const hasFiles = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+  const onDragEnter = useCallback((e: React.DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+    setDragOver(true);
+  }, []);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); // required to permit the drop
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    if (!hasFiles(e)) return;
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setDragOver(false);
+    }
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragCounter.current = 0;
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      const { images, rejected } = pickImageFiles(files);
+      if (images.length > 0) onDropFiles(images);
+      if (rejected.length > 0) {
+        // Restart the timer so back-to-back rejects show one steady toast.
+        if (rejectTimer.current) clearTimeout(rejectTimer.current);
+        setRejectToast("仅支持图片");
+        rejectTimer.current = setTimeout(() => {
+          setRejectToast(null);
+          rejectTimer.current = null;
+        }, 2500);
+      }
+    },
+    [onDropFiles]
+  );
+
   const canSend = !busy && (value.trim().length > 0 || attachments.length > 0);
 
   return (
-    <div className="chat-composer">
+    <div
+      className={`chat-composer${dragOver ? " drag-active" : ""}`}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragOver && (
+        <div className="chat-composer-drop-overlay" aria-hidden>
+          <span>⬇ 松开以添加图片</span>
+        </div>
+      )}
       <div className="chat-composer-input">
         <textarea
           ref={taRef}
@@ -148,6 +226,11 @@ export function ChatComposer({
           </button>
         </div>
       </div>
+      {rejectToast && (
+        <div className="chat-composer-reject-toast" role="status">
+          {rejectToast}
+        </div>
+      )}
     </div>
   );
 }

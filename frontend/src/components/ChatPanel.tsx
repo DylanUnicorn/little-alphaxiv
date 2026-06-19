@@ -189,6 +189,11 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     e.target.value = ""; // reset so the same file can be re-selected
   }, [addFiles]);
 
+  // Handle drag-and-drop image drop (wired to ChatComposer.onDropFiles).
+  const handleDropFiles = useCallback((files: File[]) => {
+    addFiles(files);
+  }, [addFiles]);
+
   if (!conv) return <div className="chat-panel"><p>No conversation.</p></div>;
 
   const c = conv;
@@ -401,6 +406,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         onKeyDown={onKey}
         onPaste={handlePaste}
         onAttach={() => fileInputRef.current?.click()}
+        onDropFiles={handleDropFiles}
         busy={busy}
         placeholder={busy ? "…" : "Message…  (Enter to send, Shift+Enter newline, Ctrl+V to paste images)"}
         attachments={attachments}
