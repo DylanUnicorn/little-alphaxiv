@@ -213,9 +213,9 @@
   --code-bg: #002b36; --code-fg: #93a1a1;
 }
 [data-theme="solarized-light"] {
-  --pdf-filter: none; --pdf-page-bg: #fdf6e3;
+  --pdf-filter: none; --pdf-page-bg: #eee8d5;
   --code-bg: #eee8d5; --code-fg: #073642;
-  --pdf-page-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18);
 }
 [data-theme="sepia"] {
   --pdf-filter: sepia(0.35) brightness(0.95); --pdf-page-bg: #f4ecd8;
@@ -988,13 +988,16 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
    This replaces the earlier accent-based wash — the accent is for actions and
    selection, not for coloring an entire page surface (impeccable: "accent for
    primary actions, current selection, state indicators only, not decoration";
-   tinted neutrals at 0.005–0.015 chroma toward the brand's own hue). */
+   tinted neutrals at 0.005–0.015 chroma toward the brand's own hue).
+   EXCEPTION: solarized-dark washes with the accent teal itself, because for
+   Solarized that hue IS the theme's identity — a gray wash reads as a generic
+   dark theme, not Solarized. Per-theme, not a blanket rule. */
 [data-theme="dark"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(230,232,238,0.12); --pdf-page-shadow: 0 2px 14px rgba(8,10,26,0.50); }
 [data-theme="nord"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(236,239,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(18,28,48,0.50); }
 [data-theme="tokyo-night"]      { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(192,202,245,0.13); --pdf-page-shadow: 0 2px 14px rgba(14,18,48,0.52); }
 [data-theme="gruvbox-dark"]     { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(235,219,178,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,30,8,0.50); }
 [data-theme="catppuccin-mocha"] { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(205,214,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(30,26,50,0.46); }
-[data-theme="solarized-dark"]   { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(147,161,161,0.14); --pdf-page-shadow: 0 2px 14px rgba(0,40,50,0.50); }
+[data-theme="solarized-dark"]   { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(42,161,152,0.18); --pdf-page-shadow: 0 2px 14px rgba(0,40,50,0.50); }
 [data-theme="dracula"]          { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(248,248,242,0.12); --pdf-page-shadow: 0 2px 14px rgba(40,20,60,0.54); }
 [data-theme="rose-pine"]        { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(224,222,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,25,45,0.50); }
 /* Light themes: wash with each theme's bg-3 panel color — light, low-chroma,
@@ -1005,7 +1008,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
    Solarized rather than near-white. Dark text stays above 4.5:1 (wash color is
    light cream, and the text layer sits above the wash). */
 [data-theme="light"]            { --pdf-filter: none;                          --pdf-tint: rgba(236,238,242,0.08); --pdf-page-shadow: 0 2px 12px rgba(20,24,40,0.14); }
-[data-theme="solarized-light"]  { --pdf-filter: sepia(0.15) brightness(1.01);  --pdf-tint: rgba(230,220,192,0.16); --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
+[data-theme="solarized-light"]  { --pdf-filter: sepia(0.38) brightness(0.97) saturate(1.08);  --pdf-tint: rgba(221,210,176,0.22); --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
 [data-theme="sepia"]            { --pdf-filter: sepia(0.45) brightness(0.96);  --pdf-tint: rgba(236,224,196,0.12); --pdf-page-shadow: 0 2px 12px rgba(74,54,33,0.22); }
 
 /* Full-page theme-color wash over the canvas bitmap (see header).
@@ -1031,7 +1034,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   z-index: 1;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
   background-size: 120px 120px;
-  opacity: 0.045;
+  opacity: 0.06;
   mix-blend-mode: multiply;
 }
 
