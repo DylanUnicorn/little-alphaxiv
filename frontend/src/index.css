@@ -977,19 +977,30 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
    Sepia/Solarized-Light also get a faint paper grain (::before).
    ============================================================ */
 
-:root { --pdf-tint: rgba(124, 140, 255, 0.18); }   /* default-dark indigo */
+:root { --pdf-tint: rgba(230, 232, 238, 0.12); }   /* default-dark: text #e6e8ee */
 
-[data-theme="dark"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(124,140,255,0.18); --pdf-page-shadow: 0 2px 14px rgba(8,10,26,0.50); }
-[data-theme="nord"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(136,192,208,0.24); --pdf-page-shadow: 0 2px 14px rgba(18,28,48,0.50); }
-[data-theme="tokyo-night"]      { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(122,162,247,0.22); --pdf-page-shadow: 0 2px 14px rgba(14,18,48,0.52); }
-[data-theme="gruvbox-dark"]     { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(250,189,47,0.20);  --pdf-page-shadow: 0 2px 14px rgba(40,30,8,0.50); }
-[data-theme="catppuccin-mocha"] { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(203,166,247,0.20); --pdf-page-shadow: 0 2px 14px rgba(30,26,50,0.46); }
-[data-theme="solarized-dark"]   { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(42,161,152,0.24);  --pdf-page-shadow: 0 2px 14px rgba(0,40,50,0.50); }
-[data-theme="dracula"]          { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(189,147,249,0.22); --pdf-page-shadow: 0 2px 14px rgba(40,20,60,0.54); }
-[data-theme="rose-pine"]        { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(235,188,186,0.20); --pdf-page-shadow: 0 2px 14px rgba(40,25,45,0.50); }
-[data-theme="light"]            { --pdf-filter: none;                          --pdf-tint: rgba(79,93,255,0.09);  --pdf-page-shadow: 0 2px 12px rgba(20,24,40,0.14); }
-[data-theme="solarized-light"]  { --pdf-filter: sepia(0.15) brightness(1.01);  --pdf-tint: rgba(181,137,0,0.09);  --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
-[data-theme="sepia"]            { --pdf-filter: sepia(0.45) brightness(0.96);  --pdf-tint: rgba(184,99,46,0.15);  --pdf-page-shadow: 0 2px 12px rgba(74,54,33,0.22); }
+/* Dark themes: wash with each theme's TEXT color — light, low-chroma, carrying
+   the theme's distinct hue. Alpha ~0.12 lifts the near-black inverted page
+   just enough to read as "this theme's ambient darkness" without dimming the
+   light text (text is already ~L0.9, a 0.12 wash of ~L0.88 barely touches it).
+   This replaces the earlier accent-based wash — the accent is for actions and
+   selection, not for coloring an entire page surface (impeccable: "accent for
+   primary actions, current selection, state indicators only, not decoration";
+   tinted neutrals at 0.005–0.015 chroma toward the brand's own hue). */
+[data-theme="dark"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(230,232,238,0.12); --pdf-page-shadow: 0 2px 14px rgba(8,10,26,0.50); }
+[data-theme="nord"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(236,239,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(18,28,48,0.50); }
+[data-theme="tokyo-night"]      { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(192,202,245,0.13); --pdf-page-shadow: 0 2px 14px rgba(14,18,48,0.52); }
+[data-theme="gruvbox-dark"]     { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(235,219,178,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,30,8,0.50); }
+[data-theme="catppuccin-mocha"] { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(205,214,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(30,26,50,0.46); }
+[data-theme="solarized-dark"]   { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(147,161,161,0.14); --pdf-page-shadow: 0 2px 14px rgba(0,40,50,0.50); }
+[data-theme="dracula"]          { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(248,248,242,0.12); --pdf-page-shadow: 0 2px 14px rgba(40,20,60,0.54); }
+[data-theme="rose-pine"]        { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(224,222,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,25,45,0.50); }
+/* Light themes: wash with each theme's bg-3 panel color — light, low-chroma,
+   the theme's own surface tone. Alpha ~0.08–0.12 gives a whisper of the
+   theme's warmth/coolness on the white paper without darkening dark text. */
+[data-theme="light"]            { --pdf-filter: none;                          --pdf-tint: rgba(236,238,242,0.08); --pdf-page-shadow: 0 2px 12px rgba(20,24,40,0.14); }
+[data-theme="solarized-light"]  { --pdf-filter: sepia(0.15) brightness(1.01);  --pdf-tint: rgba(230,220,192,0.10); --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
+[data-theme="sepia"]            { --pdf-filter: sepia(0.45) brightness(0.96);  --pdf-tint: rgba(236,224,196,0.12); --pdf-page-shadow: 0 2px 12px rgba(74,54,33,0.22); }
 
 /* Full-page theme-color wash over the canvas bitmap (see header).
    Solid translucent fill, alpha baked into --pdf-tint. */
