@@ -375,8 +375,35 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-2);
+  position: relative; /* anchor for the drop overlay */
 }
 .chat-composer:focus-within { border-color: var(--accent); }
+/* Drag-over affordance: tints the whole composer with a dashed accent border
+   and a centered prompt. pointer-events:none so the drop lands on the
+   container, not the overlay. */
+.chat-composer.drag-active {
+  border-color: var(--accent);
+}
+.chat-composer-drop-overlay {
+  position: absolute; inset: 0;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent); font-size: 14px; font-weight: 600;
+  pointer-events: none;
+  z-index: 2;
+}
+/* Reject toast: in-flow flex child, briefly expands the composer. */
+.chat-composer-reject-toast {
+  margin-top: 6px;
+  padding: 4px 8px;
+  align-self: center;
+  font-size: 12px; color: var(--text-dim);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 .chat-composer-input {
   /* plain wrapper — the border + radius + bg live on .chat-composer so the
      single box wraps the textarea AND the bottom bar together */

@@ -52,7 +52,7 @@ Append to `frontend/src/lib/chatComposer.test.ts` (after the existing `computeTe
 import { pickImageFiles } from "./chatComposer";
 
 describe("pickImageFiles", () => {
-  const img = (name: string) => new File(["x"], name, { type: "image/png" });
+  const img = (name: string, type = "image/png") => new File(["x"], name, { type });
   const other = (name: string, type = "text/plain") =>
     new File(["x"], name, { type });
 
@@ -72,7 +72,7 @@ describe("pickImageFiles", () => {
     const { images, rejected } = pickImageFiles([
       img("a.png"),
       other("b.txt"),
-      img("c.gif", ) && new File(["x"], "c.gif", { type: "image/gif" }),
+      img("c.gif", "image/gif"),
     ]);
     expect(images.map((f) => f.name)).toEqual(["a.png", "c.gif"]);
     expect(rejected.map((f) => f.name)).toEqual(["b.txt"]);
@@ -92,8 +92,6 @@ describe("pickImageFiles", () => {
   });
 });
 ```
-
-> Note: the `c.gif` line uses `&&` only to inline-construct a `image/gif` file in the array literal (the helper `img()` hardcodes `image/png`). If that reads awkwardly, replace it with a direct `new File(["x"], "c.gif", { type: "image/gif" })` element — both are equivalent; pick the direct form for clarity.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -144,7 +142,7 @@ git commit -m "feat(composer): add pure pickImageFiles helper + tests"
 
 **Interfaces:**
 - Consumes: `setAttachments` (existing state setter at `ChatPanel.tsx:106`).
-- Produces: `addFiles(files: File[]): void` (a `useCallback`) and `handleDropFiles: (files: File[]) => void` (a thin wrapper) — both consumed by Task 3 via the new `onDropFiles` prop.
+- Produces: `addFiles(files: File[]): void` (a `useCallback`) — consumed by Task 4, which adds a `handleDropFiles` wrapper around it and passes it to `<ChatComposer>` as `onDropFiles`. (`handleDropFiles` is intentionally NOT added in this task — `noUnusedLocals: true` is on in `tsconfig.json`, so an unused `handleDropFiles` would fail the typecheck. It is introduced in Task 4 exactly when it is wired into the prop.)
 
 - [ ] **Step 1: Replace the two existing handlers with a shared `addFiles` + thin wrappers**
 
@@ -195,20 +193,16 @@ In `frontend/src/components/ChatPanel.tsx`, replace the block currently at lines
     if (files) addFiles(Array.from(files));
     e.target.value = ""; // reset so the same file can be re-selected
   }, [addFiles]);
-
-  // Handle drag-and-drop (image-only; ChatComposer pre-filters via pickImageFiles
-  // and shows a toast for rejected files before calling this).
-  const handleDropFiles = useCallback((files: File[]) => {
-    addFiles(files);
-  }, [addFiles]);
 ```
+
+(The `handleDropFiles` wrapper around `addFiles` is added in Task 4, where it is immediately passed to `<ChatComposer>` as `onDropFiles` — see that task.)
 
 Behavior preserved: `handlePaste` still calls `e.preventDefault()` only when an image item was present (matches the original, which prevented default inside the image branch); `handleFileSelect` still resets `e.target.value`. Non-image paste/click files are silently skipped by `addFiles`, exactly as before.
 
 - [ ] **Step 2: Run the type gate**
 
 Run: `cd frontend && npm run typecheck`
-Expected: PASS with no errors. (`handleDropFiles` is defined but not yet used — TS does not error on unused `const` unless `noUnusedLocals` is on. If it IS on and errors, that will resolve in Task 3 when `handleDropFiles` is passed as a prop. Do not suppress; proceed to Task 3.)
+Expected: PASS with no errors. (`addFiles` is used by both `handlePaste` and `handleFileSelect`, so there is no unused-local. `handleDropFiles` is deliberately not yet defined — it is added in Task 4.)
 
 - [ ] **Step 3: Run the unit tests (regression sanity)**
 
@@ -506,12 +500,27 @@ Expected: FAIL — `ChatPanel.tsx` passes `<ChatComposer>` without the now-requi
 ## Task 4: Pass `onDropFiles` from `ChatPanel`; verify types + tests
 
 **Files:**
-- Modify: `frontend/src/components/ChatPanel.tsx` (the `<ChatComposer>` JSX, ~lines 394–410)
+- Modify: `frontend/src/components/ChatPanel.tsx` (add `handleDropFiles` after `handleFileSelect`; add `onDropFiles` to the `<ChatComposer>` JSX, ~lines 394–410)
 
 **Interfaces:**
-- Consumes: `handleDropFiles` from Task 2; `onDropFiles` prop on `<ChatComposer>` from Task 3.
+- Consumes: `addFiles` from Task 2; `onDropFiles` prop on `<ChatComposer>` from Task 3.
+- Produces: a wired composer — `handleDropFiles` (defined here) passed as `onDropFiles`. This is the task that also commits `ChatComposer.tsx` from Task 3 (which was left uncommitted because its typecheck only passes once this task supplies the required prop).
 
-- [ ] **Step 1: Add the `onDropFiles` prop to the `<ChatComposer>` usage**
+- [ ] **Step 1: Add the `handleDropFiles` wrapper in `ChatPanel`**
+
+In `frontend/src/components/ChatPanel.tsx`, immediately after the `handleFileSelect` `useCallback` (added in Task 2) — and before the `if (!conv) return ...` line — insert:
+
+```ts
+  // Handle drag-and-drop (image-only; ChatComposer pre-filters via pickImageFiles
+  // and shows a toast for rejected files before calling this).
+  const handleDropFiles = useCallback((files: File[]) => {
+    addFiles(files);
+  }, [addFiles]);
+```
+
+(Defined here rather than Task 2 because `noUnusedLocals: true` would reject an unused `handleDropFiles`; it is used in Step 2 below.)
+
+- [ ] **Step 2: Add the `onDropFiles` prop to the `<ChatComposer>` usage**
 
 In `frontend/src/components/ChatPanel.tsx`, find the `<ChatComposer ... />` JSX (currently around lines 394–410). Add `onDropFiles={handleDropFiles}` alongside the other props. The prop block currently is:
 
@@ -558,17 +567,17 @@ Replace with (one line added after `onAttach`):
       />
 ```
 
-- [ ] **Step 2: Run the type gate — expect PASS now**
+- [ ] **Step 3: Run the type gate — expect PASS now**
 
 Run: `cd frontend && npm run typecheck`
-Expected: PASS — no errors. (Both `ChatComposer` now receives `onDropFiles`, and `handleDropFiles` is now used.)
+Expected: PASS — no errors. (`ChatComposer` now receives the required `onDropFiles`, and `handleDropFiles` is now used. This also resolves Task 3's expected missing-prop failure.)
 
-- [ ] **Step 3: Run the unit tests**
+- [ ] **Step 4: Run the unit tests**
 
 Run: `cd frontend && npm test`
 Expected: PASS — all suites green, including the Task 1 `pickImageFiles` tests.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add frontend/src/components/ChatComposer.tsx frontend/src/components/ChatPanel.tsx
@@ -775,6 +784,6 @@ Per `CLAUDE.md`: the worktree change is ready to merge into `main`. After a clea
 
 **2. Placeholder scan:** No TBD/TODO; every code step shows full code. The `c.gif` `&&` trick in Task 1 Step 1 is flagged with a cleaner alternative in a note — acceptable.
 
-**3. Type consistency:** `pickImageFiles(File[]): {images, rejected}` (Task 1) consumed in Task 3 `onDrop`. `onDropFiles: (files: File[]) => void` (Task 3 Props) supplied by `handleDropFiles` (Task 2) in Task 4. `addFiles(files: File[])` (Task 2) shared by `handlePaste`/`handleFileSelect`/`handleDropFiles`. Names match across tasks. ✓
+**3. Type consistency:** `pickImageFiles(File[]): {images, rejected}` (Task 1) consumed in Task 3 `onDrop`. `onDropFiles: (files: File[]) => void` (Task 3 Props) supplied by `handleDropFiles` (defined in Task 4) wired in Task 4. `addFiles(files: File[])` (Task 2) shared by `handlePaste`/`handleFileSelect` (Task 2) and `handleDropFiles` (Task 4). Names match across tasks. ✓
 
 No gaps found. Plan is complete.
