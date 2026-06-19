@@ -968,8 +968,10 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
        bg into a tinted dark — Nord→blue-black, Gruvbox→warm-black,
        Dracula→purple-black, Solarized→teal-black — while light text
        stays light and high-contrast (ratio still >30:1).
-     - Light themes (white paper + dark text): a ~8-14% theme-color
+     - Light themes (white paper + dark text): a ~8-16% theme-color
        wash tints the paper toward the theme hue; dark text stays dark.
+       (Solarized Light sits at the top, ~16%, so its warm cream paper
+       reads clearly as Solarized rather than near-white.)
    A uniform alpha wash = no per-pixel figure distortion, no blur, and
    text never drops below 4.5:1. z-index:1 → above the canvas bitmap,
    BELOW the transparent text layer (z2) and annotation layers (z3+);
@@ -997,9 +999,13 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 [data-theme="rose-pine"]        { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(224,222,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,25,45,0.50); }
 /* Light themes: wash with each theme's bg-3 panel color — light, low-chroma,
    the theme's own surface tone. Alpha ~0.08–0.12 gives a whisper of the
-   theme's warmth/coolness on the white paper without darkening dark text. */
+   theme's warmth/coolness on the white paper without darkening dark text.
+   Solarized Light runs intentionally heavier (~0.16): its base3 paper is a
+   saturated warm cream, so a stronger wash makes the page clearly read as
+   Solarized rather than near-white. Dark text stays above 4.5:1 (wash color is
+   light cream, and the text layer sits above the wash). */
 [data-theme="light"]            { --pdf-filter: none;                          --pdf-tint: rgba(236,238,242,0.08); --pdf-page-shadow: 0 2px 12px rgba(20,24,40,0.14); }
-[data-theme="solarized-light"]  { --pdf-filter: sepia(0.15) brightness(1.01);  --pdf-tint: rgba(230,220,192,0.10); --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
+[data-theme="solarized-light"]  { --pdf-filter: sepia(0.15) brightness(1.01);  --pdf-tint: rgba(230,220,192,0.16); --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
 [data-theme="sepia"]            { --pdf-filter: sepia(0.45) brightness(0.96);  --pdf-tint: rgba(236,224,196,0.12); --pdf-page-shadow: 0 2px 12px rgba(74,54,33,0.22); }
 
 /* Full-page theme-color wash over the canvas bitmap (see header).
