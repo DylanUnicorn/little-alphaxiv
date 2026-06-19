@@ -22,9 +22,10 @@ from playwright.sync_api import sync_playwright
 
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, errors="replace")
 APP = os.environ.get("APP_URL", "http://127.0.0.1:5173")
+MOCK_BASE = os.environ.get("MOCK_BASE_URL", "http://127.0.0.1:5050/v1")
 PROV = {
     "name": "mock",
-    "base_url": "http://127.0.0.1:5050/v1",
+    "base_url": MOCK_BASE,
     "api_key": "mock",
     "model": "mock-model",
 }
@@ -104,8 +105,10 @@ with sync_playwright() as pw:
     page.wait_for_timeout(800)
 
     # Query mentions "openalex" -> mock emits search_openalex.
+    # Send via Enter (the merged ChatComposer's send button is an icon with
+    # title="Send (Enter)", no visible "Send" text, so has-text won't match).
     page.locator("textarea").first.fill("find me openalex papers on vision transformers")
-    page.locator("button:has-text('Send')").click()
+    page.locator("textarea").first.press("Enter")
 
     # Wait for the paper cards.
     page.wait_for_selector(".paper-card", timeout=20000)
