@@ -34,7 +34,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 APP = os.environ.get("APP_URL", "http://127.0.0.1:5173")
 MOCK_PROVIDER = {
     "name": "Mock",
-    "base_url": "http://127.0.0.1:5050/v1",
+    "base_url": os.environ.get("MOCK_URL", "http://127.0.0.1:5050/v1"),
     "api_key": "mock",
     "model": "mock-model",
 }
