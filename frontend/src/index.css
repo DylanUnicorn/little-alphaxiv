@@ -554,6 +554,27 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   color: var(--text-dim); background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .msg-assistant a { color: var(--accent); }
+/* Bold emphasis: a soft accent-tinted marker behind the text, so key terms
+   read as deliberately highlighted instead of just a weight bump. Tinted via
+   color-mix on the theme accent, so it stays harmonious across every theme
+   without per-theme overrides. Color is left inherited so the streaming
+   ".pending" dim state still applies — the marker is the emphasis cue, not a
+   color change. box-decoration-break clones the band per wrapped line. */
+.msg-assistant strong,
+.msg-reasoning strong {
+  font-weight: 700;
+  background: linear-gradient(
+    to bottom,
+    transparent 45%,
+    color-mix(in srgb, var(--accent) 24%, transparent) 45%,
+    color-mix(in srgb, var(--accent) 24%, transparent) 92%,
+    transparent 92%
+  );
+  padding: 0 0.12em;
+  border-radius: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .msg-assistant table { border-collapse: collapse; margin: 0 0 10px; }
 .msg-assistant th, .msg-assistant td { border: 1px solid var(--border); padding: 4px 8px; font-size: 13px; }
 
