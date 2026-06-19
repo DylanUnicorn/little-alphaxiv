@@ -94,7 +94,7 @@ def run_chat(page):
     ta = page.locator("textarea").first
     ta.fill("找一些 vision transformer 相关的论文")
     page.screenshot(path=str(OUT / "02_typed.png"))
-    page.locator("button:has-text('Send')").click()
+    page.locator(".composer-send-btn").click()
 
     # poll for paper cards or final answer, up to 60s
     deadline = time.time() + 60

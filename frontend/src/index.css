@@ -213,9 +213,9 @@
   --code-bg: #002b36; --code-fg: #93a1a1;
 }
 [data-theme="solarized-light"] {
-  --pdf-filter: none; --pdf-page-bg: #fdf6e3;
+  --pdf-filter: none; --pdf-page-bg: #eee8d5;
   --code-bg: #eee8d5; --code-fg: #073642;
-  --pdf-page-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18);
 }
 [data-theme="sepia"] {
   --pdf-filter: sepia(0.35) brightness(0.95); --pdf-page-bg: #f4ecd8;
@@ -256,7 +256,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-sans);
 /* Smooth color transitions on theme switch + hover, scoped to avoid
    layout-transition jank on canvases / pdf layers. */
 body, .sidebar, .main-pane, .chat-panel, .chat-toolbar, .pdf-toolbar,
-.chat-input-row, .paper-card, .provider-item, .conv-item, .history-item,
+.chat-composer, .paper-card, .provider-item, .conv-item, .history-item,
 .dropdown-menu, .toolbar-btn, .icon-btn, .new-chat-btn, .settings-btn,
 .theme-card, input, textarea, select {
   transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base);
@@ -361,50 +361,115 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .msg-tool { display: flex; flex-direction: column; gap: 8px; }
 .chat-status { font-size: 12px; color: var(--text-dim); padding: 4px 20px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
 
-/* Model selector (chat panel) */
-.chat-model-selector {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 20px; border-top: 1px solid var(--border);
-  max-width: 820px; width: 100%; margin: 0 auto;
-  background: var(--bg);
-}
-.chat-model-label {
-  font-size: 11px; color: var(--text-dim); white-space: nowrap;
-  text-transform: uppercase; letter-spacing: 0.05em;
-}
-.chat-model-select {
-  flex: 1; padding: 4px 8px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: var(--bg-2);
-  color: var(--text); font-size: 12px; font-family: inherit;
-  max-width: none;
-}
-.chat-model-select:focus { border-color: var(--accent); outline: none; }
-.chat-model-input {
-  flex: 1; padding: 4px 8px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: var(--bg-2);
-  color: var(--text); font-size: 12px; font-family: inherit;
-  min-width: 0;
-}
-.chat-model-input:focus { border-color: var(--accent); outline: none; }
-.chat-model-fetch-btn {
-  padding: 3px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: var(--bg-3); color: var(--accent); cursor: pointer;
-  font-size: 11px; white-space: nowrap; flex-shrink: 0;
-}
-.chat-model-fetch-btn:hover { border-color: var(--accent); background: var(--bg-4); }
 .streaming-cursor { display: inline-block; width: 7px; height: 14px; background: var(--accent); border-radius: 1px; animation: blink 1s steps(2, start) infinite; vertical-align: text-bottom; }
 @keyframes blink { to { visibility: hidden; } }
-.chat-input-row { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); max-width: 820px; width: 100%; margin: 0 auto; background: var(--bg); }
-.chat-input-row textarea {
-  flex: 1; resize: none; min-height: 40px; max-height: 160px; padding: 10px 12px;
-  border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-2); color: var(--text); font-size: 14px; font-family: inherit;
+/* ---------- Chat composer (unified input container) ---------- */
+/* One bordered rounded box wrapping BOTH the auto-growing textarea and the
+   fixed bottom bar (attach / model pill / context ring / send). No divider
+   between them — the textarea and the bar are separate flex-column items, so
+   the typed text and the bar never overlap. */
+.chat-composer {
+  display: flex; flex-direction: column;
+  margin: 0 auto 10px; width: 100%; max-width: 820px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
 }
-.chat-input-row textarea:focus { border-color: var(--accent); outline: none; }
-.chat-input-row button {
-  padding: 0 20px; border-radius: var(--radius-md); border: none; background: var(--accent-2); color: var(--accent-contrast); cursor: pointer; font-size: 14px;
+.chat-composer:focus-within { border-color: var(--accent); }
+.chat-composer-input {
+  /* plain wrapper — the border + radius + bg live on .chat-composer so the
+     single box wraps the textarea AND the bottom bar together */
 }
-.chat-input-row button:hover { filter: brightness(1.08); }
-.chat-input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.composer-textarea {
+  display: block; width: 100%;
+  min-height: 60px; /* 2 lines */
+  resize: none; overflow-y: auto;
+  padding: 8px 6px;
+  border: none; background: transparent;
+  color: var(--text); font-size: 14px; line-height: 1.5; font-family: inherit;
+}
+.composer-textarea:focus { outline: none; }
+.composer-textarea::placeholder { color: var(--text-dim); }
+
+/* Attachment previews inside the composer (above the bar). */
+.composer-attachments {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 8px 2px 0;
+}
+.composer-attachment {
+  position: relative; width: 56px; height: 56px;
+  border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border);
+}
+.composer-attachment img { width: 100%; height: 100%; object-fit: cover; }
+.composer-attachment-remove {
+  position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;
+  border-radius: 50%; border: none; background: rgba(0,0,0,0.7); color: white;
+  cursor: pointer; font-size: 12px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Fixed bottom bar — no divider above it. */
+.chat-composer-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 2px 2px;
+}
+.chat-composer-bar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.chat-composer-bar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Small circular icon buttons (attach + send). */
+.composer-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--border);
+  background: var(--bg-3); color: var(--text);
+  cursor: pointer; font-size: 15px; flex-shrink: 0;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.composer-icon-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-4); }
+.composer-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.composer-send-btn {
+  background: var(--accent-2); color: var(--accent-contrast); border-color: transparent;
+}
+.composer-send-btn:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent-2); }
+.composer-attach-glyph, .composer-send-glyph { line-height: 1; }
+
+/* ---------- Model pill (dropdown capsule) ---------- */
+.model-pill { position: relative; flex-shrink: 0; }
+.model-pill-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--bg-3); color: var(--text);
+  cursor: pointer; font-size: 12px; font-family: inherit; max-width: 220px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.model-pill-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-4); }
+.model-pill-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.model-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-pill-caret { opacity: 0.7; }
+.model-pill-input {
+  padding: 5px 8px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--text);
+  font-size: 12px; font-family: inherit; min-width: 120px;
+}
+.model-pill-input:focus { border-color: var(--accent); outline: none; }
+.model-pill-list {
+  position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 20;
+  min-width: 100%; max-width: 280px; max-height: 260px; overflow-y: auto;
+  margin: 0; padding: 4px; list-style: none;
+  border-radius: var(--radius-md); border: 1px solid var(--border);
+  background: var(--bg-2); box-shadow: var(--shadow-md);
+}
+.model-pill-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  font-size: 12px; cursor: pointer; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.model-pill-item.highlighted { background: var(--bg-4); }
+.model-pill-item.selected { color: var(--accent); }
+.model-pill-check { width: 12px; flex-shrink: 0; }
+.model-pill-id { overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Paper cards ---------- */
 .paper-card {
@@ -470,6 +535,18 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;
 }
 .provider-models-label { font-size: 11px; color: var(--text-dim); }
+.provider-vision-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;
+}
+.provider-vision-label {
+  font-size: 11px; color: var(--text-dim); white-space: nowrap;
+}
+.provider-model-input {
+  max-width: 280px; padding: 4px 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--text);
+  font-size: 12px; font-family: inherit; flex: 1; min-width: 0;
+}
+.provider-model-input:focus { border-color: var(--accent); outline: none; }
 .fetch-models-btn {
   padding: 3px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--bg-3); color: var(--accent); cursor: pointer; font-size: 11px;
@@ -554,6 +631,23 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   color: var(--text-dim); background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .msg-assistant a { color: var(--accent); }
+/* Horizontal rule (markdown `---`): a soft accent-tinted band that's solid
+   in the middle and fades to transparent at both ends — "thick middle, thin
+   faded ends, blurred gradient" — tinted via color-mix on the theme accent so
+   it stays harmonious across every theme with no per-theme overrides (same
+   idiom as the bold-emphasis marker). No glow; the fade is the softness. */
+.msg-assistant hr,
+.msg-reasoning hr {
+  border: none;
+  height: 2px;
+  margin: 18px 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--accent) 55%, transparent) 50%,
+    transparent
+  );
+}
 /* Bold emphasis: a small bordered box (pill) wrapping the bold text, so key
    terms read as a distinct tag instead of just a weight bump. The text takes
    the theme accent for a higher-contrast-but-harmonious color (same hue family
@@ -698,7 +792,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .settings-loading { font-size: 12px; color: var(--text-dim); padding: 4px 0; }
 
 /* ---------- Context usage ring ---------- */
-/* Small donut in the chat model-selector row; click opens a popover with the
+/* Small donut in the ChatComposer bottom bar; click opens a popover with the
    full used/total/reserved/usable breakdown + capacity & reserve controls.
    Colors: ok follows the theme accent; warn/critical are fixed semantic
    amber/red (a warning should read the same in every theme). */
@@ -718,7 +812,9 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .ctx-ring-critical .ctx-ring-pct { color: var(--ctx-crit, #e05656); }
 
 .ctx-ring-popover {
-  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 100;
+  /* Opens UPWARD: the ring lives in the composer's bottom bar (near the
+     viewport bottom), so a downward (top:100%) popover would fall off-screen. */
+  position: absolute; bottom: 100%; right: 0; margin-bottom: 6px; z-index: 100;
   background: var(--bg-2); border: 1px solid var(--border);
   border-radius: var(--radius-md); box-shadow: var(--shadow-md);
   padding: 12px; min-width: 244px; max-width: 288px;
@@ -756,28 +852,6 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 }
 
 /* ---------- Attachments ---------- */
-.attachment-previews {
-  display: flex; gap: 6px; padding: 8px 20px; flex-wrap: wrap;
-  border-top: 1px solid var(--border); background: var(--bg-2);
-  max-width: 820px; width: 100%; margin: 0 auto;
-}
-.attachment-preview {
-  position: relative; width: 60px; height: 60px; border-radius: var(--radius-sm);
-  overflow: hidden; border: 1px solid var(--border);
-}
-.attachment-preview img { width: 100%; height: 100%; object-fit: cover; }
-.attachment-remove {
-  position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;
-  border-radius: 50%; border: none; background: rgba(0,0,0,0.7); color: white;
-  cursor: pointer; font-size: 12px; line-height: 1; display: flex;
-  align-items: center; justify-content: center;
-}
-.attach-btn {
-  border: 1px solid var(--border); background: var(--bg-3); color: var(--text);
-  border-radius: var(--radius-md); padding: 0 10px; cursor: pointer; font-size: 16px; flex-shrink: 0;
-}
-.attach-btn:hover { border-color: var(--accent); background: var(--bg-4); }
-.attach-btn:disabled { opacity: 0.5; }
 .msg-attachments { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .msg-attachment-img { max-width: 200px; max-height: 200px; border-radius: var(--radius-md); border: 1px solid var(--border); }
 
@@ -951,8 +1025,10 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
        bg into a tinted dark — Nord→blue-black, Gruvbox→warm-black,
        Dracula→purple-black, Solarized→teal-black — while light text
        stays light and high-contrast (ratio still >30:1).
-     - Light themes (white paper + dark text): a ~8-14% theme-color
+     - Light themes (white paper + dark text): a ~8-16% theme-color
        wash tints the paper toward the theme hue; dark text stays dark.
+       (Solarized Light sits at the top, ~16%, so its warm cream paper
+       reads clearly as Solarized rather than near-white.)
    A uniform alpha wash = no per-pixel figure distortion, no blur, and
    text never drops below 4.5:1. z-index:1 → above the canvas bitmap,
    BELOW the transparent text layer (z2) and annotation layers (z3+);
@@ -960,19 +1036,37 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
    Sepia/Solarized-Light also get a faint paper grain (::before).
    ============================================================ */
 
-:root { --pdf-tint: rgba(124, 140, 255, 0.18); }   /* default-dark indigo */
+:root { --pdf-tint: rgba(230, 232, 238, 0.12); }   /* default-dark: text #e6e8ee */
 
-[data-theme="dark"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(124,140,255,0.18); --pdf-page-shadow: 0 2px 14px rgba(8,10,26,0.50); }
-[data-theme="nord"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(136,192,208,0.24); --pdf-page-shadow: 0 2px 14px rgba(18,28,48,0.50); }
-[data-theme="tokyo-night"]      { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(122,162,247,0.22); --pdf-page-shadow: 0 2px 14px rgba(14,18,48,0.52); }
-[data-theme="gruvbox-dark"]     { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(250,189,47,0.20);  --pdf-page-shadow: 0 2px 14px rgba(40,30,8,0.50); }
-[data-theme="catppuccin-mocha"] { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(203,166,247,0.20); --pdf-page-shadow: 0 2px 14px rgba(30,26,50,0.46); }
-[data-theme="solarized-dark"]   { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(42,161,152,0.24);  --pdf-page-shadow: 0 2px 14px rgba(0,40,50,0.50); }
-[data-theme="dracula"]          { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(189,147,249,0.22); --pdf-page-shadow: 0 2px 14px rgba(40,20,60,0.54); }
-[data-theme="rose-pine"]        { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(235,188,186,0.20); --pdf-page-shadow: 0 2px 14px rgba(40,25,45,0.50); }
-[data-theme="light"]            { --pdf-filter: none;                          --pdf-tint: rgba(79,93,255,0.09);  --pdf-page-shadow: 0 2px 12px rgba(20,24,40,0.14); }
-[data-theme="solarized-light"]  { --pdf-filter: sepia(0.15) brightness(1.01);  --pdf-tint: rgba(181,137,0,0.09);  --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
-[data-theme="sepia"]            { --pdf-filter: sepia(0.45) brightness(0.96);  --pdf-tint: rgba(184,99,46,0.15);  --pdf-page-shadow: 0 2px 12px rgba(74,54,33,0.22); }
+/* Dark themes: wash with each theme's TEXT color — light, low-chroma, carrying
+   the theme's distinct hue. Alpha ~0.12 lifts the near-black inverted page
+   just enough to read as "this theme's ambient darkness" without dimming the
+   light text (text is already ~L0.9, a 0.12 wash of ~L0.88 barely touches it).
+   This replaces the earlier accent-based wash — the accent is for actions and
+   selection, not for coloring an entire page surface (impeccable: "accent for
+   primary actions, current selection, state indicators only, not decoration";
+   tinted neutrals at 0.005–0.015 chroma toward the brand's own hue).
+   EXCEPTION: solarized-dark washes with the accent teal itself, because for
+   Solarized that hue IS the theme's identity — a gray wash reads as a generic
+   dark theme, not Solarized. Per-theme, not a blanket rule. */
+[data-theme="dark"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(230,232,238,0.12); --pdf-page-shadow: 0 2px 14px rgba(8,10,26,0.50); }
+[data-theme="nord"]             { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(236,239,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(18,28,48,0.50); }
+[data-theme="tokyo-night"]      { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(192,202,245,0.13); --pdf-page-shadow: 0 2px 14px rgba(14,18,48,0.52); }
+[data-theme="gruvbox-dark"]     { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(235,219,178,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,30,8,0.50); }
+[data-theme="catppuccin-mocha"] { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(205,214,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(30,26,50,0.46); }
+[data-theme="solarized-dark"]   { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(42,161,152,0.18); --pdf-page-shadow: 0 2px 14px rgba(0,40,50,0.50); }
+[data-theme="dracula"]          { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(248,248,242,0.12); --pdf-page-shadow: 0 2px 14px rgba(40,20,60,0.54); }
+[data-theme="rose-pine"]        { --pdf-filter: invert(1) hue-rotate(180deg); --pdf-tint: rgba(224,222,244,0.13); --pdf-page-shadow: 0 2px 14px rgba(40,25,45,0.50); }
+/* Light themes: wash with each theme's bg-3 panel color — light, low-chroma,
+   the theme's own surface tone. Alpha ~0.08–0.12 gives a whisper of the
+   theme's warmth/coolness on the white paper without darkening dark text.
+   Solarized Light runs intentionally heavier (~0.16): its base3 paper is a
+   saturated warm cream, so a stronger wash makes the page clearly read as
+   Solarized rather than near-white. Dark text stays above 4.5:1 (wash color is
+   light cream, and the text layer sits above the wash). */
+[data-theme="light"]            { --pdf-filter: none;                          --pdf-tint: rgba(236,238,242,0.08); --pdf-page-shadow: 0 2px 12px rgba(20,24,40,0.14); }
+[data-theme="solarized-light"]  { --pdf-filter: sepia(0.38) brightness(0.97) saturate(1.08);  --pdf-tint: rgba(221,210,176,0.22); --pdf-page-shadow: 0 2px 12px rgba(120,96,40,0.18); }
+[data-theme="sepia"]            { --pdf-filter: sepia(0.45) brightness(0.96);  --pdf-tint: rgba(236,224,196,0.12); --pdf-page-shadow: 0 2px 12px rgba(74,54,33,0.22); }
 
 /* Full-page theme-color wash over the canvas bitmap (see header).
    Solid translucent fill, alpha baked into --pdf-tint. */
@@ -997,7 +1091,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   z-index: 1;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
   background-size: 120px 120px;
-  opacity: 0.045;
+  opacity: 0.06;
   mix-blend-mode: multiply;
 }
 

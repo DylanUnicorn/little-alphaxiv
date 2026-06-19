@@ -74,14 +74,14 @@ def run_chat(page):
     ta = page.locator("textarea").first
     ta.fill("find me papers on vision transformers")
     page.screenshot(path=str(OUT / "02_typed.png"), full_page=False)
-    page.locator("button:has-text('Send')").click()
+    page.locator(".composer-send-btn").click()
     # wait for paper cards to appear (tool call round + final answer)
     page.wait_for_selector(".paper-card", timeout=20000)
     page.wait_for_timeout(2500)  # let final markdown stream in
     page.screenshot(path=str(OUT / "03_answered.png"), full_page=False)
     # inspect: is the textarea still present? (input-disappears bug)
     has_input = page.locator("textarea").count()
-    has_send = page.locator("button:has-text('Send')").count()
+    has_send = page.locator(".composer-send-btn").count()
     print(f"POST_CHAT: textarea={has_input} send_btn={has_send}")
     print(f"LOGS:\n" + "\n".join(page.logs))  # type: ignore
 

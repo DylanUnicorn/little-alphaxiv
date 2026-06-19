@@ -8,6 +8,11 @@ export interface Provider {
   api_key: string;
   model: string; // e.g. gpt-4o-mini
   is_default?: boolean;
+  /** Optional vision-capable model id on the SAME provider (same base_url +
+   *  api_key). When set, the chat panel auto-routes any turn whose context
+   *  includes an image to this model if the current model isn't vision-capable.
+   *  Undefined = no vision fallback configured for this provider. */
+  vision_model?: string;
 }
 
 export type Role = "system" | "user" | "assistant" | "tool";

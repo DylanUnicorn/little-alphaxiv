@@ -15,12 +15,13 @@ import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { runConversation, generateConversationTitle } from "../lib/llm";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
+import { resolveVisionFallback } from "../lib/visionFallback";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
 import { PaperCard } from "./PaperCard";
 import { Markdown } from "./Markdown";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
-import { ContextRing } from "./ContextRing";
+import { ChatComposer } from "./ChatComposer";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -237,10 +238,12 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   // keeping the system prompt as a fixed, un-droppable cost. Replaces the old
   // message-count slice. Tool-group-aware: never orphans a tool result from the
   // tool_call that produced it. See lib/contextBudget.truncateToFit.
-  function getContextMessages(): ChatMessage[] {
-    const modelInfo = cachedModels.find((m) => m.id === currentModel);
+  // `modelId` is the EFFECTIVE model for this turn (may be the auto-swapped
+  // vision model), so the ring + truncator use the right context window.
+  function getContextMessages(modelId: string): ChatMessage[] {
+    const modelInfo = cachedModels.find((m) => m.id === modelId);
     const { capacity, reserve } = resolveForConv({
-      model: { id: currentModel, context_length: modelInfo?.context_length },
+      model: { id: modelId, context_length: modelInfo?.context_length },
       capacityOverride: c.context_capacity_override,
       reserveOverride: c.reserve_tokens,
     });
@@ -282,18 +285,44 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     }
 
     let buf = "";
+    // Vision auto-fallback: if the about-to-be-sent context carries an image
+    // and the current model isn't vision-capable, route to the provider's
+    // configured vision_model (same base_url + api_key) and persist the swap
+    // on the conversation so it sticks for follow-ups and the model dropdown
+    // reflects reality. Images persist in history, so once true it stays true
+    // until that message is truncated out — which is why the swap is sticky.
+    // Declared OUTSIDE try: the catch block below also reads hasImage.
+    const hasImage = [...c.messages, userMsg].some(
+      (m) =>
+        m.role === "user" &&
+        !!m.attachments &&
+        m.attachments.some((a) => a.type === "image")
+    );
     try {
-      const contextMsgs = getContextMessages();
+      const baseModel = c.model || provider.model || "";
+      const { shouldSwap, model: effectiveModel } = resolveVisionFallback({
+        hasImage,
+        currentModel: baseModel,
+        visionModel: provider.vision_model,
+      });
+      if (shouldSwap) {
+        void _updateSettings(c.id, { model: effectiveModel });
+        setStatus(`Switched to ${effectiveModel} for image input…`);
+      }
+
+      const contextMsgs = getContextMessages(effectiveModel);
       const history: ChatMessage[] = [...contextMsgs, userMsg];
       const { newMessages } = await runConversation({
         provider,
         messages: history,
         systemPrompt: effectiveSystemPrompt,
-                enabledSources,
+        model: effectiveModel,
+        enabledSources,
         searchSourceCreds: {
           openalex: searchSources.openalex,
           semanticScholar: searchSources.semanticScholar,
-        },        callbacks: {
+        },
+        callbacks: {
           onAssistantStart: () => {
             buf = "";
             setStreaming("");
@@ -344,7 +373,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           convId: c.id,
           type: c.type,
           paperId: c.paper_id,
-          model: c.model,
+          model: effectiveModel,
           provider,
           firstUserText: text,
           newMessages,
@@ -352,9 +381,19 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         });
       }
     } catch (e: any) {
-      const errMsg = e?.message || "error";
+      const rawMsg = e?.message || "error";
       setStreaming("");
       setReasoning("");
+      // When an image was sent to a non-vision model and the user hasn't
+      // configured a vision_model, the provider rejects it with an
+      // image/vision/multimodal error. Surface an actionable hint instead of
+      // the raw upstream body. (When a vision_model IS configured, the
+      // proactive swap above should have prevented this error entirely.)
+      const looksLikeImageError = /image|vision|multimodal|does not support/i.test(rawMsg);
+      const errMsg =
+        hasImage && !provider.vision_model && looksLikeImageError
+          ? "This model doesn't support images. Add a vision model in Settings → Providers."
+          : rawMsg;
       // Preserve whatever had already streamed before the error so the user
       // doesn't lose the in-progress answer when a stream is interrupted (e.g.
       // the connection dropped while the tab was backgrounded). Previously the
@@ -424,91 +463,31 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
       <div className="chat-status">
         {streaming ? (<><span className="streaming-cursor" /> Generating…</>) : status}
       </div>
-      {/* Model selector */}
-      {provider && (
-        <div className="chat-model-selector">
-          <span className="chat-model-label">Model:</span>
-          {availableModels.length > 0 ? (
-            <select
-              className="chat-model-select"
-              value={currentModel}
-              onChange={(e) => handleModelChange(e.target.value)}
-              title="Select model for this conversation"
-            >
-              {availableModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.id}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              className="chat-model-input"
-              value={currentModel}
-              onChange={(e) => handleModelChange(e.target.value)}
-              placeholder="Enter model id…"
-              title="Model for this conversation"
-            />
-          )}
-          {availableModels.length === 0 && !modelsFetched && (
-            <button
-              className="chat-model-fetch-btn"
-              onClick={() => {
-                setModelsFetched(true);
-                fetchAndCacheModels(provider.id, provider.base_url, provider.api_key);
-              }}
-              title="Fetch available models from provider"
-            >
-              Fetch
-            </button>
-          )}
-          <ContextRing conversationId={c.id} systemPrompt={effectiveSystemPrompt} />
-        </div>
-      )}
-      <div className="chat-input-row">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          style={{ display: "none" }}
-          onChange={handleFileSelect}
-        />
-        <button
-          className="attach-btn"
-          title="Attach image"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={busy}
-        >
-          📎
-        </button>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKey}
-          onPaste={handlePaste}
-          placeholder={busy ? "…" : "Message…  (Enter to send, Shift+Enter newline, Ctrl+V to paste images)"}
-          rows={1}
-          disabled={busy}
-        />
-        <button onClick={() => send()} disabled={busy || (!input.trim() && attachments.length === 0)}>
-          {busy ? "…" : "Send"}
-        </button>
-      </div>
-      {/* Attachment previews — rendered below input row */}
-      {attachments.length > 0 && (
-        <div className="attachment-previews">
-          {attachments.map((att, i) => (
-            <div key={i} className="attachment-preview">
-              <img src={att.data_url} alt={att.name || "attachment"} />
-              <button
-                className="attachment-remove"
-                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <ChatComposer
+        value={input}
+        onValueChange={setInput}
+        onSend={() => send()}
+        onKeyDown={onKey}
+        onPaste={handlePaste}
+        onAttach={() => fileInputRef.current?.click()}
+        busy={busy}
+        placeholder={busy ? "…" : "Message…  (Enter to send, Shift+Enter newline, Ctrl+V to paste images)"}
+        attachments={attachments}
+        onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+        models={availableModels}
+        currentModel={currentModel}
+        onModelChange={handleModelChange}
+        conversationId={c.id}
+        systemPrompt={effectiveSystemPrompt}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={handleFileSelect}
+      />
     </div>
   );
 }

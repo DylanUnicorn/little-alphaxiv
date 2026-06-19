@@ -183,7 +183,7 @@ def main():
             try:
                 ta = page.locator("textarea").first
                 ta.fill("find me papers on vision transformers")
-                page.locator("button:has-text('Send')").click()
+                page.locator(".composer-send-btn").click()
                 page.wait_for_selector(".paper-card", timeout=20000)
                 page.wait_for_timeout(2500)  # let the final answer + usage chunk land
                 # Poll IDB: usage is persisted asynchronously after the stream ends.
@@ -231,7 +231,7 @@ def main():
                 page.wait_for_timeout(200)
                 ta = page.locator("textarea").first
                 ta.fill("x" * 120000 + "\nsummarize")
-                page.locator("button:has-text('Send')").click()
+                page.locator(".composer-send-btn").click()
                 page.wait_for_timeout(4000)  # tool loop + answer
                 open_ring(page)
                 note = page.locator(".ctx-popover-truncated").count()

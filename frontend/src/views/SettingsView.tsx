@@ -178,6 +178,11 @@ export function SettingsView() {
           gateway, local Ollama/OpenAI servers, etc.). Keys are stored only in
           your browser (localStorage) and sent to the backend proxy per request.
         </p>
+        <p className="settings-hint">
+          <strong>Vision model:</strong> used automatically when you send an
+          image and your main model can't handle vision. Same base URL &amp; key
+          — just a different model id on the same provider.
+        </p>
 
         <div className="provider-list">
           {providers.length === 0 && <div className="conv-empty">No providers yet — add one below to start chatting.</div>}
@@ -217,6 +222,38 @@ export function SettingsView() {
                         <option key={m.id} value={m.id}>{m.id}</option>
                       ))}
                     </select>
+                  )}
+                </div>
+                <div className="provider-vision-row">
+                  <span className="provider-vision-label">Vision model</span>
+                  {hasModels ? (
+                    <select
+                      className="provider-model-select"
+                      value={p.vision_model ?? ""}
+                      onChange={(e) =>
+                        useSettings
+                          .getState()
+                          .updateProvider(p.id, { vision_model: e.target.value || undefined })
+                      }
+                      title="Model used automatically when you send an image and your main model can't handle vision"
+                    >
+                      <option value="">(not set)</option>
+                      {cached.map((m) => (
+                        <option key={m.id} value={m.id}>{m.id}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="provider-model-input"
+                      value={p.vision_model ?? ""}
+                      onChange={(e) =>
+                        useSettings
+                          .getState()
+                          .updateProvider(p.id, { vision_model: e.target.value || undefined })
+                      }
+                      placeholder="vision model id (optional)"
+                      title="Model used automatically when you send an image and your main model can't handle vision"
+                    />
                   )}
                 </div>
               </div>

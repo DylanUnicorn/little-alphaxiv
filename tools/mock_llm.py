@@ -240,6 +240,7 @@ async def completions(request: Request):
         "1. Vision Transformers (ViT) split images into patches and process them with self-attention.\n"
         "2. `attention is all you need` introduced the transformer architecture.\n"
         "3. Swin Transformer uses *shifted windows* for hierarchical features.\n\n"
+        "---\n\n"
         "```python\n"
         "# minimal attention\n"
         "attn = softmax(Q @ K.T / sqrt(d)) @ V\n"
