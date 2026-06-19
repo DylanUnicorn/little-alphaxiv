@@ -554,6 +554,23 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   color: var(--text-dim); background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .msg-assistant a { color: var(--accent); }
+/* Horizontal rule (markdown `---`): a soft accent-tinted band that's solid
+   in the middle and fades to transparent at both ends — "thick middle, thin
+   faded ends, blurred gradient" — tinted via color-mix on the theme accent so
+   it stays harmonious across every theme with no per-theme overrides (same
+   idiom as the bold-emphasis marker). No glow; the fade is the softness. */
+.msg-assistant hr,
+.msg-reasoning hr {
+  border: none;
+  height: 2px;
+  margin: 18px 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--accent) 55%, transparent) 50%,
+    transparent
+  );
+}
 /* Bold emphasis: a small bordered box (pill) wrapping the bold text, so key
    terms read as a distinct tag instead of just a weight bump. The text takes
    the theme accent for a higher-contrast-but-harmonious color (same hue family
