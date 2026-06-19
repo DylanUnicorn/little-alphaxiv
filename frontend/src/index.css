@@ -728,6 +728,9 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   background: var(--bg-3); color: var(--text); font-size: 13px; font-family: inherit;
 }
 .ctx-popover-resolved { margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+.ctx-popover-truncated {
+  margin-top: 6px; font-size: 11px; color: var(--ctx-warn, #f0a020);
+}
 
 /* ---------- Attachments ---------- */
 .attachment-previews {
