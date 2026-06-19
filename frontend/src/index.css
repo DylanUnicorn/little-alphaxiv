@@ -535,6 +535,18 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;
 }
 .provider-models-label { font-size: 11px; color: var(--text-dim); }
+.provider-vision-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;
+}
+.provider-vision-label {
+  font-size: 11px; color: var(--text-dim); white-space: nowrap;
+}
+.provider-model-input {
+  max-width: 280px; padding: 4px 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--text);
+  font-size: 12px; font-family: inherit; flex: 1; min-width: 0;
+}
+.provider-model-input:focus { border-color: var(--accent); outline: none; }
 .fetch-models-btn {
   padding: 3px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--bg-3); color: var(--accent); cursor: pointer; font-size: 11px;
