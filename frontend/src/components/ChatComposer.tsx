@@ -8,6 +8,7 @@ interface Props {
   value: string;
   onValueChange: (v: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   onPaste: (e: React.ClipboardEvent) => void;
   onAttach: () => void;
@@ -37,6 +38,7 @@ export function ChatComposer({
   value,
   onValueChange,
   onSend,
+  onStop,
   onKeyDown,
   onPaste,
   onAttach,
@@ -138,13 +140,13 @@ export function ChatComposer({
           <ContextRing conversationId={conversationId} systemPrompt={systemPrompt} />
           <button
             type="button"
-            className="composer-icon-btn composer-send-btn"
-            title="Send (Enter)"
-            onClick={onSend}
-            disabled={!canSend}
+            className={`composer-icon-btn composer-send-btn${busy ? " is-stop" : ""}`}
+            title={busy ? "Stop generating" : "Send (Enter)"}
+            onClick={busy ? (onStop ?? (() => {})) : onSend}
+            disabled={busy ? false : !canSend}
           >
-            {/* paper-plane / up arrow */}
-            <span className="composer-send-glyph" aria-hidden>➤</span>
+            {/* arrow = send, square = stop (visible while assistant is replying) */}
+            <span className="composer-send-glyph" aria-hidden>{busy ? "■" : "➤"}</span>
           </button>
         </div>
       </div>
