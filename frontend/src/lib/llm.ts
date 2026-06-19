@@ -7,7 +7,7 @@
 // model answers with plain text.
 
 import { streamChat, completeChat, searchArxiv, webSearch } from "./api";
-import type { ChatMessage, Paper, Provider, ToolDef } from "../types";
+import type { ChatMessage, Paper, Provider, ToolDef, TokenUsage } from "../types";
 
 export const SEARCH_TOOLS: ToolDef[] = [
   {
@@ -62,6 +62,7 @@ interface LoopCallbacks {
   onPapers?: (papers: Paper[]) => void; // surfaced from search_arxiv results
   onStatus?: (status: string) => void;
   onReasoning?: (token: string) => void; // GLM reasoning_content tokens
+  onUsage?: (usage: TokenUsage, requestMessages: unknown[]) => void; // provider token usage + the exact messages sent (calibrates the context ring)
 }
 
 /** Run a full conversation turn: stream the assistant response, executing any
@@ -123,6 +124,13 @@ export async function runConversation(opts: {
       onDelta: (t) => callbacks.onAssistantDelta?.(t),
       onReasoning: (t) => callbacks.onReasoning?.(t),
     });
+
+    // Provider-reported token usage (if any) — the context-usage ring
+    // calibrates its heuristic estimate against this. Fired once per
+    // streamChat call with the exact messages sent for that call, so the
+    // caller's heuristic estimate matches the reported prompt_tokens. In a
+    // tool loop the final turn's usage is what matters.
+    if (result.usage) callbacks.onUsage?.(result.usage, apiMessages);
 
     const assistantMsg: ChatMessage = {
       role: "assistant",

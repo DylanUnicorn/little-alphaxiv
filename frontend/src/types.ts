@@ -81,10 +81,38 @@ export interface Conversation {
   provider_id?: string;
   model?: string; // per-conversation model override (falls back to provider default)
   style_preset?: StylePreset; // per-conversation style preset
-  context_window?: number; // max tokens of conversation history to send (0 = all)
+  /** DEPRECATED — legacy message-count history cap. Unread since the
+   *  context-usage-ring feature; left dormant in IndexedDB, never migrated.
+   *  Replaced by context_capacity_override + reserve_tokens (token-based). */
+  context_window?: number;
+  /** Per-conversation total context-capacity override in tokens.
+   *  0 / undefined = Auto (resolve from model: provider-reported context_length
+   *  → curated table → 128K default). See lib/contextBudget.resolveCapacity. */
+  context_capacity_override?: number;
+  /** Per-conversation reserved output budget in tokens (held back for the
+   *  reply so the ring's "usable" = capacity − reserve).
+   *  0 / undefined = auto default (12.5% of capacity, floored 4K, capped 64K). */
+  reserve_tokens?: number;
+  /** Last turn's real usage reported by the provider, used to calibrate the
+   *  heuristic token estimate so the ring's "used" tracks ground truth. */
+  last_usage?: TokenUsage & {
+    /** real.prompt_tokens / heuristicEstimate(that turn), clamped [0.3, 3.0].
+     *  1.0 before any real usage. */
+    calibration: number;
+    ts: number;
+  };
   messages: ChatMessage[];
   created_at: number;
   updated_at: number;
+}
+
+/** Token usage reported by an OpenAI-compatible provider (the `usage` object on
+ *  a chat-completion response, or the final chunk of a stream). Used to
+ *  calibrate the heuristic token estimate behind the context-usage ring. */
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }
 
 /** Model info returned by the /api/models endpoint. */
@@ -93,6 +121,12 @@ export interface ModelInfo {
   object?: string;
   created?: number;
   owned_by?: string;
+  /** Total context window in tokens, if the provider's /v1/models reports it
+   *  (e.g. some OpenAI-compatible gateways). Picked from context_length /
+   *  max_context_tokens / max_input_tokens by the fetchModels normalizer.
+   *  Undefined when the provider doesn't expose it — capacity then resolves via
+   *  the curated KNOWN_MODEL_CONTEXT table or the 128K default. */
+  context_length?: number;
 }
 
 /** Style preset definitions with their system prompt modifiers. */

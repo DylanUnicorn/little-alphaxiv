@@ -1,7 +1,7 @@
 // Chat toolbar — top bar of the chat panel in paper view.
 // Left: history toggle (opens the HistoryPanel) + current thread title.
-// Right: new-conversation button + settings dropdown (model / style / context
-// window / theme). The history is a full panel (see HistoryPanel), not a
+// Right: new-conversation button + settings dropdown (model / style /
+// theme). The history is a full panel (see HistoryPanel), not a
 // dropdown — the dropdown was too crude to tell threads apart.
 
 import { useState, useRef, useEffect } from "react";
@@ -19,7 +19,6 @@ interface Props {
   onNewConversation: () => void;
   onModelChange: (model: string) => void;
   onStyleChange: (style: StylePreset) => void;
-  onContextWindowChange: (ctx: number) => void;
 }
 
 export function ChatToolbar({
@@ -30,7 +29,6 @@ export function ChatToolbar({
   onNewConversation,
   onModelChange,
   onStyleChange,
-  onContextWindowChange,
 }: Props) {
   const conversations = useConversations((s) => s.conversations);
   const activeConv = conversations.find((c) => c.id === conversationId);
@@ -71,7 +69,6 @@ export function ChatToolbar({
 
   const currentStyle: StylePreset = activeConv?.style_preset || "default";
   const currentModel = activeConv?.model || provider?.model || "";
-  const currentCtx = activeConv?.context_window || 0;
 
   const threadTitle =
     activeConv?.title && activeConv.title !== "Paper discussion" && !activeConv.title.startsWith("📄")
@@ -143,19 +140,6 @@ export function ChatToolbar({
                     </button>
                   ))}
                 </div>
-              </div>
-
-              {/* Context window */}
-              <div className="settings-section">
-                <label className="settings-label">Context window (msgs, 0 = all)</label>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={currentCtx}
-                  onChange={(e) => onContextWindowChange(parseInt(e.target.value) || 0)}
-                />
               </div>
 
               {/* Theme */}

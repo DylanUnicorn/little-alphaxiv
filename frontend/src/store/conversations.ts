@@ -35,7 +35,14 @@ interface ConvState {
     patch: Partial<ChatMessage>
   ) => Promise<void>;
   rename: (id: string, title: string) => Promise<void>;
-  updateSettings: (id: string, patch: { model?: string; style_preset?: import("../types").StylePreset; context_window?: number }) => Promise<void>;
+  updateSettings: (id: string, patch: {
+    model?: string;
+    style_preset?: import("../types").StylePreset;
+    context_window?: number; // deprecated, kept for back-compat
+    context_capacity_override?: number; // 0/undefined = Auto
+    reserve_tokens?: number; // 0/undefined = auto default
+    last_usage?: import("../types").TokenUsage & { calibration: number; ts: number };
+  }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   removeMany: (ids: string[]) => Promise<void>;
   getActive: () => Conversation | undefined;
@@ -157,6 +164,11 @@ export const useConversations = create<ConvState>((set, get) => ({
       ...(patch.model !== undefined ? { model: patch.model } : {}),
       ...(patch.style_preset !== undefined ? { style_preset: patch.style_preset } : {}),
       ...(patch.context_window !== undefined ? { context_window: patch.context_window } : {}),
+      ...(patch.context_capacity_override !== undefined
+        ? { context_capacity_override: patch.context_capacity_override }
+        : {}),
+      ...(patch.reserve_tokens !== undefined ? { reserve_tokens: patch.reserve_tokens } : {}),
+      ...(patch.last_usage !== undefined ? { last_usage: patch.last_usage } : {}),
       updated_at: Date.now(),
     };
     // If the conv is still empty, settings live in memory only and will be

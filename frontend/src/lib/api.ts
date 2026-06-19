@@ -2,7 +2,7 @@
 // proxies to the FastAPI backend in dev. Keys live in the browser; the proxy
 // is stateless.
 
-import type { Paper, Provider, ModelInfo } from "../types";
+import type { Paper, Provider, ModelInfo, TokenUsage } from "../types";
 
 const BASE = ""; // same-origin in dev via Vite proxy
 
@@ -17,6 +17,10 @@ export interface StreamResult {
     function: { name: string; arguments: string };
   }>;
   finish_reason: string | null;
+  /** Token usage reported by the provider on the final stream chunk, if any.
+   *  Used to calibrate the context-usage ring's estimate. Undefined when the
+   *  provider doesn't emit usage (graceful — the ring falls back to estimate). */
+  usage?: TokenUsage;
 }
 
 export async function streamChat(opts: {
@@ -40,6 +44,12 @@ export async function streamChat(opts: {
     model: modelOverride || provider.model,
     messages,
     stream: true,
+    // Ask the provider to report token usage on the final chunk. The
+    // context-usage ring calibrates its heuristic estimate against this. The
+    // /api/llm proxy forwards payload verbatim, so this passes through
+    // unchanged; providers that ignore stream_options simply won't emit usage
+    // (graceful — usage stays undefined).
+    stream_options: { include_usage: true },
   };
   if (tools && tools.length) {
     payload.tools = tools;
@@ -123,6 +133,7 @@ async function parseSSE(
   // tool calls indexed by their position in the delta.tool_calls array
   const toolCalls: StreamResult["tool_calls"] = [];
   let finishReason: string | null = null;
+  let usage: TokenUsage | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -148,6 +159,16 @@ async function parseSSE(
             (json.body || json.message || "").slice(0, 300)
           }`
         );
+      }
+      // Token usage arrives on the final chunk (often with choices: []), so it
+      // is captured independently of the choices block below. Providers that
+      // don't emit usage simply leave it undefined.
+      if (json.usage) {
+        usage = {
+          prompt_tokens: Number(json.usage.prompt_tokens) || 0,
+          completion_tokens: Number(json.usage.completion_tokens) || 0,
+          total_tokens: Number(json.usage.total_tokens) || 0,
+        };
       }
       if (json.choices && json.choices.length) {
         const choice = json.choices[0];
@@ -188,7 +209,7 @@ async function parseSSE(
     }
   }
 
-  return { content, tool_calls: toolCalls, finish_reason: finishReason };
+  return { content, tool_calls: toolCalls, finish_reason: finishReason, usage };
 }
 
 /** arXiv search via the backend proxy. */
@@ -230,5 +251,34 @@ export async function fetchModels(
   );
   if (!r.ok) throw new Error(`models error ${r.status}`);
   const data = await r.json();
-  return (data.data || data.models || []) as ModelInfo[];
+  const raw = (data.data || data.models || []) as Array<Record<string, unknown>>;
+  // Pick the standard /v1/models fields plus a context-length if the provider
+  // exposes one (PPIO and other OpenAI-compatible gateways sometimes do, under
+  // a few different key names). Previously the `as ModelInfo[]` cast silently
+  // discarded any extra fields, so detection never worked.
+  return raw.map((m) => {
+    const context_length = pickContextLength(m);
+    return {
+      id: String(m.id ?? ""),
+      ...(m.object != null ? { object: String(m.object) } : {}),
+      ...(m.created != null ? { created: Number(m.created) } : {}),
+      ...(m.owned_by != null ? { owned_by: String(m.owned_by) } : {}),
+      ...(context_length != null ? { context_length } : {}),
+    } as ModelInfo;
+  });
+}
+
+/** Read a model's total context length from whichever key the provider uses.
+ *  Returns undefined when none is present (capacity then resolves via the
+ *  curated table or default). */
+function pickContextLength(m: Record<string, unknown>): number | undefined {
+  for (const key of ["context_length", "max_context_tokens", "max_input_tokens", "max_context_length"]) {
+    const v = m[key];
+    if (typeof v === "number" && v > 0) return v;
+    if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) {
+      const n = Number(v);
+      if (n > 0) return n;
+    }
+  }
+  return undefined;
 }

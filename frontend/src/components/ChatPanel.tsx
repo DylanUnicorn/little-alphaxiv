@@ -9,15 +9,17 @@
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider, ModelInfo } from "../types";
+import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider, ModelInfo, TokenUsage } from "../types";
 import { STYLE_PRESETS } from "../types";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { runConversation, generateConversationTitle } from "../lib/llm";
+import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
 import * as db from "../lib/db";
 import { PaperCard } from "./PaperCard";
 import { Markdown } from "./Markdown";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
+import { ContextRing } from "./ContextRing";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -202,13 +204,25 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   const effectiveSystemPrompt =
     (systemPrompt || "") + (STYLE_PRESETS[stylePreset]?.promptMod || "");
 
-  // Apply context window limit to history
+  // Truncate history to fit the model's context window (capacity − reserve),
+  // keeping the system prompt as a fixed, un-droppable cost. Replaces the old
+  // message-count slice. Tool-group-aware: never orphans a tool result from the
+  // tool_call that produced it. See lib/contextBudget.truncateToFit.
   function getContextMessages(): ChatMessage[] {
-    const ctxWindow = c.context_window || 0;
-    if (ctxWindow > 0 && c.messages.length > ctxWindow) {
-      return c.messages.slice(-ctxWindow);
-    }
-    return c.messages;
+    const modelInfo = cachedModels.find((m) => m.id === currentModel);
+    const { capacity, reserve } = resolveForConv({
+      model: { id: currentModel, context_length: modelInfo?.context_length },
+      capacityOverride: c.context_capacity_override,
+      reserveOverride: c.reserve_tokens,
+    });
+    const { messages } = truncateToFit(
+      c.messages,
+      capacity,
+      reserve,
+      effectiveSystemPrompt,
+      c.last_usage?.calibration
+    );
+    return messages;
   }
 
   async function send(override?: string) {
@@ -269,6 +283,24 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
           onToolMessage: (msg) => appendMessages(c.id, [msg]),
           onPapers: () => setStatus("Found papers…"),
           onStatus: (s) => setStatus(s),
+          onUsage: (usage: TokenUsage, requestMessages: unknown[]) => {
+            // Calibrate the heuristic estimate against the provider's real
+            // prompt_tokens for this exact request, then persist so the
+            // context ring tracks ground truth on subsequent turns.
+            const est = estimateTokens(
+              requestMessages as { role: string; content: unknown }[]
+            );
+            const calibration = computeCalibration(usage.prompt_tokens, est);
+            void _updateSettings(c.id, {
+              last_usage: {
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
+                calibration,
+                ts: Date.now(),
+              },
+            });
+          },
         },
       });
       setStatus("");
@@ -395,6 +427,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
               Fetch
             </button>
           )}
+          <ContextRing conversationId={c.id} systemPrompt={effectiveSystemPrompt} />
         </div>
       )}
       <div className="chat-input-row">

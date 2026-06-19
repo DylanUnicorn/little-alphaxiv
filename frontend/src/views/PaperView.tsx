@@ -153,7 +153,6 @@ export function PaperView() {
                 onNewConversation={handleNewConversation}
                 onModelChange={(m) => updateSettings(convIdState, { model: m })}
                 onStyleChange={(s: StylePreset) => updateSettings(convIdState, { style_preset: s })}
-                onContextWindowChange={(ctx) => updateSettings(convIdState, { context_window: ctx })}
               />
             )}
             {showHistory ? (

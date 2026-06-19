@@ -674,6 +674,61 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 }
 .settings-loading { font-size: 12px; color: var(--text-dim); padding: 4px 0; }
 
+/* ---------- Context usage ring ---------- */
+/* Small donut in the chat model-selector row; click opens a popover with the
+   full used/total/reserved/usable breakdown + capacity & reserve controls.
+   Colors: ok follows the theme accent; warn/critical are fixed semantic
+   amber/red (a warning should read the same in every theme). */
+.ctx-ring-wrap { position: relative; margin-left: auto; flex-shrink: 0; }
+.ctx-ring-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 6px 2px 4px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; background: transparent;
+  cursor: pointer; color: var(--text-dim); font-size: 11px;
+  font-family: inherit; line-height: 1;
+}
+.ctx-ring-btn:hover { background: var(--bg-3); color: var(--text); }
+.ctx-ring-svg { display: block; }
+.ctx-ring-track { stroke: var(--border); }
+.ctx-ring-pct { font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
+.ctx-ring-warn .ctx-ring-pct { color: var(--ctx-warn, #f0a020); }
+.ctx-ring-critical .ctx-ring-pct { color: var(--ctx-crit, #e05656); }
+
+.ctx-ring-popover {
+  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 100;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  padding: 12px; min-width: 244px; max-width: 288px;
+}
+.ctx-popover-title {
+  font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 8px;
+}
+.ctx-popover-bar { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
+.ctx-popover-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.2s ease; }
+.ctx-popover-bar-fill.ctx-ring-warn { background: var(--ctx-warn, #f0a020); }
+.ctx-popover-bar-fill.ctx-ring-critical { background: var(--ctx-crit, #e05656); }
+.ctx-popover-pct { font-size: 12px; color: var(--text-dim); margin: 6px 0 10px; }
+
+.ctx-popover-stats { margin: 0 0 12px; display: grid; gap: 4px; }
+.ctx-popover-stats > div {
+  display: flex; justify-content: space-between; align-items: baseline; font-size: 12px;
+}
+.ctx-popover-stats dt { color: var(--text-dim); }
+.ctx-popover-stats dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+.ctx-popover-stats .muted { color: var(--text-dim); font-size: 11px; }
+
+.ctx-popover-controls { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ctx-control { display: grid; gap: 4px; }
+.ctx-control-label {
+  font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ctx-control-select, .ctx-control-input {
+  width: 100%; padding: 5px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--bg-3); color: var(--text); font-size: 13px; font-family: inherit;
+}
+.ctx-popover-resolved { margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+
 /* ---------- Attachments ---------- */
 .attachment-previews {
   display: flex; gap: 6px; padding: 8px 20px; flex-wrap: wrap;
