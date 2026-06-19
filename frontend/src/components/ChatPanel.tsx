@@ -144,47 +144,50 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     if (el) el.scrollTop = el.scrollHeight;
   }, [conversationId]);
 
-  // Handle paste — extract images from clipboard
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith("image/")) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (!file) continue;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          setAttachments((prev) => [
-            ...prev,
-            { type: "image", data_url: dataUrl, name: file.name },
-          ]);
-        };
-        reader.readAsDataURL(file);
-      }
+  // Shared ingest: encode image File(s) to base64 data URLs and append to
+  // attachments. Image-only (matches <input accept="image/*">); non-images
+  // are silently skipped — callers that want a rejection signal (drag-drop)
+  // call pickImageFiles first and pass only images here.
+  const addFiles = useCallback((files: File[]) => {
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        setAttachments((prev) => [
+          ...prev,
+          { type: "image", data_url: dataUrl, name: file.name },
+        ]);
+      };
+      reader.readAsDataURL(file);
     }
   }, []);
 
-  // Handle file input (click to upload)
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          setAttachments((prev) => [
-            ...prev,
-            { type: "image", data_url: dataUrl, name: file.name },
-          ]);
-        };
-        reader.readAsDataURL(file);
+  // Handle paste — extract images from clipboard (silent skip for non-images).
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    let hadImage = false;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        hadImage = true;
+        const file = item.getAsFile();
+        if (file) files.push(file);
       }
     }
-    e.target.value = ""; // reset
-  }, []);
+    if (hadImage) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  }, [addFiles]);
+
+  // Handle file input (click to upload).
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) addFiles(Array.from(files));
+    e.target.value = ""; // reset so the same file can be re-selected
+  }, [addFiles]);
 
   if (!conv) return <div className="chat-panel"><p>No conversation.</p></div>;
 
