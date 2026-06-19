@@ -109,3 +109,15 @@ export async function clearAnnotations(arxivId: string): Promise<void> {
   await Promise.all(ids.map((id) => tx.store.delete(id)));
   await tx.done;
 }
+
+// ---- Counts (for the hasHistory signal: "does this origin hold persisted data?") ----
+
+export async function countAnnotations(): Promise<number> {
+  const d = await db();
+  return d.count("annotations");
+}
+
+export async function countPapers(): Promise<number> {
+  const d = await db();
+  return d.count("papers");
+}

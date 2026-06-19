@@ -18,11 +18,13 @@ interface ConvState {
   activeId: string | null;
   loading: boolean;
   loaded: boolean;
-  // True iff IDB held >=1 conversation with messages at load() time. Read-only
-  // after load (no setter). Reflects persisted history, NOT in-memory state —
-  // ensureRootChat creates an empty in-memory general chat that would falsely
-  // flip conversations.length > 0, so the origin-redirect/banner logic reads
-  // this flag instead.
+  // True iff IDB held any persisted user data at load() time — conversations
+  // with messages, annotations, OR cached papers. Read-only after load (no
+  // setter). Reflects persisted data, NOT in-memory state — ensureRootChat
+  // creates an empty in-memory general chat that would falsely flip
+  // conversations.length > 0, so the origin-redirect/banner logic reads this
+  // flag instead. Broadened from conversations-only so the redirect never
+  // fires away from an origin holding annotations/cached-papers (no stranding).
   hasHistory: boolean;
   load: () => Promise<void>;
   setActive: (id: string | null) => void;
@@ -101,9 +103,17 @@ export const useConversations = create<ConvState>((set, get) => ({
     const empties = all.filter((c) => c.messages.length === 0);
     const conversations = all.filter((c) => c.messages.length > 0);
     await Promise.all(empties.map((c) => db.deleteConversation(c.id)));
-    // hasHistory reflects persisted history (>=1 conv with messages), NOT the
-    // in-memory list (ensureRootChat mutates that). Computed once at load.
-    set({ conversations, loading: false, loaded: true, hasHistory: conversations.length > 0 });
+    // hasHistory = any persisted user data: conversations (with messages),
+    // annotations, or cached papers. Computed once at load; read-only after.
+    const annotationCount = await db.countAnnotations();
+    const paperCount = await db.countPapers();
+    set({
+      conversations,
+      loading: false,
+      loaded: true,
+      hasHistory:
+        conversations.length > 0 || annotationCount > 0 || paperCount > 0,
+    });
   },
 
   setActive: (id) => set({ activeId: id }),
