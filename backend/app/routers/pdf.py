@@ -9,13 +9,16 @@ Basic single-range support is included so pdf.js can request byte ranges
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, Response
+
+from ._papershared import is_safe_external_url
 
 router = APIRouter()
 
@@ -50,6 +53,47 @@ async def _fetch_from_arxiv(arxiv_id: str) -> bytes:
             detail=f"arxiv pdf returned {resp.status_code} for {url}",
         )
     return resp.content
+
+
+def _cache_path_for_url(url: str) -> Path:
+    # URL characters aren't filename-safe and the plain-sanitize scheme collides
+    # for non-arxiv ids; key the cache by a sha256 of the URL instead.
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return _CACHE_DIR / f"oa-{digest}.pdf"
+
+
+async def _fetch_from_url(url: str) -> bytes:
+    ok, reason = is_safe_external_url(url)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"refused pdf url: {reason}")
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+        try:
+            resp = await client.get(url, headers={"User-Agent": "little-alphaxiv/0.1"})
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"pdf url error: {exc}") from exc
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"pdf url returned {resp.status_code} for {url}",
+        )
+    return resp.content
+
+
+@router.get("/pdf-url")
+async def get_pdf_by_url(
+    url: str = Query(..., description="Absolute http(s) URL of an open-access PDF"),
+    range_header: str | None = Header(default=None, alias="Range"),
+) -> Any:
+    path = _cache_path_for_url(url)
+    if not path.exists():
+        data = await _fetch_from_url(url)
+        try:
+            path.write_bytes(data)
+        except OSError:
+            return _serve_bytes(data, range_header)
+    else:
+        data = path.read_bytes()
+    return _serve_bytes(data, range_header)
 
 
 @router.get("/pdf/{arxiv_id}")
