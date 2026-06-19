@@ -262,17 +262,18 @@ stripping step.
 
 ```ts
 export interface Budget {
-  used: number;       // calibrated estimate of the request about to be sent
+  used: number;       // calibrated estimate of the request actually sent (system + truncated history)
   total: number;      // resolved capacity
   reserve: number;    // reserved output budget
   usable: number;     // total - reserve
-  pct: number;        // used / usable, 0..1
+  pct: number;        // used / usable, clamped 0..1
   status: "ok" | "warn" | "critical"; // warn >0.80, critical >0.95
   source: "override" | "detected" | "table" | "default";
+  dropped: number;    // history messages dropped to fit (0 when it all fits)
 }
 
 export function computeBudget(args: {
-  messages: ChatMessage[];        // current history (before truncation)
+  messages: ChatMessage[];        // current history (truncated internally to fit)
   systemPrompt: string;           // FIXED prefix — counted, never truncated (paper full text lives here)
   model: { id: string; context_length?: number } | undefined;
   capacityOverride?: number;
@@ -289,8 +290,11 @@ export function resolveForConv(args: {
 }): { capacity: number; reserve: number; source: Budget["source"] };
 ```
 
-`used` is the calibrated estimate of the *next* request (`systemPrompt` +
-current history). The ring fills to `pct`; color follows `status`.
+`used` is the calibrated estimate of the request actually sent (`systemPrompt` +
+truncated history — `computeBudget` runs `truncateToFit` internally, so the ring
+reflects the real request and never shows >100% of usable). The ring fills to
+`pct`; color follows `status`. When `dropped > 0` the popover shows a
+"N oldest messages truncated on send" note.
 
 ## 6. Capturing Real Usage
 
@@ -439,11 +443,14 @@ without a real API key:
    calibration fires.
 
 New Playwright script `tools/drive_context_ring.py`: seeds the mock provider,
-opens a paper chat, asserts the ring renders + shows a percentage, opens the
-popover, switches capacity (Auto → 256K) and confirms it persists on reload,
-injects a long mock history to confirm auto-truncate drops messages and the
-ring stays under 100%, and confirms the mock's `usage` was captured (calibration
-≠ 1.0 after the first turn). Screenshots to `tools/shots/`.
+opens a chat, asserts the ring renders + shows a percentage, opens the popover
+(total resolves to 128K for glm-5.2), switches capacity (Auto → 256K) and
+confirms it persists to IndexedDB, sends a message and confirms the mock's
+`usage` was captured with a calibration factor ≠ 1.0, then sends a ~120K-char
+message at 32K capacity and confirms the "truncated" note appears
+(auto-truncate dropped oldest messages). The mock's `prompt_tokens` is
+proportional to the request (not a fixed value) so calibration stays near 1.0
+and truncation is honest. All 7 checks green. Screenshots to `tools/shots/`.
 
 ## 11. Files
 
@@ -521,3 +528,26 @@ ring stays under 100%, and confirms the mock's `usage` was captured (calibration
 - **Stale cached `ModelInfo` lacking `context_length`.** Old localStorage
   caches predate the field. Mitigation: `resolveCapacity` treats `undefined`
   as "not detected" and falls through to the table — no migration needed.
+
+## 15. Implementation Notes (post-verification)
+
+Refinements made during keyless verification (captured so the doc matches what
+shipped):
+
+- **Ring reflects the *truncated* request, not the raw history.** `computeBudget`
+  runs `truncateToFit` internally; `used` is the estimate of `systemPrompt` +
+  the surviving (truncated) messages, so the ring never shows >100% of usable.
+  `Budget.dropped` reports how many messages were trimmed, and the popover shows
+  a "N oldest messages truncated on send" note when `dropped > 0`.
+- **Per-conversation IDB write serialization (`withConvLock`).** The chat loop
+  fires `appendMessages` (assistant/tool messages) and `updateSettings`
+  (`last_usage`) concurrently and fire-and-forget. Without serialization each
+  mutation read-modify-persisted from a stale in-memory snapshot and the last
+  IDB write won — silently dropping `last_usage` (lost to the round-2 answer's
+  `appendMessages`). `store/conversations.ts` now wraps every read-modify-persist
+  mutator in a per-conversation async mutex so each sees the previous `set`.
+  This also hardens the pre-existing append race.
+- **Mock `prompt_tokens` is proportional to the request** (~1.1× the client
+  heuristic), not a fixed value, so the ring's calibration stays near 1.0 and
+  truncation behaves honestly under the keyless rig. A real provider's usage
+  has this property naturally.
