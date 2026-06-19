@@ -15,9 +15,10 @@ import rehypeKatex from "rehype-katex";
 import { useNavigate } from "react-router-dom";
 import { extractArxivId } from "../lib/arxiv";
 import { markdownCodeComponents } from "./CodeBlock";
+import { rehypeCjkEmphasis } from "../lib/remark-cjk-emphasis";
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
-const REHYPE_PLUGINS = [rehypeKatex];
+const REHYPE_PLUGINS = [rehypeKatex, rehypeCjkEmphasis];
 
 export function Markdown({ children }: { children: string }) {
   const navigate = useNavigate();
