@@ -18,6 +18,12 @@ interface ConvState {
   activeId: string | null;
   loading: boolean;
   loaded: boolean;
+  // True iff IDB held >=1 conversation with messages at load() time. Read-only
+  // after load (no setter). Reflects persisted history, NOT in-memory state —
+  // ensureRootChat creates an empty in-memory general chat that would falsely
+  // flip conversations.length > 0, so the origin-redirect/banner logic reads
+  // this flag instead.
+  hasHistory: boolean;
   load: () => Promise<void>;
   setActive: (id: string | null) => void;
   create: (opts: {
@@ -85,6 +91,7 @@ export const useConversations = create<ConvState>((set, get) => ({
   activeId: null,
   loading: false,
   loaded: false,
+  hasHistory: false,
 
   load: async () => {
     set({ loading: true });
@@ -94,7 +101,9 @@ export const useConversations = create<ConvState>((set, get) => ({
     const empties = all.filter((c) => c.messages.length === 0);
     const conversations = all.filter((c) => c.messages.length > 0);
     await Promise.all(empties.map((c) => db.deleteConversation(c.id)));
-    set({ conversations, loading: false, loaded: true });
+    // hasHistory reflects persisted history (>=1 conv with messages), NOT the
+    // in-memory list (ensureRootChat mutates that). Computed once at load.
+    set({ conversations, loading: false, loaded: true, hasHistory: conversations.length > 0 });
   },
 
   setActive: (id) => set({ activeId: id }),
