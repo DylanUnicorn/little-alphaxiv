@@ -24,12 +24,13 @@ For every task, start a **new worktree** under `.claude/worktrees/` and do all e
 
 ### Backend (`cd backend`)
 - `./run.sh` — activates the `Agent_env` conda env if present, installs deps if missing, runs `uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`
+- Windows CMD: `run.bat` — same as `./run.sh` but native to CMD. **On Windows, do NOT use `bash run.sh`**: `bash` often resolves to WSL, whose Python 3.8 can't parse the backend's `str | None` syntax (needs Python 3.10+). `run.bat` uses the Windows conda `Agent_env` (Python 3.10).
 - Manual: `pip install -r requirements.txt && uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`
 - No backend tests.
 
 ### E2E (Playwright, in `tools/`) — verify frontend changes with no real key
 The sanctioned verification rig. Each `tools/drive_*.py` is a standalone Playwright (Python sync API) script; there is no `npm run e2e` wrapper. Run all three servers, then a driver:
-1. Backend `:8000` → `cd backend && ./run.sh`
+1. Backend `:8000` → `cd backend && ./run.sh` (Windows: `run.bat`)
 2. Frontend `:5173` → `cd frontend && npm run dev`
 3. Mock OpenAI-compatible LLM `:5050` → `python tools/mock_llm.py` (in `Agent_env`)
 4. A driver, e.g. `python tools/drive_titles.py` (titles + date groups), `drive_fixes.py` (regressions), `drive_themes.py` (theme screenshots), `drive.py` (chat/paper scenario).
