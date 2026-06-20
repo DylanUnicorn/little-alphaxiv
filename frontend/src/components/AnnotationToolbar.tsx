@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAnnotations, useCanUndo, useCanRedo } from "../store/annotations";
 import { PALETTE } from "../lib/annotations";
 import type { Tool } from "../types";
+import { Tooltip } from "./Tooltip";
 
 export function AnnotationToolbar() {
   const tool = useAnnotations((s) => s.tool);
@@ -57,19 +58,20 @@ export function AnnotationToolbar() {
         className={"annot-color-control" + (colorActive ? " active" : "")}
         ref={wrapRef}
       >
-        <button
-          className="annot-color-trigger"
-          title={colorActive ? "Color" : "Color (select a tool first)"}
-          aria-haspopup="listbox"
-          aria-expanded={paletteOpen}
-          onClick={() => setPaletteOpen((v) => !v)}
-        >
-          <span
-            className={"annot-color-chip" + (colorActive ? "" : " empty")}
-            style={colorActive ? { background: color } : undefined}
-          />
-          <span className="annot-color-caret" aria-hidden="true">▾</span>
-        </button>
+        <Tooltip label={colorActive ? "Color" : "Color (select a tool first)"} side="bottom">
+          <button
+            className="annot-color-trigger"
+            aria-haspopup="listbox"
+            aria-expanded={paletteOpen}
+            onClick={() => setPaletteOpen((v) => !v)}
+          >
+            <span
+              className={"annot-color-chip" + (colorActive ? "" : " empty")}
+              style={colorActive ? { background: color } : undefined}
+            />
+            <span className="annot-color-caret" aria-hidden="true">▾</span>
+          </button>
+        </Tooltip>
         {paletteOpen && (
           <div className="annot-palette" role="listbox" aria-label="Annotation color">
             {PALETTE.map((c) => (
@@ -77,7 +79,6 @@ export function AnnotationToolbar() {
                 key={c}
                 className={"annot-swatch" + (c === color ? " selected" : "")}
                 style={{ background: c }}
-                title={c}
                 aria-label={c}
                 aria-selected={c === color}
                 role="option"
@@ -91,40 +92,46 @@ export function AnnotationToolbar() {
         )}
       </div>
 
-      <button
-        className={"annot-tool-btn" + (tool === "text" ? " active" : "")}
-        title="Text"
-        onClick={() => onTool("text")}
-      >📝</button>
-      <button
-        className={"annot-tool-btn" + (tool === "rect" ? " active" : "")}
-        title="Rectangle"
-        onClick={() => onTool("rect")}
-      >▭</button>
-      <button
-        className={"annot-tool-btn" + (tool === "draw" ? " active" : "")}
-        title="Freehand"
-        onClick={() => onTool("draw")}
-      >✏️</button>
-      <button
-        className={"annot-tool-btn" + (highlightOn ? " active" : "")}
-        title="Highlight (toggle)"
-        onClick={toggleHighlight}
-      >🖍️</button>
+      <Tooltip label="Text" side="bottom">
+        <button
+          className={"annot-tool-btn" + (tool === "text" ? " active" : "")}
+          onClick={() => onTool("text")}
+        >📝</button>
+      </Tooltip>
+      <Tooltip label="Rectangle" side="bottom">
+        <button
+          className={"annot-tool-btn" + (tool === "rect" ? " active" : "")}
+          onClick={() => onTool("rect")}
+        >▭</button>
+      </Tooltip>
+      <Tooltip label="Freehand" side="bottom">
+        <button
+          className={"annot-tool-btn" + (tool === "draw" ? " active" : "")}
+          onClick={() => onTool("draw")}
+        >✏️</button>
+      </Tooltip>
+      <Tooltip label="Highlight (toggle)" side="bottom">
+        <button
+          className={"annot-tool-btn" + (highlightOn ? " active" : "")}
+          onClick={toggleHighlight}
+        >🖍️</button>
+      </Tooltip>
 
       <span className="annot-sep" />
-      <button
-        className="annot-tool-btn"
-        title="Undo (Ctrl+Z)"
-        disabled={!canUndo}
-        onClick={undo}
-      >↶</button>
-      <button
-        className="annot-tool-btn"
-        title="Redo (Ctrl+Shift+Z)"
-        disabled={!canRedo}
-        onClick={redo}
-      >↷</button>
+      <Tooltip label="Undo (Ctrl+Z)" side="bottom">
+        <button
+          className="annot-tool-btn"
+          disabled={!canUndo}
+          onClick={undo}
+        >↶</button>
+      </Tooltip>
+      <Tooltip label="Redo (Ctrl+Shift+Z)" side="bottom">
+        <button
+          className="annot-tool-btn"
+          disabled={!canRedo}
+          onClick={redo}
+        >↷</button>
+      </Tooltip>
     </div>
   );
 }

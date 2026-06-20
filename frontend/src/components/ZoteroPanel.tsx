@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useSettings } from "../store/settings";
 import { useZoteroNoteSyncStore } from "../store/zoteroNoteSync";
 import { ensurePaperMeta } from "../lib/paperMeta";
+import { Tooltip } from "./Tooltip";
 import {
   zoteroStatus,
   zoteroSearchItems,
@@ -360,7 +361,9 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
         <div className="zotero-head">
           <strong>Zotero</strong>
           <span className={`zotero-chip ${connected ? "on" : "off"}`}>{statusChip}</span>
-          <button className="zotero-close" onClick={onClose} title="Close">×</button>
+          <Tooltip label="Close" side="bottom">
+            <button className="zotero-close" onClick={onClose}>×</button>
+          </Tooltip>
         </div>
 
         {!connected && !checkingStatus && (
@@ -605,7 +608,11 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
                                     <div className="zotero-item-main">
                                       <span className="zotero-item-title">
                                         {it.title}
-                                        {it.arxivId && <span className="zotero-arxiv-badge" title={`arXiv:${it.arxivId}`}>arXiv</span>}
+                                        {it.arxivId && (
+                                          <Tooltip label={`arXiv:${it.arxivId}`} side="top">
+                                            <span className="zotero-arxiv-badge">arXiv</span>
+                                          </Tooltip>
+                                        )}
                                       </span>
                                       {it.creators && <span className="zotero-item-sub">{it.creators}{it.year ? ` (${it.year})` : ""}</span>}
                                     </div>

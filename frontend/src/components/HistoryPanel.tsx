@@ -5,6 +5,7 @@
 
 import { useConversations } from "../store/conversations";
 import type { Conversation } from "../types";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   arxivId: string;
@@ -55,8 +56,12 @@ export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Pr
     <div className="history-panel">
       <div className="history-head">
         <span className="history-title">Conversations</span>
-        <button className="history-new" onClick={onNew} title="New conversation">✚ New</button>
-        <button className="history-close" onClick={onClose} title="Close">✕</button>
+        <Tooltip label="New conversation" side="bottom">
+          <button className="history-new" onClick={onNew}>✚ New</button>
+        </Tooltip>
+        <Tooltip label="Close" side="bottom">
+          <button className="history-close" onClick={onClose}>✕</button>
+        </Tooltip>
       </div>
       <div className="history-list">
         {threads.length === 0 && (
@@ -74,11 +79,12 @@ export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Pr
                 {c.messages.length} msg · {relativeTime(c.updated_at)}
               </div>
             </div>
-            <button
-              className="history-item-del"
-              title="Delete"
-              onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
-            >×</button>
+            <Tooltip label="Delete" side="top">
+              <button
+                className="history-item-del"
+                onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
+              >×</button>
+            </Tooltip>
           </div>
         ))}
       </div>

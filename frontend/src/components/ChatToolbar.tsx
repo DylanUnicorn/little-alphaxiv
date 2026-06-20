@@ -9,6 +9,7 @@ import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { THEMES } from "../themes";
 import { STYLE_PRESETS, type StylePreset } from "../types";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   conversationId: string;
@@ -60,25 +61,29 @@ export function ChatToolbar({
   return (
     <div className="chat-toolbar">
       <div className="chat-toolbar-left">
-        <button
-          className={`toolbar-btn ${showHistory ? "active" : ""}`}
-          title="Conversation history"
-          onClick={onToggleHistory}
-        >
-          ☰ <span className="conv-count">{paperConvs.length}</span>
-        </button>
+        <Tooltip label="Conversation history" side="bottom">
+          <button
+            className={`toolbar-btn ${showHistory ? "active" : ""}`}
+            onClick={onToggleHistory}
+          >
+            ☰ <span className="conv-count">{paperConvs.length}</span>
+          </button>
+        </Tooltip>
         <span className="toolbar-conv-title">{threadTitle}</span>
       </div>
 
       <div className="chat-toolbar-right">
-        <button className="toolbar-btn" title="New conversation" onClick={onNewConversation}>✚</button>
+        <Tooltip label="New conversation" side="bottom">
+          <button className="toolbar-btn" onClick={onNewConversation}>✚</button>
+        </Tooltip>
 
         <div className="toolbar-dropdown" ref={settingsRef}>
-          <button
-            className={`toolbar-btn ${showSettings ? "active" : ""}`}
-            title="Chat settings"
-            onClick={() => setShowSettings((v) => !v)}
-          >⚙</button>
+          <Tooltip label="Chat settings" side="bottom">
+            <button
+              className={`toolbar-btn ${showSettings ? "active" : ""}`}
+              onClick={() => setShowSettings((v) => !v)}
+            >⚙</button>
+          </Tooltip>
           {showSettings && (
             <div className="dropdown-menu settings-menu">
               {/* Style preset */}
@@ -86,15 +91,15 @@ export function ChatToolbar({
                 <label className="settings-label">Style</label>
                 <div className="style-presets">
                   {(Object.keys(STYLE_PRESETS) as StylePreset[]).map((key) => (
-                    <button
-                      key={key}
-                      className={`style-preset-btn ${currentStyle === key ? "active" : ""}`}
-                      onClick={() => onStyleChange(key)}
-                      title={STYLE_PRESETS[key].description}
-                    >
-                      <span className="style-icon">{STYLE_PRESETS[key].icon}</span>
-                      <span className="style-label-text">{STYLE_PRESETS[key].label}</span>
-                    </button>
+                    <Tooltip key={key} label={STYLE_PRESETS[key].description} side="bottom">
+                      <button
+                        className={`style-preset-btn ${currentStyle === key ? "active" : ""}`}
+                        onClick={() => onStyleChange(key)}
+                      >
+                        <span className="style-icon">{STYLE_PRESETS[key].icon}</span>
+                        <span className="style-label-text">{STYLE_PRESETS[key].label}</span>
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
               </div>

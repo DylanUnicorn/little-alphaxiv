@@ -3,6 +3,7 @@ import type { Attachment } from "../types";
 import { computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   value: string;
@@ -200,13 +201,14 @@ export function ChatComposer({
           {attachments.map((att, i) => (
             <div key={i} className="composer-attachment">
               <img src={att.data_url} alt={att.name || "attachment"} />
-              <button
-                className="composer-attachment-remove"
-                onClick={() => onRemoveAttachment(i)}
-                title="Remove attachment"
-              >
-                ×
-              </button>
+              <Tooltip label="Remove attachment" side="top">
+                <button
+                  className="composer-attachment-remove"
+                  onClick={() => onRemoveAttachment(i)}
+                >
+                  ×
+                </button>
+              </Tooltip>
             </div>
           ))}
         </div>
@@ -214,16 +216,17 @@ export function ChatComposer({
 
       <div className="chat-composer-bar">
         <div className="chat-composer-bar-left">
-          <button
-            type="button"
-            className="composer-icon-btn composer-attach-btn"
-            title="Attach image"
-            onClick={onAttach}
-            disabled={busy}
-          >
-            {/* circle wrapping a logo */}
-            <span className="composer-attach-glyph" aria-hidden>＋</span>
-          </button>
+          <Tooltip label="Attach image" side="top">
+            <button
+              type="button"
+              className="composer-icon-btn composer-attach-btn"
+              onClick={onAttach}
+              disabled={busy}
+            >
+              {/* circle wrapping a logo */}
+              <span className="composer-attach-glyph" aria-hidden>＋</span>
+            </button>
+          </Tooltip>
           <ModelSelectPill
             models={models}
             value={currentModel}
@@ -233,16 +236,17 @@ export function ChatComposer({
         </div>
         <div className="chat-composer-bar-right">
           <ContextRing conversationId={conversationId} systemPrompt={systemPrompt} />
-          <button
-            type="button"
-            className={`composer-icon-btn composer-send-btn${busy ? " is-stop" : ""}`}
-            title={busy ? "Stop generating" : "Send (Enter)"}
-            onClick={busy ? (onStop ?? (() => {})) : onSend}
-            disabled={busy ? false : !canSend}
-          >
-            {/* arrow = send, square = stop (visible while assistant is replying) */}
-            <span className="composer-send-glyph" aria-hidden>{busy ? "■" : "➤"}</span>
-          </button>
+          <Tooltip label={busy ? "Stop generating" : "Send (Enter)"} side="top">
+            <button
+              type="button"
+              className={`composer-icon-btn composer-send-btn${busy ? " is-stop" : ""}`}
+              onClick={busy ? (onStop ?? (() => {})) : onSend}
+              disabled={busy ? false : !canSend}
+            >
+              {/* arrow = send, square = stop (visible while assistant is replying) */}
+              <span className="composer-send-glyph" aria-hidden>{busy ? "■" : "➤"}</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
       {rejectToast && (

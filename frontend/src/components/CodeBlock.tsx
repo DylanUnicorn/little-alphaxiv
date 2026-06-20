@@ -8,6 +8,7 @@
 // inline code as a block and (b) nesting a <pre> inside react-markdown's outer <pre>.
 import { useMemo, useRef, useState } from "react";
 import hljs from "highlight.js";
+import { Tooltip } from "./Tooltip";
 
 interface CodeProps {
   className?: string;
@@ -63,9 +64,11 @@ export function CodePre({ children }: PreProps) {
 
   return (
     <div className="code-block">
-      <button className="code-block-copy" onClick={copy} title="Copy">
-        {copied ? "✓" : "⧉"}
-      </button>
+      <Tooltip label="Copy" side="bottom">
+        <button className="code-block-copy" onClick={copy}>
+          {copied ? "✓" : "⧉"}
+        </button>
+      </Tooltip>
       <pre ref={preRef}>{children}</pre>
     </div>
   );
