@@ -317,6 +317,50 @@ async def list_collections(
 
 
 # --------------------------------------------------------------------------- #
+# 3b. currently-selected save target (local mode)
+# --------------------------------------------------------------------------- #
+# The local connector has no way to *choose* a target collection for a new
+# item — /connector/saveItems always saves into the Zotero desktop's
+# currently-selected collection (getSaveTarget() in server_connector.js),
+# ignoring any collections field. To make that "saves somewhere I didn't
+# pick" behavior visible (instead of feeling random), we surface the
+# desktop's current selection via /connector/getSelectedCollection so the
+# UI can show "Saving to: <name>" and tell the user to change it in Zotero
+# (or switch to Web API to choose here). Web mode has no GUI selection, so
+# it reports nothing to choose.
+@router.get("/zotero/selected-collection")
+async def get_selected_collection(
+    mode: str = Query("auto"),
+    user_id: str = Query(""),
+    api_key: str = Query(""),
+) -> Any:
+    resolved = await _resolve_mode(mode, user_id, api_key)
+    if resolved != "local":
+        return JSONResponse(content={"ok": True, "mode": resolved,
+                                     "libraryName": "", "collectionName": ""})
+    headers = {"Content-Type": "application/json", "X-Zotero-Connector-API-Version": "3"}
+    async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
+        try:
+            r = await client.post(f"{_LOCAL_CONN}/connector/getSelectedCollection",
+                                  json={}, headers=headers)
+        except httpx.RequestError as exc:
+            return JSONResponse(content={"ok": False, "mode": "local",
+                                         "error": f"local-unreachable: {exc}"})
+    if r.status_code != 200:
+        return JSONResponse(content={"ok": False, "mode": "local",
+                                     "error": f"getSelectedCollection returned {r.status_code}"})
+    data = r.json() or {}
+    # When My Library itself (not a collection) is selected, Zotero returns
+    # id:null and name=<libraryName>.
+    return JSONResponse(content={
+        "ok": True, "mode": "local",
+        "libraryName": data.get("libraryName") or "",
+        "collectionName": data.get("name") or data.get("libraryName") or "",
+        "collectionId": data.get("id"),
+    })
+
+
+# --------------------------------------------------------------------------- #
 # 4. create item (generic)
 # --------------------------------------------------------------------------- #
 class CreateItemRequest(BaseModel):
@@ -484,6 +528,10 @@ class SaveArxivRequest(BaseModel):
     api_key: str = ""
     paper: dict[str, Any]
     attach_pdf: bool = True
+    # Optional target collection(s) for the new item. Web mode honors this at
+    # creation time (item goes straight into the collection); local mode cannot
+    # — see save_arxiv — so this is effectively web-only.
+    collection_keys: list[str] = Field(default_factory=list)
 
 
 def _zotero_creators(authors: list[str]) -> list[dict[str, Any]]:
@@ -721,6 +769,14 @@ async def save_arxiv(req: SaveArxivRequest) -> Any:
     if not (req.user_id and req.api_key):
         raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
     note_html = _build_note_html(paper)
+    # The Web API honors `collections` at creation time — place the item directly
+    # into the chosen collection(s). The local connector CANNOT do this:
+    # /connector/saveItems saves into the Zotero desktop's currently-selected
+    # collection (getSaveTarget() in Zotero's server_connector.js) and ignores
+    # any collections field on the item. So collection_keys only takes effect
+    # here, in web mode.
+    if req.collection_keys:
+        item["collections"] = req.collection_keys
     token = uuid.uuid4().hex
     headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
                "Zotero-Write-Token": token}

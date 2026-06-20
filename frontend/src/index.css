@@ -1308,6 +1308,26 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 
 .zotero-found, .zotero-notfound { display: flex; flex-direction: column; gap: 8px; }
 .zotero-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.zotero-coll-pick { display: flex; flex-direction: column; gap: 4px; }
+.zotero-coll-pick-label { font-size: 11px; color: var(--text-dim); }
+.zotero-coll-pick select {
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.zotero-coll-pick select:disabled { opacity: 0.5; }
+.zotero-target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 .zotero-add-btn {
   align-self: flex-start;
   padding: 6px 14px;
@@ -1388,17 +1408,61 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   cursor: pointer;
 }
 .zotero-coll-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.zotero-coll-wrap { display: flex; flex-direction: column; }
 .zotero-coll-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
   font-size: 13px;
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
-.zotero-coll-count { font-size: 11px; color: var(--text-dim); }
+.zotero-coll-item:hover { background: var(--bg-4); border-color: var(--accent); }
+.zotero-coll-item.open { border-color: var(--accent); background: var(--accent-soft); }
+.zotero-coll-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.zotero-coll-caret { flex-shrink: 0; width: 10px; color: var(--text-dim); font-size: 10px; }
+.zotero-coll-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zotero-coll-count { flex-shrink: 0; font-size: 11px; color: var(--text-dim); }
+.zotero-coll-items {
+  margin: 2px 0 2px 18px;
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 1px dashed var(--border);
+}
+.zotero-coll-filter {
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.zotero-coll-filter:focus { outline: none; border-color: var(--accent); }
+.zotero-coll-entry { padding: 6px 8px; }
+.zotero-arxiv-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  vertical-align: middle;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
 .zotero-mode-select {
   padding: 3px 8px;

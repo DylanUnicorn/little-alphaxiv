@@ -35,6 +35,7 @@ ENV/
 # ---- Playwright / E2E test artifacts (regenerable) ----
 shots/
 shots_real/
+shots_*/
 test-results/
 playwright-report/
 *.har

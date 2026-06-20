@@ -415,6 +415,20 @@ export async function zoteroListCollections(c: ZoteroCreds): Promise<{ results: 
   return zoteroGet("collections", c);
 }
 
+/** List the items directly inside a single collection — used when the user
+ *  expands a collection row in the Collections tab to see the papers it holds.
+ *  The backend /api/zotero/items endpoint already accepts a collection_key
+ *  query param and routes it to /users/<seg>/collections/<key>/items, so this
+ *  is a read in BOTH local and web mode (the local API is read-only but reads
+ *  are allowed). Empty `q` lists every item in the collection. */
+export async function zoteroListCollectionItems(
+  c: ZoteroCreds,
+  collectionKey: string,
+  limit = 100
+): Promise<{ total: number; results: ZoteroItem[]; mode: string }> {
+  return zoteroGet("items", c, { collection_key: collectionKey, limit: String(limit) });
+}
+
 /** Create a Zotero collection (web mode only). */
 export async function zoteroCreateCollection(
   c: ZoteroCreds,
@@ -439,13 +453,27 @@ export async function zoteroAddToCollection(
  *  note). The paper object matches the app's Paper record (arxiv_id, title,
  *  authors, doi, abstract, abs_url, published, primary_category). The backend
  *  fills any missing fields from arXiv, so a bare-id stub still yields a
- *  complete item. Returns {ok, mode, key?, pdfAttached?, noteAdded?}. */
+ *  complete item. `collectionKeys` (web mode only) places the new item directly
+ *  into the given collection(s) at creation time; the local connector can't
+ *  target a collection and ignores it. Returns {ok, mode, key?, pdfAttached?,
+ *  noteAdded?}. */
 export async function zoteroSaveArxiv(
   c: ZoteroCreds,
   paper: { arxiv_id?: string; title?: string; authors?: string[]; doi?: string; abstract?: string; abs_url?: string; published?: string; pdf_url?: string; primary_category?: string },
-  attachPdf: boolean
+  attachPdf: boolean,
+  collectionKeys: string[] = []
 ): Promise<{ ok: boolean; mode: string; key?: string; pdfAttached?: boolean; noteAdded?: boolean }> {
-  return zoteroPost("save-arxiv", { mode: c.mode, user_id: c.userId, api_key: c.apiKey, paper, attach_pdf: attachPdf });
+  return zoteroPost("save-arxiv", { mode: c.mode, user_id: c.userId, api_key: c.apiKey, paper, attach_pdf: attachPdf, collection_keys: collectionKeys });
+}
+
+/** Local mode only: the Zotero desktop's currently-selected save target, so
+ *  the UI can show where a new item will land (the connector always saves into
+ *  the desktop's selected collection). Returns {ok, mode, libraryName?,
+ *  collectionName?, collectionId?, error?}. Web mode returns empty names. */
+export async function zoteroGetSelectedCollection(
+  c: ZoteroCreds
+): Promise<{ ok: boolean; mode: string; libraryName?: string; collectionName?: string; collectionId?: string | null; error?: string }> {
+  return zoteroGet("selected-collection", c);
 }
 
 /** Build a zotero://select deep link that opens an item in the Zotero desktop

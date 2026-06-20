@@ -2,7 +2,8 @@
 // api_key, model). Stored in localStorage. One provider can be default.
 // Model lists are fetched from the provider /v1/models endpoint and cached.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useSettings } from "../store/settings";
 import { THEMES } from "../themes";
 import type { Provider, ModelInfo } from "../types";
@@ -30,6 +31,20 @@ export function SettingsView() {
   const setZotero = useSettings((s) => s.setZotero);
   const [zoteroTesting, setZoteroTesting] = useState(false);
   const [zoteroTestResult, setZoteroTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const location = useLocation();
+
+  // Auto-scroll to the Zotero section when arriving via /settings#zotero (e.g.
+  // from the Zotero panel's "Switch in Settings" link). .settings-shell is the
+  // scroll container; scrollIntoView lands the heading at its top.
+  useEffect(() => {
+    if (location.hash !== "#zotero") return;
+    const el = document.getElementById("zotero");
+    if (!el) return;
+    const raf = requestAnimationFrame(() =>
+      el.scrollIntoView({ behavior: "smooth", block: "start" })
+    );
+    return () => cancelAnimationFrame(raf);
+  }, [location.hash]);
 
   async function testZotero() {
     setZoteroTesting(true);
@@ -192,7 +207,7 @@ export function SettingsView() {
           </div>
         </div>
 
-        <h2>Zotero</h2>
+        <h2 id="zotero" style={{ scrollMarginTop: "1rem" }}>Zotero</h2>
         <p className="settings-hint">
           Connect to your Zotero library to find the current paper, add papers,
           and organize collections straight from the PDF toolbar.{" "}
