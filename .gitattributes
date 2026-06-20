@@ -1,0 +1,6 @@
+# Pin line endings so Git's core.autocrlf never mangles scripts.
+# cmd.exe .bat files REQUIRE CRLF; LF-only .bat files misparse and flash-close.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# Shell scripts want LF; CRLF would break them in some shells.
+*.sh text eol=lf
