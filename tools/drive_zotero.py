@@ -71,6 +71,19 @@ with sync_playwright() as pw:
     print(f'  -- status chip: "{chip}"', flush=True)
     print(f'  -- screenshot: {SHOTS/"zotero_panel.png"}', flush=True)
 
+    # "Create Note from Annotations" checkbox lives in the This paper tab,
+    # under the found/not-found block. Disabled when Zotero is offline — we
+    # only assert the label renders (the sync itself needs real Web API creds).
+    note_labels = page.eval_on_selector_all(
+        ".zotero-note-sync label",
+        "els=>els.map(e=>e.textContent.trim())",
+    )
+    check(
+        any("Create Note from Annotations" in t for t in note_labels),
+        f'"Create Note from Annotations" checkbox present (got {note_labels})',
+    )
+    page.screenshot(path=str(SHOTS / "zotero_note_sync.png"), full_page=False)
+
     # close via ×
     page.click(".zotero-close")
     page.wait_for_selector(".zotero-panel", state="detached", timeout=5000)

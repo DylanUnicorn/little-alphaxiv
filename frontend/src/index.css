@@ -1349,6 +1349,19 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 
 .zotero-found, .zotero-notfound { display: flex; flex-direction: column; gap: 8px; }
 .zotero-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.zotero-check input { margin: 0; }
+.zotero-check:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
+.zotero-note-sync {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.zotero-note-status { font-size: 11px; }
+.zotero-note-status a { color: var(--accent-2); }
+.zotero-note-err { color: var(--danger); }
 .zotero-coll-pick { display: flex; flex-direction: column; gap: 4px; }
 .zotero-coll-pick-label { font-size: 11px; color: var(--text-dim); }
 .zotero-coll-pick select {

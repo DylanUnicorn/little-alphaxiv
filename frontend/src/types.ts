@@ -194,7 +194,7 @@ export interface Annotation {
   type: AnnotationType;
   color: string; // hex from PALETTE
   createdAt: number;
-  highlight?: { rects: NormRect[] };
+  highlight?: { rects: NormRect[]; content?: string };
   rect?: NormRect;
   draw?: { points: NormPoint[]; width: number }; // width normalized
   text?: { x: number; y: number; w: number; h: number; content: string; fontSize: number };

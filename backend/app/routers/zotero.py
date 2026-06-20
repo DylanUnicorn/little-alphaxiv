@@ -520,6 +520,158 @@ async def add_to_collection(item_key: str, req: AddToCollectionRequest) -> Any:
 
 
 # --------------------------------------------------------------------------- #
+# 6b. upsert child note (web only) — "Create Note from Annotations"
+# --------------------------------------------------------------------------- #
+# The browser continuously extracts the user's PDF annotations (highlights +
+# text notes) and pushes them as a single child note under the paper's Zotero
+# item. To keep that idempotent across sessions — and resilient to a cached
+# note key going stale after the user deletes the note in Zotero — we tag the
+# note with a fixed marker and rediscover it by tag when the cached key misses.
+#
+# Web-only by necessity: the local Zotero connector cannot link child notes
+# (see save_arxiv), so there is no local path here.
+ANNOT_NOTE_TAG = "little-alphaxiv-annotations"
+
+
+class UpsertNoteRequest(BaseModel):
+    mode: str = "auto"
+    user_id: str = ""
+    api_key: str = ""
+    html: str
+    # Cached note key from a previous successful sync — lets us PATCH directly
+    # without listing children. If it 404s (note deleted in Zotero) we fall
+    # back to tag-based discovery, then create.
+    note_key: str = ""
+    tag: str = ANNOT_NOTE_TAG
+
+
+async def _patch_note(
+    client: httpx.AsyncClient, user_id: str, note_key: str, note_html: str,
+    headers: dict[str, str], tag: str,
+) -> tuple[bool, str]:
+    """PATCH an existing note's body. Returns (ok, key). On 404/gone (note
+    deleted in Zotero) returns (False, '') so the caller falls back to
+    discovery/create. Verifies the item is actually one of our tagged notes
+    before overwriting, so a stale note_key pointing at an unrelated item is
+    not clobbered."""
+    try:
+        g = await client.get(f"{_WEB}/users/{user_id}/items/{note_key}", headers=headers)
+    except httpx.RequestError:
+        return (False, "")
+    if g.status_code == 404:
+        return (False, "")
+    if g.status_code != 200:
+        return (False, "")
+    data = (g.json() or {}).get("data") or {}
+    if (data.get("itemType") or "") != "note":
+        return (False, "")
+    tags = {t.get("tag", "") for t in (data.get("tags") or []) if isinstance(t, dict)}
+    # If the existing note carries tags and ours isn't among them, treat it as
+    # someone else's note — don't overwrite. (Discovery normally only lands us
+    # on tagged notes; this guards a stale cached key.)
+    if tags and tag not in tags:
+        return (False, "")
+    version = g.headers.get("Last-Modified-Version", "")
+    patch_headers = {**headers, "Content-Type": "application/json",
+                     "If-Unmodified-Since-Version": version}
+    try:
+        r = await client.patch(f"{_WEB}/users/{user_id}/items/{note_key}",
+                               json={"note": note_html}, headers=patch_headers)
+    except httpx.RequestError:
+        return (False, "")
+    if r.status_code not in (200, 204):
+        return (False, "")
+    return (True, note_key)
+
+
+async def _find_child_note_by_tag(
+    client: httpx.AsyncClient, user_id: str, parent_key: str, tag: str,
+    headers: dict[str, str],
+) -> str:
+    """Return the key of the parent's child note carrying `tag`, or ''.
+    Lists the parent's children (notes are children in the web API) and matches
+    itemType=note + tag."""
+    try:
+        r = await client.get(
+            f"{_WEB}/users/{user_id}/items/{parent_key}/children",
+            headers=headers, params={"itemType": "note", "limit": 100},
+        )
+    except httpx.RequestError:
+        return ""
+    if r.status_code != 200:
+        return ""
+    for it in (r.json() or []):
+        d = it.get("data") or {}
+        if (d.get("itemType") or "") != "note":
+            continue
+        tags = {t.get("tag", "") for t in (d.get("tags") or []) if isinstance(t, dict)}
+        if tag in tags:
+            return it.get("key") or ""
+    return ""
+
+
+async def _create_child_note(
+    client: httpx.AsyncClient, user_id: str, parent_key: str, note_html: str,
+    tag: str, headers: dict[str, str],
+) -> str:
+    """Create a new child note under parent_key, tagged with `tag`. Returns
+    the new key or '' on failure."""
+    item = {"itemType": "note", "note": note_html, "parentItem": parent_key,
+            "tags": [{"tag": tag}]}
+    token = uuid.uuid4().hex
+    post_headers = {**headers, "Content-Type": "application/json",
+                    "Zotero-Write-Token": token}
+    try:
+        r = await client.post(f"{_WEB}/users/{user_id}/items",
+                              json=[item], headers=post_headers)
+    except httpx.RequestError:
+        return ""
+    if r.status_code not in (200, 201):
+        return ""
+    data = r.json() if r.text else {}
+    success = data.get("success") or {}
+    if success and str(0) in success:
+        return success["0"]
+    return ""
+
+
+@router.post("/zotero/items/{parent_key}/note")
+async def upsert_note(parent_key: str, req: UpsertNoteRequest) -> Any:
+    """Create-or-update the paper's annotations child note (web only).
+
+    Resolution order: (1) PATCH the cached `note_key` if given and still
+    valid; (2) discover an existing tagged child note under `parent_key`;
+    (3) create a new tagged child note. Returns {ok, key, created, mode,
+    error?}."""
+    resolved = await _resolve_mode(req.mode, req.user_id, req.api_key)
+    if resolved != "web":
+        raise HTTPException(
+            status_code=400,
+            detail="Note sync requires Web API mode — the local Zotero "
+            "connector cannot attach child notes. Switch to Web API in Settings.",
+        )
+    if not (req.user_id and req.api_key):
+        raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+    headers = _headers_web(req.api_key)
+    tag = req.tag or ANNOT_NOTE_TAG
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        if req.note_key:
+            ok, key = await _patch_note(client, req.user_id, req.note_key, req.html, headers, tag)
+            if ok:
+                return JSONResponse(content={"ok": True, "key": key, "created": False, "mode": "web"})
+        found = await _find_child_note_by_tag(client, req.user_id, parent_key, tag, headers)
+        if found:
+            ok, key = await _patch_note(client, req.user_id, found, req.html, headers, tag)
+            if ok:
+                return JSONResponse(content={"ok": True, "key": key, "created": False, "mode": "web"})
+        new_key = await _create_child_note(client, req.user_id, parent_key, req.html, tag, headers)
+    if new_key:
+        return JSONResponse(content={"ok": True, "key": new_key, "created": True, "mode": "web"})
+    return JSONResponse(content={"ok": False, "key": "", "created": False, "mode": "web",
+                                 "error": "note upsert failed (Zotero returned no key)"})
+
+
+# --------------------------------------------------------------------------- #
 # 7. save current arXiv paper (+ optional PDF) — the "connector-like" flow
 # --------------------------------------------------------------------------- #
 class SaveArxivRequest(BaseModel):

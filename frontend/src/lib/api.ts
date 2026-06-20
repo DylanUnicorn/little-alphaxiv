@@ -449,6 +449,24 @@ export async function zoteroAddToCollection(
   });
 }
 
+/** Create-or-update the paper's annotations child note in Zotero (web only).
+ *  Powers "Create Note from Annotations": the backend patches the cached
+ *  `noteKey` if still valid, else discovers an existing tagged child note under
+ *  `parentKey`, else creates one — so repeated calls are idempotent across
+ *  sessions. `noteKey` is an optional hint from a prior successful sync.
+ *  Returns {ok, key, created, mode, error?}. */
+export async function zoteroUpsertNote(
+  c: ZoteroCreds,
+  parentKey: string,
+  html: string,
+  opts: { noteKey?: string; tag?: string } = {}
+): Promise<{ ok: boolean; key?: string; created?: boolean; mode: string; error?: string }> {
+  return zoteroPost(`items/${encodeURIComponent(parentKey)}/note`, {
+    mode: c.mode, user_id: c.userId, api_key: c.apiKey, html,
+    note_key: opts.noteKey || "", tag: opts.tag || "little-alphaxiv-annotations",
+  });
+}
+
 /** Save the current arXiv paper to Zotero (metadata + optional PDF + child
  *  note). The paper object matches the app's Paper record (arxiv_id, title,
  *  authors, doi, abstract, abs_url, published, primary_category). The backend

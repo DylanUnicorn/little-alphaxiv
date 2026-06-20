@@ -17,6 +17,7 @@ import { AnnotationToolbar } from "./AnnotationToolbar";
 import { HighlightLayer } from "./HighlightLayer";
 import { AnnotLayer } from "./AnnotLayer";
 import { ZoteroPanel } from "./ZoteroPanel";
+import { useZoteroNoteSync } from "../hooks/useZoteroNoteSync";
 import { useAnnotations } from "../store/annotations";
 import type { PageSize } from "../types";
 
@@ -40,6 +41,11 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   const [showZotero, setShowZotero] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+  // "Create Note from Annotations": while enabled for this paper, continuously
+  // push highlights + text notes to a child note in Zotero. Needs the pdf.js
+  // doc for highlight-text recovery, so it lives here (not in ZoteroPanel).
+  useZoteroNoteSync(arxivId, doc);
 
   // Load document when arxivId or pdfUrlOverride changes.
   useEffect(() => {

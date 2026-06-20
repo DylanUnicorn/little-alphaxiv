@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSettings } from "../store/settings";
+import { useZoteroNoteSyncStore } from "../store/zoteroNoteSync";
 import { ensurePaperMeta } from "../lib/paperMeta";
 import {
   zoteroStatus,
@@ -44,8 +45,22 @@ function normArxiv(id: string): string {
   return (id || "").trim().replace(/v\d+$/, "").toLowerCase();
 }
 
+/** Relative time for the note-sync status line ("just now" / "3m ago"). */
+function timeAgo(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 export function ZoteroPanel({ arxivId, onClose }: Props) {
   const zotero = useSettings((s) => s.zotero);
+  const noteSync = useZoteroNoteSyncStore((s) => s.papers[arxivId]);
+  const setNoteSyncEnabled = useZoteroNoteSyncStore((s) => s.setEnabled);
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("paper");
   const [paper, setPaper] = useState<Paper | null>(null);
@@ -441,6 +456,47 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
                   )}
                 </div>
               )}
+
+              <div className="zotero-note-sync">
+                <label
+                  className="zotero-check"
+                  title="Continuously push your highlights and text notes to a Zotero note under this paper"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!noteSync?.enabled}
+                    disabled={!connected || !webMode}
+                    onChange={(e) => setNoteSyncEnabled(arxivId, e.target.checked)}
+                  />
+                  Create Note from Annotations
+                </label>
+                {connected && !webMode && (
+                  <div className="zotero-hint zotero-hint-sub">
+                    Note sync requires <a href="/settings#zotero" onClick={(e) => { e.preventDefault(); onClose(); navigate("/settings#zotero"); }}>Web API mode</a> — the local connector can’t attach child notes.
+                  </div>
+                )}
+                {connected && webMode && noteSync?.enabled && (
+                  <div className="zotero-note-status">
+                    {noteSync.syncing ? (
+                      <span className="zotero-hint">Syncing annotations…</span>
+                    ) : noteSync.lastError ? (
+                      <span className="zotero-hint zotero-note-err">{noteSync.lastError}</span>
+                    ) : noteSync.lastSyncedAt ? (
+                      <span className="zotero-hint">
+                        ✓ {noteSync.lastCount} annotation{noteSync.lastCount === 1 ? "" : "s"} synced · {timeAgo(noteSync.lastSyncedAt)}
+                        {noteSync.noteKey && (
+                          <>
+                            {" · "}
+                            <a href={zoteroSelectUrl(noteSync.noteKey)} target="_blank" rel="noopener noreferrer">Open note</a>
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="zotero-hint">Preparing note…</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
