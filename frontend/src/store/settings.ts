@@ -24,6 +24,25 @@ export const DEFAULT_SEARCH_SOURCES: SearchSources = {
   semanticScholar: { enabled: false, apiKey: "" },
 };
 
+/** Zotero connection config. Two ways to reach a Zotero library:
+ *  - `local`: talks to the Zotero desktop app's local API on 127.0.0.1:23119
+ *    (no key; needs Zotero running with "Allow other applications to
+ *    communicate with Zotero" enabled). Read + add item (+ optional PDF) only.
+ *  - `web`: the Zotero Web API (api.zotero.org), needs userID + API key and a
+ *    library synced to zotero.org. Full CRUD incl. organizing collections.
+ *  - `auto`: try local first, fall back to web if credentials are set. */
+export interface ZoteroConfig {
+  mode: "auto" | "local" | "web";
+  userId: string; // Zotero userID (web mode only)
+  apiKey: string; // Zotero API key (web mode only)
+}
+
+export const DEFAULT_ZOTERO: ZoteroConfig = {
+  mode: "auto",
+  userId: "",
+  apiKey: "",
+};
+
 interface SettingsState {
   providers: Provider[];
   defaultProviderId: string | null;
@@ -48,6 +67,11 @@ interface SettingsState {
   searchSources: SearchSources;
   /** Patch the search-sources slice (shallow-merged per source). */
   setSearchSources: (patch: Partial<SearchSources>) => void;
+  /** Zotero connection config (mode + web-mode credentials). Local only in
+   *  localStorage, sent to the backend proxy per request. */
+  zotero: ZoteroConfig;
+  /** Patch the zotero slice (shallow-merged). */
+  setZotero: (patch: Partial<ZoteroConfig>) => void;
 }
 
 function uid(): string {
@@ -63,6 +87,7 @@ export const useSettings = create<SettingsState>()(
       defaultProviderId: null,
       theme: DEFAULT_THEME,
       searchSources: DEFAULT_SEARCH_SOURCES,
+      zotero: DEFAULT_ZOTERO,
       providerModels: {},
       addProvider: (p) => {
         const provider: Provider = { ...p, id: uid() };
@@ -134,6 +159,7 @@ export const useSettings = create<SettingsState>()(
             },
           },
         })),
+      setZotero: (patch) => set((s) => ({ zotero: { ...s.zotero, ...patch } })),
     }),
     {
       name: "little-alphaxiv-settings",
@@ -145,6 +171,8 @@ export const useSettings = create<SettingsState>()(
           state.theme = coerceTheme(state.theme);
           // Older persisted state (pre multi-source) has no searchSources.
           if (!state.searchSources) state.searchSources = DEFAULT_SEARCH_SOURCES;
+          // Older persisted state (pre Zotero) has no zotero slice.
+          if (!state.zotero) state.zotero = DEFAULT_ZOTERO;
         }
       },
     }

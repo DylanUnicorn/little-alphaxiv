@@ -1,0 +1,614 @@
+"""Zotero integration proxy.
+
+Zotero exposes three APIs, none of which send CORS headers, so the browser
+can't reach them directly. This router proxies to whichever the user picked:
+
+  - local  -> http://127.0.0.1:23119   (Zotero desktop running with
+             "Allow other applications to communicate with Zotero" enabled)
+             * read via  /api/users/0/...        (read-only, no key)
+             * create via /connector/saveItems   (+ /connector/saveAttachment
+               two-step to attach a PDF; no key)
+  - web    -> https://api.zotero.org   (full CRUD; needs userID + API key,
+             library synced to zotero.org). Header `Zotero-API-Key`.
+  - auto   -> try local first (short timeout), fall back to web if the user
+             supplied credentials.
+
+Like every other router here this is a stateless dumb pipe: userID / API key
+arrive per-request from the browser (stored in the user's own localStorage).
+Nothing is persisted server-side.
+
+API reality (verified against Zotero 7/8):
+  - local /api/ is READ ONLY; all writes 501.
+  - /connector/ can CREATE items (+ attach files) but cannot update/delete/move
+    or create collections — those need the web API.
+  - So "organize" (create collection / add-to-collection) is web-only by
+    Zotero's design, not ours.
+"""
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from typing import Any
+from urllib.parse import urlencode
+
+import httpx
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+_LOCAL = "http://127.0.0.1:23119"
+_WEB = "https://api.zotero.org"
+# Local read API lives under /api ; the user library is identified by "0".
+# Connector endpoints live directly under /connector (no /api prefix).
+_LOCAL_READ = f"{_LOCAL}/api"
+_LOCAL_CONN = _LOCAL
+
+_TIMEOUT = httpx.Timeout(connect=4.0, read=30.0, write=15.0, pool=10.0)
+_PDF_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=15.0)
+# Short timeout for the local ping — Zotero desktop is on the loopback, so 2s
+# is plenty to tell "running" from "not running" without hanging auto mode.
+_PING_TIMEOUT = httpx.Timeout(connect=1.5, read=2.0, write=2.0, pool=2.0)
+
+_ARXIV_RE = re.compile(r"(?:arxiv[:\s/]*|arxiv\.org/(?:abs|pdf)/)([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)", re.IGNORECASE)
+_UA = "little-alphaxiv/0.1 (zotero-integration)"
+
+
+# --------------------------------------------------------------------------- #
+# mode resolution
+# --------------------------------------------------------------------------- #
+async def _local_alive() -> bool:
+    """True if the Zotero local READ API is usable.
+
+    We gate on the read API, not /connector/ping, because the connector server
+    is always on while Zotero runs (it's how the browser extension works) but
+    /api/ reads require the user to enable "Allow other applications to
+    communicate with Zotero". Since search/find (reads) is the entry point of
+    the feature, a local mode that can't read isn't usable — auto mode should
+    fall back to web in that case. trust_env=False so a corporate HTTP_PROXY
+    never intercepts a loopback call.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=_PING_TIMEOUT, trust_env=False) as client:
+            r = await client.get(f"{_LOCAL_READ}/users/0/items?limit=1&format=keys")
+            return r.status_code == 200
+    except httpx.RequestError:
+        return False
+
+
+async def _resolve_mode(mode: str, user_id: str, api_key: str) -> str:
+    """Resolve 'auto' to a concrete 'local' | 'web'. 'local'/'web' pass through
+    (we do NOT silently rewrite an explicit choice). Returns None-equivalent
+    via raising when auto can't resolve to anything usable."""
+    if mode == "local":
+        return "local"
+    if mode == "web":
+        return "web"
+    # auto: prefer local (zero-config, attaches PDFs), fall back to web.
+    if await _local_alive():
+        return "local"
+    if user_id and api_key:
+        return "web"
+    # No local, no web creds -> prefer local so the error message points the
+    # user at starting Zotero rather than at missing API keys.
+    return "local"
+
+
+def _require_web(mode: str) -> None:
+    if mode != "web":
+        raise HTTPException(
+            status_code=400,
+            detail="This Zotero operation (create collection / add to collection) "
+            "requires Web API mode — the local API is read-only and the connector "
+            "can only create items. Switch to Web API in Settings.",
+        )
+
+
+def _headers_web(api_key: str) -> dict[str, str]:
+    return {"Zotero-API-Key": api_key, "User-Agent": _UA}
+
+
+def _user_seg(mode: str, user_id: str) -> str:
+    # Local API always addresses the logged-in user as "0".
+    return "0" if mode == "local" else user_id
+
+
+# --------------------------------------------------------------------------- #
+# response normalization
+# --------------------------------------------------------------------------- #
+def _parse_arxiv_id(item: dict[str, Any]) -> str:
+    data = item.get("data") or item
+    extra = data.get("extra") or ""
+    m = _ARXIV_RE.search(extra)
+    if m:
+        return m.group(1)
+    for url in (data.get("url") or "", data.get("source") or ""):
+        m = _ARXIV_RE.search(url)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _year_from_date(date: str) -> str:
+    if not date:
+        return ""
+    m = re.search(r"(1[89][0-9]{2}|20[0-9]{2})", date)
+    return m.group(1) if m else ""
+
+
+def _format_creators(creators: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for c in creators or []:
+        last = c.get("lastName") or ""
+        first = c.get("firstName") or ""
+        name = c.get("name") or ""
+        if name:
+            parts.append(name)
+        elif last or first:
+            parts.append(f"{first} {last}".strip())
+    return "; ".join(parts)
+
+
+def _normalize_item(item: dict[str, Any]) -> dict[str, Any]:
+    data = item.get("data") or item
+    return {
+        "key": item.get("key") or data.get("key") or "",
+        "title": data.get("title") or "(untitled)",
+        "creators": _format_creators(data.get("creators") or []),
+        "itemType": data.get("itemType") or "",
+        "year": _year_from_date(data.get("date") or ""),
+        "date": data.get("date") or "",
+        "url": data.get("url") or "",
+        "doi": (data.get("DOI") or "").lower() or "",
+        "arxivId": _parse_arxiv_id(item),
+        "abstract": data.get("abstractNote") or "",
+        "collections": data.get("collections") or [],
+        "tags": [t.get("tag", "") for t in (data.get("tags") or []) if isinstance(t, dict)],
+    }
+
+
+def _normalize_collection(coll: dict[str, Any]) -> dict[str, Any]:
+    data = coll.get("data") or coll
+    meta = coll.get("meta") or {}
+    return {
+        "key": coll.get("key") or data.get("key") or "",
+        "name": data.get("name") or "(unnamed)",
+        "parentKey": data.get("parentCollection") or "",
+        "numItems": meta.get("numItems", 0) if isinstance(meta, dict) else 0,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# 1. status / connectivity
+# --------------------------------------------------------------------------- #
+@router.get("/zotero/status")
+async def status(
+    mode: str = Query("auto"),
+    user_id: str = Query("", description="Zotero userID (web mode)"),
+    api_key: str = Query("", description="Zotero API key (web mode)"),
+) -> Any:
+    resolved = await _resolve_mode(mode, user_id, api_key)
+    user_seg = _user_seg(resolved, user_id)
+
+    if resolved == "local":
+        # _resolve_mode already verified the read API for auto; for an explicit
+        # "local" choice we re-verify here and report a clear error if the user
+        # hasn't enabled "Allow other applications to communicate with Zotero".
+        url = f"{_LOCAL_READ}/users/{user_seg}/items?limit=1&format=keys"
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
+                r = await client.get(url, headers={"User-Agent": _UA})
+        except httpx.RequestError as exc:
+            return JSONResponse(content={"ok": False, "mode": "local", "error": f"local-unreachable: {exc}"})
+        if r.status_code != 200:
+            return JSONResponse(content={"ok": False, "mode": "local",
+                                         "error": f"local-read-disabled (Zotero returned {r.status_code}). "
+                                                  "Enable 'Allow other applications to communicate with Zotero' "
+                                                  "in Zotero → Preferences → Advanced."})
+        return JSONResponse(content={"ok": True, "mode": "local", "library": "My Library"})
+
+    # web
+    if not (user_id and api_key):
+        return JSONResponse(content={"ok": False, "mode": "web", "error": "missing user_id or api_key"})
+    url = f"{_WEB}/users/{user_seg}/items?limit=1&format=keys"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, headers=_headers_web(api_key))
+    except httpx.RequestError as exc:
+        return JSONResponse(content={"ok": False, "mode": "web", "error": f"web-unreachable: {exc}"})
+    if r.status_code == 403:
+        return JSONResponse(content={"ok": False, "mode": "web", "error": "invalid api key (403)"})
+    if r.status_code != 200:
+        return JSONResponse(content={"ok": False, "mode": "web",
+                                     "error": f"web api returned {r.status_code}"})
+    return JSONResponse(content={"ok": True, "mode": "web", "library": f"user {user_id}"})
+
+
+# --------------------------------------------------------------------------- #
+# 2. search / list items
+# --------------------------------------------------------------------------- #
+@router.get("/zotero/items")
+async def list_items(
+    mode: str = Query("auto"),
+    user_id: str = Query(""),
+    api_key: str = Query(""),
+    q: str = Query("", description="search query (title/creator, or everything with qmode)"),
+    qmode: str = Query("", description="titleCreatorYear | everything"),
+    limit: int = Query(25, ge=1, le=100),
+    start: int = Query(0, ge=0),
+    collection_key: str = Query("", description="restrict to a collection"),
+) -> Any:
+    resolved = await _resolve_mode(mode, user_id, api_key)
+    user_seg = _user_seg(resolved, user_id)
+
+    if collection_key:
+        path = f"users/{user_seg}/collections/{collection_key}/items"
+    else:
+        path = f"users/{user_seg}/items"
+    params: dict[str, Any] = {"limit": limit, "start": start, "itemType": "-attachment"}
+    if q:
+        params["q"] = q
+    if qmode:
+        params["qmode"] = qmode
+    if resolved == "local":
+        url = f"{_LOCAL_READ}/{path}?{urlencode(params)}"
+        headers = {"User-Agent": _UA}
+    else:
+        if not (user_id and api_key):
+            raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+        url = f"{_WEB}/{path}?{urlencode(params)}"
+        headers = _headers_web(api_key)
+
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True,
+                                 trust_env=(resolved != "local")) as client:
+        try:
+            r = await client.get(url, headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"zotero items returned {r.status_code}: {r.text[:200]}")
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"zotero json error: {exc}") from exc
+    items = [_normalize_item(it) for it in data] if isinstance(data, list) else []
+    total = int(r.headers.get("Total-Results", len(items)))
+    return JSONResponse(content={"total": total, "results": items, "mode": resolved})
+
+
+# --------------------------------------------------------------------------- #
+# 3. collections
+# --------------------------------------------------------------------------- #
+@router.get("/zotero/collections")
+async def list_collections(
+    mode: str = Query("auto"),
+    user_id: str = Query(""),
+    api_key: str = Query(""),
+) -> Any:
+    resolved = await _resolve_mode(mode, user_id, api_key)
+    user_seg = _user_seg(resolved, user_id)
+    path = f"users/{user_seg}/collections"
+    params = {"limit": 100}
+    if resolved == "local":
+        url = f"{_LOCAL_READ}/{path}?{urlencode(params)}"
+        headers = {"User-Agent": _UA}
+    else:
+        if not (user_id and api_key):
+            raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+        url = f"{_WEB}/{path}?{urlencode(params)}"
+        headers = _headers_web(api_key)
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True,
+                                 trust_env=(resolved != "local")) as client:
+        try:
+            r = await client.get(url, headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"zotero collections returned {r.status_code}: {r.text[:200]}")
+    data = r.json() if r.text else []
+    cols = [_normalize_collection(c) for c in (data or [])] if isinstance(data, list) else []
+    return JSONResponse(content={"results": cols, "mode": resolved})
+
+
+# --------------------------------------------------------------------------- #
+# 4. create item (generic)
+# --------------------------------------------------------------------------- #
+class CreateItemRequest(BaseModel):
+    mode: str = "auto"
+    user_id: str = ""
+    api_key: str = ""
+    item: dict[str, Any]
+
+
+@router.post("/zotero/items")
+async def create_item(req: CreateItemRequest) -> Any:
+    resolved = await _resolve_mode(req.mode, req.user_id, req.api_key)
+    user_seg = _user_seg(resolved, req.user_id)
+    item = req.item or {}
+
+    if resolved == "local":
+        # Connector: items must be an array; collections field is ignored.
+        body = {
+            "items": [item],
+            "uri": item.get("url") or "https://arxiv.org",
+            "sessionID": uuid.uuid4().hex,
+        }
+        headers = {"Content-Type": "application/json", "X-Zotero-Connector-API-Version": "3"}
+        async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
+            try:
+                r = await client.post(f"{_LOCAL_CONN}/connector/saveItems", json=body, headers=headers)
+            except httpx.RequestError as exc:
+                raise HTTPException(status_code=502, detail=f"zotero connector error: {exc}") from exc
+        if r.status_code not in (200, 201):
+            raise HTTPException(status_code=502, detail=f"connector saveItems returned {r.status_code}: {r.text[:200]}")
+        # Connector returns an empty body; recover the new key by reading the
+        # most-recently-added item matching the title.
+        key = await _find_local_key_by_title(item.get("title") or "")
+        return JSONResponse(content={"ok": True, "mode": "local", "key": key})
+
+    # web
+    if not (req.user_id and req.api_key):
+        raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+    token = uuid.uuid4().hex
+    headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
+               "Zotero-Write-Token": token}
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        try:
+            r = await client.post(f"{_WEB}/users/{user_seg}/items", json=[item], headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+    if r.status_code not in (200, 201):
+        raise HTTPException(status_code=502, detail=f"zotero create returned {r.status_code}: {r.text[:200]}")
+    data = r.json() if r.text else {}
+    key = ""
+    success = data.get("success") or {}
+    if success and str(0) in success:
+        key = success["0"]
+    return JSONResponse(content={"ok": True, "mode": "web", "key": key})
+
+
+async def _find_local_key_by_title(title: str) -> str:
+    if not title:
+        return ""
+    url = f"{_LOCAL_READ}/users/0/items?sort=dateAdded&direction=desc&limit=10&itemType=-attachment"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
+            r = await client.get(url, headers={"User-Agent": _UA})
+    except httpx.RequestError:
+        return ""
+    if r.status_code != 200:
+        return ""
+    for it in (r.json() or []):
+        d = it.get("data") or {}
+        if (d.get("title") or "").strip().lower() == title.strip().lower():
+            return it.get("key") or ""
+    return ""
+
+
+# --------------------------------------------------------------------------- #
+# 5. create collection (web only)
+# --------------------------------------------------------------------------- #
+class CreateCollectionRequest(BaseModel):
+    mode: str = "auto"
+    user_id: str = ""
+    api_key: str = ""
+    name: str
+    parent_key: str = ""
+
+
+@router.post("/zotero/collections")
+async def create_collection(req: CreateCollectionRequest) -> Any:
+    resolved = await _resolve_mode(req.mode, req.user_id, req.api_key)
+    _require_web(resolved)
+    if not (req.user_id and req.api_key):
+        raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+    payload: dict[str, Any] = {"name": req.name}
+    if req.parent_key:
+        payload["parentCollection"] = req.parent_key
+    token = uuid.uuid4().hex
+    headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
+               "Zotero-Write-Token": token}
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        try:
+            r = await client.post(f"{_WEB}/users/{req.user_id}/collections", json=[payload], headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+    if r.status_code not in (200, 201):
+        raise HTTPException(status_code=502, detail=f"zotero create collection returned {r.status_code}: {r.text[:200]}")
+    data = r.json() if r.text else {}
+    key = ""
+    success = data.get("success") or {}
+    if success and str(0) in success:
+        key = success["0"]
+    return JSONResponse(content={"ok": True, "key": key})
+
+
+# --------------------------------------------------------------------------- #
+# 6. add item to collection(s) (web only)
+# --------------------------------------------------------------------------- #
+class AddToCollectionRequest(BaseModel):
+    mode: str = "auto"
+    user_id: str = ""
+    api_key: str = ""
+    collection_keys: list[str] = Field(default_factory=list)
+
+
+@router.post("/zotero/items/{item_key}/collections")
+async def add_to_collection(item_key: str, req: AddToCollectionRequest) -> Any:
+    resolved = await _resolve_mode(req.mode, req.user_id, req.api_key)
+    _require_web(resolved)
+    if not (req.user_id and req.api_key):
+        raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+    headers = _headers_web(req.api_key)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        # GET current item to read its version + existing collections (merge, not replace).
+        try:
+            g = await client.get(f"{_WEB}/users/{req.user_id}/items/{item_key}", headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+        if g.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"zotero get item returned {g.status_code}: {g.text[:200]}")
+        version = g.headers.get("Last-Modified-Version", "")
+        data = g.json() or {}
+        existing = (data.get("data") or {}).get("collections") or []
+        merged: list[str] = []
+        seen: set[str] = set()
+        for k in [*existing, *req.collection_keys]:
+            if k and k not in seen:
+                seen.add(k)
+                merged.append(k)
+        patch_headers = {**headers, "Content-Type": "application/json",
+                         "If-Unmodified-Since-Version": version}
+        try:
+            r = await client.patch(f"{_WEB}/users/{req.user_id}/items/{item_key}",
+                                   json={"collections": merged}, headers=patch_headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+    if r.status_code not in (200, 204):
+        raise HTTPException(status_code=502, detail=f"zotero patch returned {r.status_code}: {r.text[:200]}")
+    return JSONResponse(content={"ok": True, "collections": merged})
+
+
+# --------------------------------------------------------------------------- #
+# 7. save current arXiv paper (+ optional PDF) — the "connector-like" flow
+# --------------------------------------------------------------------------- #
+class SaveArxivRequest(BaseModel):
+    mode: str = "auto"
+    user_id: str = ""
+    api_key: str = ""
+    paper: dict[str, Any]
+    attach_pdf: bool = True
+
+
+def _zotero_creators(authors: list[str]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for a in authors or []:
+        a = (a or "").strip()
+        if not a:
+            continue
+        if "," in a:
+            last, _, first = a.partition(",")
+            out.append({"creatorType": "author", "lastName": last.strip(), "firstName": first.strip()})
+        else:
+            parts = a.split()
+            if len(parts) >= 2:
+                out.append({"creatorType": "author", "lastName": parts[-1], "firstName": " ".join(parts[:-1])})
+            else:
+                out.append({"creatorType": "author", "name": a})
+    return out
+
+
+def _build_arxiv_item(paper: dict[str, Any]) -> dict[str, Any]:
+    arxiv_id = (paper.get("arxiv_id") or "").strip()
+    extra_lines = []
+    if arxiv_id:
+        extra_lines.append(f"arXiv: {arxiv_id}")
+    item: dict[str, Any] = {
+        "itemType": "preprint",
+        "title": paper.get("title") or arxiv_id or "Untitled",
+        "creators": _zotero_creators(paper.get("authors") or []),
+        "abstractNote": paper.get("abstract") or "",
+        "date": (paper.get("published") or "")[:10],
+        "url": paper.get("abs_url") or (f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""),
+        "repository": "arXiv",
+        "extra": "\n".join(extra_lines),
+    }
+    doi = (paper.get("doi") or "").strip()
+    if doi:
+        item["DOI"] = doi
+    return item
+
+
+async def _attach_pdf_local(arxiv_id: str, session_id: str, parent_item_id: str) -> bool:
+    """Two-step connector protocol, step 2: POST the arXiv PDF as an attachment
+    linked to the parent item saved in save_arxiv. `session_id` and
+    `parent_item_id` MUST match what save_arxiv used in saveItems (per Zotero's
+    connector contract). Returns True on success.
+
+    The PDF is fetched from arxiv.org (proxy-aware, trust_env=True) and POSTed
+    to the local connector (trust_env=False so a corporate proxy never
+    intercepts a loopback call)."""
+    if not arxiv_id:
+        return False
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"
+    try:
+        async with httpx.AsyncClient(timeout=_PDF_TIMEOUT, follow_redirects=True) as fetch:
+            pdf = await fetch.get(pdf_url, headers={"User-Agent": _UA})
+            if pdf.status_code != 200 or "pdf" not in (pdf.headers.get("content-type") or "").lower():
+                return False
+            pdf_bytes = pdf.content
+        meta = {"sessionID": session_id, "parentItemID": parent_item_id,
+                "title": f"{arxiv_id}.pdf", "url": pdf_url}
+        async with httpx.AsyncClient(timeout=_PDF_TIMEOUT, trust_env=False) as conn:
+            r = await conn.post(
+                f"{_LOCAL_CONN}/connector/saveAttachment",
+                content=pdf_bytes,
+                headers={
+                    "Content-Type": "application/pdf",
+                    "Content-Length": str(len(pdf_bytes)),
+                    "X-Metadata": json.dumps(meta),
+                    "X-Zotero-Connector-API-Version": "3",
+                },
+            )
+            return r.status_code in (200, 201)
+    except httpx.RequestError:
+        return False
+
+
+@router.post("/zotero/save-arxiv")
+async def save_arxiv(req: SaveArxivRequest) -> Any:
+    resolved = await _resolve_mode(req.mode, req.user_id, req.api_key)
+    paper = req.paper or {}
+    arxiv_id = (paper.get("arxiv_id") or "").strip()
+    item = _build_arxiv_item(paper)
+
+    if resolved == "local":
+        # Create the parent item via the connector. If we'll attach a PDF, set a
+        # connector `id` on the item and reuse the same sessionID in saveAttachment
+        # — that's how Zotero links the attachment to its parent (per the connector
+        # two-step contract; parentItemID is the connector id, not the Zotero key).
+        session_id = uuid.uuid4().hex
+        conn_item_id = uuid.uuid4().hex
+        if req.attach_pdf and arxiv_id:
+            item["id"] = conn_item_id
+        body = {
+            "items": [item],
+            "uri": item.get("url") or "https://arxiv.org",
+            "sessionID": session_id,
+        }
+        headers = {"Content-Type": "application/json", "X-Zotero-Connector-API-Version": "3"}
+        async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
+            try:
+                r = await client.post(f"{_LOCAL_CONN}/connector/saveItems", json=body, headers=headers)
+            except httpx.RequestError as exc:
+                raise HTTPException(status_code=502, detail=f"zotero connector error: {exc}") from exc
+        if r.status_code not in (200, 201):
+            raise HTTPException(status_code=502, detail=f"connector saveItems returned {r.status_code}: {r.text[:200]}")
+        key = await _find_local_key_by_title(item.get("title") or "")
+        pdf_ok = False
+        if req.attach_pdf and arxiv_id:
+            pdf_ok = await _attach_pdf_local(arxiv_id, session_id, conn_item_id)
+        return JSONResponse(content={"ok": True, "mode": "local", "key": key, "pdfAttached": pdf_ok})
+
+    # web
+    if not (req.user_id and req.api_key):
+        raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+    token = uuid.uuid4().hex
+    headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
+               "Zotero-Write-Token": token}
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        try:
+            r = await client.post(f"{_WEB}/users/{req.user_id}/items", json=[item], headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
+    if r.status_code not in (200, 201):
+        raise HTTPException(status_code=502, detail=f"zotero create returned {r.status_code}: {r.text[:200]}")
+    data = r.json() if r.text else {}
+    key = ""
+    success = data.get("success") or {}
+    if success and str(0) in success:
+        key = success["0"]
+    # Web PDF attach is out of v1 scope (needs file-upload registration); metadata-only.
+    return JSONResponse(content={"ok": True, "mode": "web", "key": key, "pdfAttached": False})
