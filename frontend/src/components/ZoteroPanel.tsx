@@ -14,6 +14,7 @@
 // web api.zotero.org). Credentials come from the settings store.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSettings } from "../store/settings";
 import * as db from "../lib/db";
 import {
@@ -44,6 +45,7 @@ function normArxiv(id: string): string {
 
 export function ZoteroPanel({ arxivId, onClose }: Props) {
   const zotero = useSettings((s) => s.zotero);
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("paper");
   const [paper, setPaper] = useState<Paper | null>(null);
 
@@ -293,7 +295,10 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
             {zotero.mode !== "web"
               ? "Start the Zotero desktop app and enable “Allow other applications to communicate with Zotero” (Preferences → Advanced), or "
               : "Check your user ID / API key, or "}
-            <a href="#/settings">open Settings</a> to switch to Web API mode.
+            <a
+              href="/settings#zotero"
+              onClick={(e) => { e.preventDefault(); onClose(); navigate("/settings#zotero"); }}
+            >open Settings</a> to switch to Web API mode.
           </div>
         )}
 
@@ -384,7 +389,10 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
                 <div className="zotero-hint">
                   Organizing collections (create / add to) requires <strong>Web API</strong> mode —
                   the local Zotero API is read-only by design.{" "}
-                  <a href="#/settings">Switch in Settings</a>. You can still browse your collections
+                  <a
+                    href="/settings#zotero"
+                    onClick={(e) => { e.preventDefault(); onClose(); navigate("/settings#zotero"); }}
+                  >Switch in Settings</a>. You can still browse your collections
                   and the papers inside each one (read-only):
                 </div>
               ) : (
