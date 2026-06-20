@@ -17,6 +17,7 @@ import { AnnotationToolbar } from "./AnnotationToolbar";
 import { HighlightLayer } from "./HighlightLayer";
 import { AnnotLayer } from "./AnnotLayer";
 import { ZoteroPanel } from "./ZoteroPanel";
+import { Tooltip } from "./Tooltip";
 import { useAnnotations } from "../store/annotations";
 import type { PageSize } from "../types";
 
@@ -137,23 +138,30 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   return (
     <div className="pdf-viewer">
       <div className="pdf-toolbar">
-        <button onClick={zoomOut} title="Zoom out">−</button>
-        <button onClick={fitWidth} title="Fit width" className="zoom-pct">
-          {Math.round(zoom * 100)}%
-        </button>
-        <button onClick={zoomIn} title="Zoom in">+</button>
+        <Tooltip label="Zoom out" side="bottom">
+          <button onClick={zoomOut}>−</button>
+        </Tooltip>
+        <Tooltip label="Fit width" side="bottom">
+          <button onClick={fitWidth} className="zoom-pct">
+            {Math.round(zoom * 100)}%
+          </button>
+        </Tooltip>
+        <Tooltip label="Zoom in" side="bottom">
+          <button onClick={zoomIn}>+</button>
+        </Tooltip>
         <AnnotationToolbar />
-        <button
-          className={`zotero-btn ${showZotero ? "active" : ""}`}
-          onClick={() => setShowZotero((v) => !v)}
-          title="Zotero — find / add / organize this paper"
-          aria-label="Zotero"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3.5" y="3.5" width="17" height="17" rx="4" fill="none" stroke="currentColor" strokeWidth="2" />
-            <path d="M8.5 8h7L8.5 16h7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        <Tooltip label="Zotero — find / add / organize this paper" side="bottom">
+          <button
+            className={`zotero-btn ${showZotero ? "active" : ""}`}
+            onClick={() => setShowZotero((v) => !v)}
+            aria-label="Zotero"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="17" height="17" rx="4" fill="none" stroke="currentColor" strokeWidth="2" />
+              <path d="M8.5 8h7L8.5 16h7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </Tooltip>
         <span className="pdf-pagecount">{numPages ? `${numPages} pages` : "…"}</span>
       </div>
       <div className="pdf-scroll" ref={containerRef}>

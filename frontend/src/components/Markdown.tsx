@@ -15,6 +15,7 @@ import rehypeKatex from "rehype-katex";
 import { useNavigate } from "react-router-dom";
 import { extractArxivId } from "../lib/arxiv";
 import { markdownCodeComponents } from "./CodeBlock";
+import { Tooltip } from "./Tooltip";
 import { rehypeCjkEmphasis } from "../lib/remark-cjk-emphasis";
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
@@ -33,19 +34,20 @@ export function Markdown({ children }: { children: string }) {
           const id = href ? extractArxivId(href) : null;
           if (id) {
             return (
-              <button
-                type="button"
-                className="arxiv-inline-card"
-                onClick={() => navigate(`/paper/${id}`)}
-                title={`Open arXiv ${id} in-app`}
-              >
-                <span className="arxiv-inline-icon">📄</span>
-                <span className="arxiv-inline-body">
-                  <span className="arxiv-inline-title">{titleFor(children, id)}</span>
-                  <span className="arxiv-inline-id">{id}</span>
-                </span>
-                <span className="arxiv-inline-cta">Preview →</span>
-              </button>
+              <Tooltip label={`Open arXiv ${id} in-app`} side="top" block>
+                <button
+                  type="button"
+                  className="arxiv-inline-card"
+                  onClick={() => navigate(`/paper/${id}`)}
+                >
+                  <span className="arxiv-inline-icon">📄</span>
+                  <span className="arxiv-inline-body">
+                    <span className="arxiv-inline-title">{titleFor(children, id)}</span>
+                    <span className="arxiv-inline-id">{id}</span>
+                  </span>
+                  <span className="arxiv-inline-cta">Preview →</span>
+                </button>
+              </Tooltip>
             );
           }
           return (

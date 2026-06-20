@@ -20,6 +20,7 @@ import { useUi } from "../store/ui";
 import { THEMES } from "../themes";
 import { groupByDate } from "../lib/dates";
 import type { Conversation } from "../types";
+import { Tooltip } from "./Tooltip";
 
 type Item =
   | { kind: "general"; conv: Conversation }
@@ -86,9 +87,15 @@ export function Sidebar() {
   if (collapsed) {
     return (
       <aside className="sidebar sidebar-collapsed">
-        <button className="icon-btn" title="Expand sidebar" onClick={expand}>»</button>
-        <button className="icon-btn" title="New chat" onClick={newChat}>+</button>
-        <button className="icon-btn" title="Settings" onClick={() => navigate("/settings")}>⚙</button>
+        <Tooltip label="Expand sidebar" side="right">
+          <button className="icon-btn" onClick={expand}>»</button>
+        </Tooltip>
+        <Tooltip label="New chat" side="right">
+          <button className="icon-btn" onClick={newChat}>+</button>
+        </Tooltip>
+        <Tooltip label="Settings" side="right">
+          <button className="icon-btn" onClick={() => navigate("/settings")}>⚙</button>
+        </Tooltip>
       </aside>
     );
   }
@@ -97,7 +104,9 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-head">
         <span className="logo"><span className="logo-mark">α</span> little alphaxiv</span>
-        <button className="icon-btn head-collapse" title="Collapse sidebar" onClick={collapse}>«</button>
+        <Tooltip label="Collapse sidebar" side="bottom">
+          <button className="icon-btn head-collapse" onClick={collapse}>«</button>
+        </Tooltip>
       </div>
       <button className="new-chat-btn" onClick={newChat}>+ New chat</button>
 
@@ -120,11 +129,12 @@ export function Sidebar() {
                   >
                     <span className="conv-tag">💬</span>
                     <span className="conv-title">{it.conv.title || "New chat"}</span>
-                    <button
-                      className="conv-del"
-                      onClick={(e) => { e.stopPropagation(); remove(it.conv.id); }}
-                      title="Delete"
-                    >×</button>
+                    <Tooltip label="Delete" side="top">
+                      <button
+                        className="conv-del"
+                        onClick={(e) => { e.stopPropagation(); remove(it.conv.id); }}
+                      >×</button>
+                    </Tooltip>
                   </div>
                 );
               }
@@ -143,14 +153,15 @@ export function Sidebar() {
                   <span className="conv-tag">📄</span>
                   <span className="conv-title">{title}</span>
                   {it.threads.length > 1 && <span className="conv-count">{it.threads.length}</span>}
-                  <button
-                    className="conv-del"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeMany(it.threads.map((t) => t.id));
-                    }}
-                    title={`Delete all ${it.threads.length} conversation(s) for this paper`}
-                  >×</button>
+                  <Tooltip label={`Delete all ${it.threads.length} conversation(s) for this paper`} side="top">
+                    <button
+                      className="conv-del"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeMany(it.threads.map((t) => t.id));
+                      }}
+                    >×</button>
+                  </Tooltip>
                 </div>
               );
             })}

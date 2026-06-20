@@ -109,7 +109,6 @@ export function SettingsView() {
               key={t.id}
               className={`theme-card ${theme === t.id ? "active" : ""}`}
               onClick={() => setTheme(t.id)}
-              title={t.label}
             >
               <div className="theme-swatches">
                 {t.swatch.map((c, i) => (

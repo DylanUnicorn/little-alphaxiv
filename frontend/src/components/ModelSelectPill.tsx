@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   models: { id: string }[];
@@ -79,19 +80,20 @@ export function ModelSelectPill({ models, value, onChange, disabled }: Props) {
 
   return (
     <div className="model-pill" ref={wrapRef}>
-      <button
-        type="button"
-        className="model-pill-btn"
-        title="Select model for this conversation"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={onKey}
-        disabled={disabled}
-      >
-        <span className="model-pill-name">{value || "model"}</span>
-        <span className="model-pill-caret">▾</span>
-      </button>
+      <Tooltip label="Select model for this conversation" side="top">
+        <button
+          type="button"
+          className="model-pill-btn"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          onKeyDown={onKey}
+          disabled={disabled}
+        >
+          <span className="model-pill-name">{value || "model"}</span>
+          <span className="model-pill-caret">▾</span>
+        </button>
+      </Tooltip>
       {open && (
         <ul className="model-pill-list" role="listbox">
           {models.map((m, i) => (

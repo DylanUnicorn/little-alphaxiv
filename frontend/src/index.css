@@ -640,6 +640,90 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 ::-webkit-scrollbar-thumb:hover { background: var(--bg-4); }
 * { scrollbar-color: var(--border) transparent; scrollbar-width: thin; }
 
+/* ---------- Tooltips (speech-bubble, instant on hover) ----------
+   Replaces native title= boxes app-wide (see components/Tooltip.tsx). The
+   bubble is position:fixed and placed in viewport pixels by the component, so
+   it is never clipped by an overflow ancestor and always floats above the
+   chrome (z-index 1500: above dropdowns/popovers at 100, below the Zotero
+   modal overlay at 2000). Opens on mouseenter/focus with no delay — just an
+   80ms opacity fade that reads as instant.
+
+   The tail is a 10px square rotated 45°, centred on the bubble edge that
+   faces the trigger. Its two OUTER edges carry the bubble's border
+   (--border-strong), continuing the outline into a pointer; the two inner
+   edges are borderless so they merge seamlessly into the bubble fill. Which
+   pair of edges is bordered is derived per side (see comments). */
+.tooltip-host { display: inline-flex; position: relative; flex-shrink: 0; max-width: 100%; }
+/* Block triggers (full-width cards) need the host to fill, not shrink to inline. */
+.tooltip-host.block { display: block; width: 100%; }
+.tooltip-bubble {
+  position: fixed;
+  top: 0; left: 0;            /* overwritten inline by Tooltip.tsx */
+  z-index: 1500;
+  max-width: 240px;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--tooltip-bg, var(--bg-4));
+  color: var(--tooltip-fg, var(--text));
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 80ms ease-out;
+}
+.tooltip-bubble[data-show="true"] { opacity: 1; visibility: visible; }
+.tooltip-bubble::after {
+  content: "";
+  position: absolute;
+  width: 10px; height: 10px;
+  background: var(--tooltip-bg, var(--bg-4));
+  transform: rotate(45deg);
+}
+/* side=top: bubble above trigger, tail on bottom edge pointing down.
+   Outer edges face SE+SW → border-right + border-bottom. */
+.tooltip-bubble[data-side="top"]::after {
+  bottom: -5px; left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+}
+/* side=bottom: bubble below, tail on top edge pointing up.
+   Outer edges face NE+NW → border-top + border-left. */
+.tooltip-bubble[data-side="bottom"]::after {
+  top: -5px; left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  border-top: 1px solid var(--border-strong);
+  border-left: 1px solid var(--border-strong);
+}
+/* side=left: bubble left of trigger, tail on right edge pointing right.
+   Outer edges face NE+SE → border-top + border-right. */
+.tooltip-bubble[data-side="left"]::after {
+  right: -5px; top: 50%;
+  transform: translateY(-50%) rotate(45deg);
+  border-top: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+}
+/* side=right: bubble right of trigger, tail on left edge pointing left.
+   Outer edges face NW+SW → border-left + border-bottom. */
+.tooltip-bubble[data-side="right"]::after {
+  left: -5px; top: 50%;
+  transform: translateY(-50%) rotate(45deg);
+  border-left: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+}
+/* Disabled triggers show no tooltip (parity with native title on disabled buttons). */
+.tooltip-host[data-disabled="true"] .tooltip-bubble { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-bubble { transition: none; }
+}
+
 /* ---------- Markdown rendering ---------- */
 .msg-assistant > div > *:first-child { margin-top: 0; }
 .msg-assistant > div > *:last-child { margin-bottom: 0; }

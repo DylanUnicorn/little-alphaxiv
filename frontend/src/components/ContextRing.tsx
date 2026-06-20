@@ -18,6 +18,7 @@ import {
   formatTokens,
   type CapacitySource,
 } from "../lib/contextBudget";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   conversationId: string;
@@ -74,12 +75,12 @@ export function ContextRing({ conversationId, systemPrompt }: Props) {
 
   return (
     <div className="ctx-ring-wrap" ref={ref}>
-      <button
-        className={`ctx-ring-btn ctx-ring-${budget.status}`}
-        title={`Context usage: ${pct}%`}
-        onClick={() => setOpen((v) => !v)}
-        aria-label={`Context usage ${pct} percent. Click for details.`}
-      >
+      <Tooltip label={`Context usage: ${pct}%`} side="top">
+        <button
+          className={`ctx-ring-btn ctx-ring-${budget.status}`}
+          onClick={() => setOpen((v) => !v)}
+          aria-label={`Context usage ${pct} percent. Click for details.`}
+        >
         <svg className="ctx-ring-svg" width="18" height="18" viewBox="0 0 20 20">
           <circle
             cx="10"
@@ -102,7 +103,8 @@ export function ContextRing({ conversationId, systemPrompt }: Props) {
           />
         </svg>
         <span className="ctx-ring-pct">{pct}%</span>
-      </button>
+        </button>
+      </Tooltip>
 
       {open && (
         <div className="ctx-ring-popover">
