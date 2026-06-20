@@ -1307,6 +1307,26 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 
 .zotero-found, .zotero-notfound { display: flex; flex-direction: column; gap: 8px; }
 .zotero-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.zotero-coll-pick { display: flex; flex-direction: column; gap: 4px; }
+.zotero-coll-pick-label { font-size: 11px; color: var(--text-dim); }
+.zotero-coll-pick select {
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.zotero-coll-pick select:disabled { opacity: 0.5; }
+.zotero-target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 .zotero-add-btn {
   align-self: flex-start;
   padding: 6px 14px;

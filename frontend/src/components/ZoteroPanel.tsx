@@ -25,6 +25,7 @@ import {
   zoteroSaveArxiv,
   zoteroCreateCollection,
   zoteroAddToCollection,
+  zoteroGetSelectedCollection,
   zoteroSelectUrl,
   type ZoteroItem,
   type ZoteroCollection,
@@ -58,6 +59,11 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
   const [attachPdf, setAttachPdf] = useState(true);
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Collection chosen for the add-new-paper flow (web mode only — local mode
+  // can't target a collection, so we show the desktop's current selection
+  // instead via localTarget). "" means My Library (no collection).
+  const [paperColl, setPaperColl] = useState("");
+  const [localTarget, setLocalTarget] = useState<{ libraryName: string; collectionName: string } | null>(null);
 
   // "Library" tab state
   const [libQuery, setLibQuery] = useState("");
@@ -66,6 +72,7 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
 
   // "Collections" tab state
   const [collections, setCollections] = useState<ZoteroCollection[]>([]);
+  const [collLoaded, setCollLoaded] = useState(false);
   const [selectedColl, setSelectedColl] = useState("");
   const [newCollName, setNewCollName] = useState("");
   const [collBusy, setCollBusy] = useState(false);
@@ -150,6 +157,10 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
     setAdding(true);
     setMsg(null);
     try {
+      // Web mode: target the chosen collection at creation (reliable). Local
+      // mode: collectionKeys is ignored by the connector — the item lands in
+      // the desktop's selected collection (shown above as localTarget).
+      const collKeys = paperColl ? [paperColl] : [];
       const res = await zoteroSaveArxiv(
         creds,
         {
@@ -161,15 +172,23 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
           abs_url: paper?.abs_url || (arxivId ? `https://arxiv.org/abs/${arxivId}` : ""),
           published: paper?.published || "",
         },
-        attachPdf && status?.mode === "local"
+        attachPdf && status?.mode === "local",
+        collKeys
       );
       if (res.ok) {
         const bits = [`Added to Zotero (${res.mode})`];
+        // Name the target collection so the user sees where it landed.
+        if (res.mode === "web" && paperColl) {
+          const c = collections.find((x) => x.key === paperColl);
+          if (c) bits.push(`→ ${c.name}`);
+        } else if (res.mode === "local" && localTarget?.collectionName) {
+          bits.push(`→ ${localTarget.collectionName}`);
+        }
         if (res.pdfAttached) bits.push("PDF attached");
         else if (attachPdf && res.mode === "local") bits.push("PDF not attached");
         setMsg({ kind: "ok", text: bits.join(" · ") + (res.key ? " — opening…" : "") });
         if (res.key) {
-          setFound([{ key: res.key, title: paper?.title || arxivId, creators: "", itemType: "preprint", year: "", date: "", url: "", doi: paper?.doi || "", arxivId, abstract: "", collections: [], tags: [] }]);
+          setFound([{ key: res.key, title: paper?.title || arxivId, creators: "", itemType: "preprint", year: "", date: "", url: "", doi: paper?.doi || "", arxivId, abstract: "", collections: paperColl ? [paperColl] : [], tags: [] }]);
           // Best-effort: open it in Zotero right away.
           window.open(zoteroSelectUrl(res.key), "_blank", "noopener");
         }
@@ -195,13 +214,15 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
     }
   }
 
-  async function loadCollections() {
-    if (!connected) return;
+  async function loadCollections(force = false) {
+    if (!connected || (collLoaded && !force)) return;
     try {
       const r = await zoteroListCollections(creds);
       setCollections(r.results);
     } catch (e) {
       setMsg({ kind: "err", text: `Collections failed: ${String((e as Error).message || e)}` });
+    } finally {
+      setCollLoaded(true);
     }
   }
 
@@ -231,10 +252,31 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
     }
   }
 
+  // Load collections for the Collections tab and for the add-paper collection
+  // selector (web mode). Idempotent via collLoaded so a zero-collection library
+  // doesn't refetch forever; createCollection forces a refresh.
   useEffect(() => {
-    if (connected && tab === "collections" && collections.length === 0) void loadCollections();
+    if (!connected || collLoaded) return;
+    if (tab === "collections" || (tab === "paper" && webMode)) void loadCollections();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, tab]);
+  }, [connected, tab, webMode, collLoaded]);
+
+  // Local mode: surface the Zotero desktop's currently-selected collection so
+  // the user sees where a new item will land (the connector can't target one,
+  // so we show the desktop's GUI selection instead of a chooser).
+  useEffect(() => {
+    if (!connected || status?.mode !== "local" || tab !== "paper") return;
+    let cancelled = false;
+    void zoteroGetSelectedCollection(creds)
+      .then((r) => {
+        if (!cancelled && r.ok) {
+          setLocalTarget({ libraryName: r.libraryName || "", collectionName: r.collectionName || "" });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, status?.mode, tab]);
 
   async function createCollection() {
     if (!newCollName.trim()) return;
@@ -244,7 +286,7 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
       const res = await zoteroCreateCollection(creds, newCollName.trim());
       if (res.ok) {
         setNewCollName("");
-        await loadCollections();
+        await loadCollections(true);
         setMsg({ kind: "ok", text: "Collection created" });
       } else setMsg({ kind: "err", text: "Create failed" });
     } catch (e) {
@@ -337,6 +379,37 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
               ) : (
                 <div className="zotero-notfound">
                   <div className="zotero-hint">Not in your Zotero library yet.</div>
+
+                  {webMode ? (
+                    <label className="zotero-coll-pick">
+                      <span className="zotero-coll-pick-label">Save to collection</span>
+                      <select
+                        value={paperColl}
+                        onChange={(e) => setPaperColl(e.target.value)}
+                        disabled={!collLoaded}
+                        title="Choose a collection (My Library = no collection)"
+                      >
+                        <option value="">My Library</option>
+                        {collections.map((c) => (
+                          <option key={c.key} value={c.key}>{c.name} ({c.numItems})</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="zotero-target">
+                      <span className="zotero-hint">
+                        Saving to: <strong>{localTarget?.collectionName || "…"}</strong>
+                      </span>
+                      <span className="zotero-hint">
+                        Local mode saves into the collection selected in the Zotero app — change it
+                        there, or <a
+                          href="#"
+                          onClick={(e) => { e.preventDefault(); onClose(); navigate("/settings#zotero"); }}
+                        >switch to Web API</a> to choose here.
+                      </span>
+                    </div>
+                  )}
+
                   {status?.mode === "local" && (
                     <label className="zotero-check">
                       <input type="checkbox" checked={attachPdf} onChange={(e) => setAttachPdf(e.target.checked)} />

@@ -98,3 +98,34 @@ PdfViewer 工具栏图标 → ZoteroPanel(浮层)
 
 - 不做：Zotero 条目编辑/删除（Web 可扩展，但 v1 不做 UI）、群组库（仅用户库）、PDF 全文索引。
 - 本地模式"整理"受限是 Zotero API 本身限制，非本设计偷懒——UI 会明确说明。
+
+## 增补：新论文添加时的分类选择（2026-06-20）
+
+### 问题
+「本文」Tab 里发现论文不在库中、点「Add to Zotero」时，新条目落到一个用户无法在面板里控制的分类——体感"随机加的"。
+
+### 根因（已对照 Zotero 源码 `chrome/content/zotero/xpcom/server/server_connector.js` 核实）
+- **本地/connector 模式**：`/connector/saveItems` 的 `init` 调 `Zotero.Server.Connector.getSaveTarget()`，取桌面 GUI 当前选中的 library/collection（`zp.collectionsView.selectedTreeRow`）作为 target，**完全不读请求体里的 `collections`**。item 上的 `collections`/`parentItem` 等字段被静默忽略（参见 zotero-mcp issue #138 对 `parentItem` 的同类证实）。所以本地模式无法通过请求体指定目标分类——条目落到 Zotero 桌面当前选中分类，这就是"随机"的真相。
+- **Web 模式**：`POST /users/<id>/items` 在创建时 honor `item.collections=[key]`，条目直接进指定分类。✅ 可靠。
+- 本地 `/api/` 只读（写 501），connector 不能移动已有条目，故本地模式创建后也无法补救性地把条目挪进指定分类。
+
+### 设计
+按模式如实分流，把"随机"变成"可见可控"：
+
+- **Web 模式**：「Add to Zotero」上方加一个分类 `<select>`（选项：`My Library`（=不进任何分类）+ 用户各分类，复用 `/zotero/collections`）。所选 key 随创建请求传给后端 → 后端在 web 分支设 `item["collections"]` → 条目直接进该分类。可靠。
+- **本地模式**：不显示选择器（选了也没用），改为显示「Saving to: <name>」——`name` 来自新增的 `/zotero/selected-collection`（代理 `/connector/getSelectedCollection`，返回桌面当前选中分类名）。并提示"在 Zotero 里改当前选中分类，或切到 Web API 在此选择"。这让用户知道条目会落到哪、且可在 Zotero 端控制，消除"随机"感。
+
+### 后端改动（`backend/app/routers/zotero.py`）
+1. `SaveArxivRequest` 增 `collection_keys: list[str]`（默认空）。
+2. `save_arxiv` web 分支：`if req.collection_keys: item["collections"] = req.collection_keys`（创建前）。本地分支不传（connector 忽略，传了也无害，但为清晰不传）。
+3. 新端点 `GET /zotero/selected-collection`：本地模式 POST `/connector/getSelectedCollection`（body `{}`，头 `X-Zotero-Connector-API-Version: 3`），归一化返回 `{ok, mode, libraryName, collectionName, collectionId}`；web 模式返回空名（无 GUI 选中概念）。connector 端点在 Zotero 运行时即可用（不依赖"允许其他应用通信"偏好，但本地模式由 `_local_alive()` 保证该偏好已开，故 connector 必然可用）。
+
+### 前端改动
+- `lib/api.ts`：`zoteroSaveArxiv` 增第 4 参 `collectionKeys`（→ `collection_keys`）；新增 `zoteroGetSelectedCollection(c)`。
+- `components/ZoteroPanel.tsx`：「本文」未命中态按 `webMode` 分流（选择器 / 目标显示）；`loadCollections` 加 `collLoaded` 幂等守卫与 `force` 参数（创建分类后强制刷新）；新增 `localTarget` 状态与拉取 effect；`addToZotero` 传 `collectionKeys` 并在成功消息里点名目标分类。
+- `index.css`：`.zotero-coll-pick*`（选择器行）与 `.zotero-target`（本地目标显示）样式，复用现有 CSS 变量。
+
+### 非目标（沿用）
+- 不在本地模式伪装可选择分类（Zotero API 不支持，伪选择会误导）。
+- 不做创建分类的快捷入口于「本文」Tab（Collections Tab 已有 Web 模式建分类）。
+
