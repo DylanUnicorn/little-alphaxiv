@@ -98,3 +98,12 @@ PdfViewer 工具栏图标 → ZoteroPanel(浮层)
 
 - 不做：Zotero 条目编辑/删除（Web 可扩展，但 v1 不做 UI）、群组库（仅用户库）、PDF 全文索引。
 - 本地模式"整理"受限是 Zotero API 本身限制，非本设计偷懒——UI 会明确说明。
+
+## 更新（2026-06-20）：完整元数据 + 笔记
+
+初版 `save-arxiv` 只写 `title/creators/abstractNote/date/url/DOI/repository/extra`，且当 Paper 记录是裸 id 桩（直接 URL 导航时 `PaperView.onTextExtracted` 把 `title` 回退成 arxivId、其余字段为空）时，Zotero 条目标题就成了 arxivId、字段全空。本次修复：
+
+- **根因修复（app 级）**：新增 `GET /api/paper?arxiv_id=` 后端端点（复用 arXiv `id_list` 查询 + `_parse_entry`，加 `doi` 提取 + 空-entry 守卫）。前端新增 `lib/paperMeta.ts` 的 `ensurePaperMeta(arxivId)`——若缓存记录无真实标题则从 arXiv 拉取并合并入 IDB（保留 `full_text`/`oa_pdf_url`）。`PaperView`（加载 + 文本提取）与 `ZoteroPanel`（添加前）都调用它，`onTextExtracted` 不再把标题降级为 arxivId。
+- **字段补全**：`_build_arxiv_item` 现在写满 preprint 全字段——`title / creators / abstractNote / date / DOI / url / archive=arXiv / archiveID=<id> / repository=arXiv / libraryCatalog=arXiv / language=en / shortTitle`（冒号副标题派生）`/ extra="arXiv: <id>" / tags=[primary_category]`。后端 `_enrich_paper_from_arxiv` 作安全网：入参缺标题/作者时按 arxiv_id 从 arXiv 补齐（即使前端仍传桩也能产出完整条目）。
+- **笔记（笔记）**：Web 模式创建真子笔记（`parentItem=<key>`，可靠）。**本地连接器不支持挂载子笔记**——`saveItems` 的 `parentItem` 仅对 `itemType=attachment` 生效，对 note 两种方式（同批次用 connector id、跨调用用 Zotero key）都只会产生孤立笔记（已对 Zotero 7/8 实测验证）。故本地模式只存元数据、不建笔记（避免污染文库），UI 在本地模式注明"笔记需 Web API 模式"。
+- **验证**：前端 `typecheck` + 119 测试通过；后端 `py_compile` + 导入通过；直接 Python 管线测试（真实 arXiv id 拉取 + 桩补全 + 全字段构建）通过；Playwright 冒烟（面板渲染/三标签/状态芯片/关闭/无页面错误）通过；端到端——用裸 id 桩调 `save-arxiv` 命中用户真实 Zotero，读回确认标题为真实论文标题、全字段就位。

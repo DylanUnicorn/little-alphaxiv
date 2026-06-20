@@ -22,6 +22,7 @@ import { useUi } from "../store/ui";
 import { useAnnotations } from "../store/annotations";
 import { pdfUrlForOa } from "../lib/api";
 import * as db from "../lib/db";
+import { ensurePaperMeta, hasRealTitle } from "../lib/paperMeta";
 import type { StylePreset } from "../types";
 
 export function PaperView() {
@@ -45,10 +46,18 @@ export function PaperView() {
 
   useEffect(() => {
     if (!arxivId) return;
-    db.getPaper(arxivId).then((p) => {
+    let cancelled = false;
+    db.getPaper(arxivId).then(async (p) => {
+      if (cancelled) return;
       if (p?.full_text) { setFullText(p.full_text); setExtracting(false); }
       if (p?.oa_pdf_url) setPdfUrlOverride(pdfUrlForOa(p.oa_pdf_url));
+      // Direct-URL navigation (bookmark / refresh / external link) can leave a
+      // bare-id stub: title = arxivId, no authors/abstract/DOI. Fetch the real
+      // arXiv metadata so the chat-title context, sidebar, and Zotero "add"
+      // all see the actual paper instead of the bare id. Best-effort.
+      if (!hasRealTitle(p, arxivId)) await ensurePaperMeta(arxivId);
     });
+    return () => { cancelled = true; };
   }, [arxivId]);
 
   const loadAnnots = useAnnotations((s) => s.load);
@@ -105,11 +114,21 @@ export function PaperView() {
 
   const onTextExtracted = useCallback((text: string) => {
     setFullText(text); setExtracting(false);
-    if (arxivId) {
-      db.getPaper(arxivId).then((cached) => {
-        db.savePaper({ arxiv_id: arxivId, title: cached?.title ?? arxivId, authors: cached?.authors ?? [], abstract: cached?.abstract ?? "", pdf_url: cached?.pdf_url ?? "", abs_url: cached?.abs_url ?? "", published: cached?.published ?? "", primary_category: cached?.primary_category ?? "", full_text: text, fetched_at: Date.now() });
-      });
-    }
+    if (!arxivId) return;
+    void (async () => {
+      // Ensure real metadata (fetches from arXiv if this is a bare-id stub),
+      // then persist the freshly extracted full_text on top. Never fall back to
+      // `title = arxivId` — that was the bug that made Zotero items (and the
+      // sidebar) show the bare id instead of the paper's real title.
+      const enriched = await ensurePaperMeta(arxivId);
+      if (enriched) {
+        await db.savePaper({ ...enriched, full_text: text, fetched_at: Date.now() });
+      } else {
+        // Nothing cached and arXiv unreachable — store the text in a minimal
+        // record; the Zotero backend re-fetches metadata at add-time anyway.
+        await db.savePaper({ arxiv_id: arxivId, title: "", authors: [], abstract: "", pdf_url: "", abs_url: "", published: "", primary_category: "", full_text: text, fetched_at: Date.now() });
+      }
+    })();
   }, [arxivId]);
 
   const systemPrompt = fullText

@@ -269,6 +269,19 @@ export async function webSearch(
   return r.json();
 }
 
+/** Fetch a single arXiv paper's metadata by id (title/authors/abstract/DOI/
+ *  published/category) via the backend's /api/paper endpoint. Used to populate
+ *  a paper record that was opened by direct URL navigation and only cached as a
+ *  bare-id stub — so the chat title, sidebar, and Zotero "add paper" all see
+ *  real metadata instead of `title = arxivId`. Returns the Paper (with an extra
+ *  `updated` field that callers ignore). Throws on non-200 / not-found. */
+export async function fetchPaperMeta(arxivId: string): Promise<Paper> {
+  const r = await fetch(`${BASE}/api/paper?arxiv_id=${encodeURIComponent(arxivId)}`);
+  if (!r.ok) throw new Error(`arxiv paper fetch error ${r.status}`);
+  const data = await r.json();
+  return data.paper as Paper;
+}
+
 /** URL for a paper's PDF, served through the backend proxy (CORS + cache). */
 export function pdfUrl(arxivId: string): string {
   return `${BASE}/api/pdf/${encodeURIComponent(arxivId)}`;
@@ -422,14 +435,16 @@ export async function zoteroAddToCollection(
   });
 }
 
-/** Save the current arXiv paper to Zotero (metadata + optional PDF). The paper
- *  object matches the app's Paper record (arxiv_id, title, authors, doi,
- *  abstract, abs_url, published). Returns {ok, mode, key?, pdfAttached?}. */
+/** Save the current arXiv paper to Zotero (metadata + optional PDF + child
+ *  note). The paper object matches the app's Paper record (arxiv_id, title,
+ *  authors, doi, abstract, abs_url, published, primary_category). The backend
+ *  fills any missing fields from arXiv, so a bare-id stub still yields a
+ *  complete item. Returns {ok, mode, key?, pdfAttached?, noteAdded?}. */
 export async function zoteroSaveArxiv(
   c: ZoteroCreds,
-  paper: { arxiv_id?: string; title?: string; authors?: string[]; doi?: string; abstract?: string; abs_url?: string; published?: string },
+  paper: { arxiv_id?: string; title?: string; authors?: string[]; doi?: string; abstract?: string; abs_url?: string; published?: string; pdf_url?: string; primary_category?: string },
   attachPdf: boolean
-): Promise<{ ok: boolean; mode: string; key?: string; pdfAttached?: boolean }> {
+): Promise<{ ok: boolean; mode: string; key?: string; pdfAttached?: boolean; noteAdded?: boolean }> {
   return zoteroPost("save-arxiv", { mode: c.mode, user_id: c.userId, api_key: c.apiKey, paper, attach_pdf: attachPdf });
 }
 

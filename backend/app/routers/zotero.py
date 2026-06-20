@@ -26,9 +26,11 @@ API reality (verified against Zotero 7/8):
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 import uuid
+from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
@@ -36,6 +38,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from .search import fetch_arxiv_by_id
 
 router = APIRouter()
 
@@ -500,25 +504,135 @@ def _zotero_creators(authors: list[str]) -> list[dict[str, Any]]:
     return out
 
 
+def _short_title(title: str) -> str:
+    """Derive a Zotero `shortTitle` from a paper title: take the text before the
+    first colon (the subtitle separator, common in "Main: Sub" academic titles),
+    in either ASCII or full-width form. Only return it when it's a genuine
+    shortening (>= 10 chars and strictly shorter than the full title) —
+    otherwise leave shortTitle empty, matching Zotero's own auto-shorten."""
+    title = (title or "").strip()
+    if not title:
+        return ""
+    for sep in (":", "："):
+        if sep in title:
+            head = title.split(sep, 1)[0].strip()
+            if len(head) >= 10 and len(head) < len(title) - 2:
+                return head
+    return ""
+
+
 def _build_arxiv_item(paper: dict[str, Any]) -> dict[str, Any]:
+    """Build a Zotero `preprint` item from a Paper record, populating every
+    field the user expects on "Add to Zotero": title, authors, archive +
+    archiveID (存档id), date, DOI, shortTitle (短标题), language (语言),
+    libraryCatalog (文库编目), abstractNote (摘要), repository, url, extra, tags.
+    `extra` keeps the `arXiv: <id>` line so the find-current-paper search
+    (qmode=everything) still matches future lookups."""
     arxiv_id = (paper.get("arxiv_id") or "").strip()
-    extra_lines = []
-    if arxiv_id:
-        extra_lines.append(f"arXiv: {arxiv_id}")
+    title = paper.get("title") or arxiv_id or "Untitled"
+    extra_lines = [f"arXiv: {arxiv_id}"] if arxiv_id else []
+
     item: dict[str, Any] = {
         "itemType": "preprint",
-        "title": paper.get("title") or arxiv_id or "Untitled",
+        "title": title,
         "creators": _zotero_creators(paper.get("authors") or []),
         "abstractNote": paper.get("abstract") or "",
         "date": (paper.get("published") or "")[:10],
         "url": paper.get("abs_url") or (f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""),
+        # Provenance: arXiv is simultaneously the archive (with an archive ID),
+        # the repository, and the library catalog. All three are independent
+        # preprint fields, so setting them together is fine and matches what
+        # users see when they "Add to Zotero" from arxiv.org via the connector.
+        "archive": "arXiv",
+        "archiveID": arxiv_id,
         "repository": "arXiv",
+        "libraryCatalog": "arXiv",
+        # arXiv metadata carries no language field; arXiv is overwhelmingly
+        # English, so default to "en" (ISO 639-1) rather than leave it blank.
+        "language": "en",
+        "shortTitle": _short_title(title),
         "extra": "\n".join(extra_lines),
     }
     doi = (paper.get("doi") or "").strip()
     if doi:
         item["DOI"] = doi
+    # Tag with the primary category (e.g. cs.CL) for easy filtering.
+    cat = (paper.get("primary_category") or "").strip()
+    if cat:
+        item["tags"] = [{"tag": cat}]
     return item
+
+
+def _build_note_html(paper: dict[str, Any]) -> str:
+    """HTML body for the child note (笔记) attached to the saved paper: a
+    compact provenance card (arXiv id, authors, category, date, DOI, links)
+    plus an "Added via Little Alphaxiv on <date>" stamp. Values are HTML-
+    escaped — author/comment text is user/foreign data."""
+    arxiv_id = (paper.get("arxiv_id") or "").strip()
+    authors = paper.get("authors") or []
+    abs_url = paper.get("abs_url") or (f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "")
+    pdf_url = paper.get("pdf_url") or (f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else "")
+    doi = (paper.get("doi") or "").strip()
+    rows = [
+        ("arXiv ID", arxiv_id),
+        ("Authors", "; ".join(authors)),
+        ("Primary category", paper.get("primary_category") or ""),
+        ("Published", (paper.get("published") or "")[:10]),
+        ("DOI", doi),
+    ]
+    table = "".join(
+        f"<tr><td><b>{html.escape(k)}</b></td><td>{html.escape(str(v))}</td></tr>"
+        for k, v in rows if v
+    )
+    links = " · ".join(
+        f'<a href="{html.escape(u)}">{html.escape(label)}</a>'
+        for label, u in (("abstract", abs_url), ("PDF", pdf_url)) if u
+    )
+    stamp = date.today().isoformat()
+    head = (
+        f"<p>Added via <b>Little Alphaxiv</b> on {html.escape(stamp)}"
+        + (f' from <a href="{html.escape(abs_url)}">arXiv:{html.escape(arxiv_id)}</a>.</p>'
+           if abs_url else ".</p>")
+    )
+    return f"{head}<table>{table}</table>" + (f"<p>{links}</p>" if links else "")
+
+
+def _note_item_web(note_html: str, parent_key: str) -> dict[str, Any]:
+    """Child note for the web API. `parentItem` is the parent's Zotero key
+    (returned by the create-item POST) — the documented, reliable way to
+    attach a child note. (The local connector does NOT support linking child
+    notes — see save_arxiv — so this helper is web-only.)"""
+    return {"itemType": "note", "note": note_html, "parentItem": parent_key, "tags": []}
+
+
+async def _enrich_paper_from_arxiv(paper: dict[str, Any]) -> dict[str, Any]:
+    """Safety net: if the incoming `paper` is a bare-id stub (no real title or
+    no authors — this happens when a paper was opened by direct URL navigation
+    and the browser only cached `title = arxivId`), fetch real metadata from
+    arXiv by id and merge it in. Incoming non-empty values always win; only
+    gaps are filled. Best-effort: on any failure the original paper is
+    returned unchanged so the save still proceeds with whatever we have."""
+    arxiv_id = (paper.get("arxiv_id") or "").strip()
+    title = (paper.get("title") or "").strip()
+    has_title = bool(title) and title != arxiv_id
+    has_authors = bool(paper.get("authors"))
+    if (has_title and has_authors) or not arxiv_id:
+        return paper
+    try:
+        fetched = await fetch_arxiv_by_id(arxiv_id)
+    except Exception:
+        return paper
+    if not fetched:
+        return paper
+    merged = dict(paper)
+    if not has_title:
+        merged["title"] = fetched.get("title") or merged.get("title") or arxiv_id
+    if not has_authors:
+        merged["authors"] = fetched.get("authors") or merged.get("authors") or []
+    for k in ("abstract", "published", "abs_url", "pdf_url", "doi", "primary_category"):
+        if not (merged.get(k) or "").strip():
+            merged[k] = fetched.get(k) or merged.get(k) or ""
+    return merged
 
 
 async def _attach_pdf_local(arxiv_id: str, session_id: str, parent_item_id: str) -> bool:
@@ -560,19 +674,29 @@ async def _attach_pdf_local(arxiv_id: str, session_id: str, parent_item_id: str)
 @router.post("/zotero/save-arxiv")
 async def save_arxiv(req: SaveArxivRequest) -> Any:
     resolved = await _resolve_mode(req.mode, req.user_id, req.api_key)
-    paper = req.paper or {}
+    # Enrich first: guarantees a complete item even if the browser only cached
+    # a bare-id stub (title = arxivId, no authors/abstract/DOI).
+    paper = await _enrich_paper_from_arxiv(req.paper or {})
     arxiv_id = (paper.get("arxiv_id") or "").strip()
     item = _build_arxiv_item(paper)
 
     if resolved == "local":
-        # Create the parent item via the connector. If we'll attach a PDF, set a
-        # connector `id` on the item and reuse the same sessionID in saveAttachment
-        # — that's how Zotero links the attachment to its parent (per the connector
-        # two-step contract; parentItemID is the connector id, not the Zotero key).
+        # Create the parent item via the connector. We set a connector `id` on
+        # the item so the PDF (two-step saveAttachment) can link to it — same as
+        # the original working save, parent only.
+        #
+        # NOTE on the child note (笔记): the local Zotero connector does NOT
+        # support attaching child notes. saveItems links child items via
+        # `parentItem` only for attachments (itemType=attachment); for notes it
+        # silently creates a STANDALONE note regardless of parentItem (verified
+        # against Zotero 7/8 — both parentItem=<connector id> in-batch and
+        # parentItem=<Zotero key> cross-call leave the note unlinked). Creating
+        # orphan notes would clutter the library, so in local mode we attach
+        # metadata only. The web API does support child notes (parentItem=key),
+        # so noteAdded is true there.
         session_id = uuid.uuid4().hex
         conn_item_id = uuid.uuid4().hex
-        if req.attach_pdf and arxiv_id:
-            item["id"] = conn_item_id
+        item["id"] = conn_item_id
         body = {
             "items": [item],
             "uri": item.get("url") or "https://arxiv.org",
@@ -590,25 +714,40 @@ async def save_arxiv(req: SaveArxivRequest) -> Any:
         pdf_ok = False
         if req.attach_pdf and arxiv_id:
             pdf_ok = await _attach_pdf_local(arxiv_id, session_id, conn_item_id)
-        return JSONResponse(content={"ok": True, "mode": "local", "key": key, "pdfAttached": pdf_ok})
+        return JSONResponse(content={"ok": True, "mode": "local", "key": key,
+                                     "pdfAttached": pdf_ok, "noteAdded": False})
 
     # web
     if not (req.user_id and req.api_key):
         raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
+    note_html = _build_note_html(paper)
     token = uuid.uuid4().hex
     headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
                "Zotero-Write-Token": token}
+    note_added = False
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         try:
             r = await client.post(f"{_WEB}/users/{req.user_id}/items", json=[item], headers=headers)
         except httpx.RequestError as exc:
             raise HTTPException(status_code=502, detail=f"zotero request error: {exc}") from exc
-    if r.status_code not in (200, 201):
-        raise HTTPException(status_code=502, detail=f"zotero create returned {r.status_code}: {r.text[:200]}")
-    data = r.json() if r.text else {}
-    key = ""
-    success = data.get("success") or {}
-    if success and str(0) in success:
-        key = success["0"]
+        if r.status_code not in (200, 201):
+            raise HTTPException(status_code=502, detail=f"zotero create returned {r.status_code}: {r.text[:200]}")
+        data = r.json() if r.text else {}
+        key = ""
+        success = data.get("success") or {}
+        if success and str(0) in success:
+            key = success["0"]
+        # Attach a child note (笔记) to the freshly created parent. Best-effort:
+        # a failure here must not undo the parent item, so it's swallowed.
+        if key:
+            try:
+                note_headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
+                                "Zotero-Write-Token": uuid.uuid4().hex}
+                nr = await client.post(f"{_WEB}/users/{req.user_id}/items",
+                                       json=[_note_item_web(note_html, key)], headers=note_headers)
+                note_added = nr.status_code in (200, 201)
+            except httpx.RequestError:
+                note_added = False
     # Web PDF attach is out of v1 scope (needs file-upload registration); metadata-only.
-    return JSONResponse(content={"ok": True, "mode": "web", "key": key, "pdfAttached": False})
+    return JSONResponse(content={"ok": True, "mode": "web", "key": key,
+                                 "pdfAttached": False, "noteAdded": note_added})

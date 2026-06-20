@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettings } from "../store/settings";
-import * as db from "../lib/db";
+import { ensurePaperMeta } from "../lib/paperMeta";
 import {
   zoteroStatus,
   zoteroSearchItems,
@@ -69,10 +69,16 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
   const connected = !!status?.ok;
   const webMode = status?.mode === "web";
 
-  // Load paper metadata + check connection on open.
+  // Load paper metadata + check connection on open. ensurePaperMeta fetches real
+  // arXiv metadata if the cached record is a bare-id stub (direct-URL nav), so
+  // the panel header and the "Add to Zotero" payload carry the real title /
+  // authors / abstract / DOI rather than the bare id.
   useEffect(() => {
     let cancelled = false;
-    db.getPaper(arxivId).then((p) => !cancelled && setPaper(p ?? null));
+    (async () => {
+      const p = await ensurePaperMeta(arxivId);
+      if (!cancelled) setPaper(p ?? null);
+    })();
     (async () => {
       setCheckingStatus(true);
       try {
@@ -137,16 +143,25 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
     setAdding(true);
     setMsg(null);
     try {
+      // Guarantee complete metadata even if the panel opened before the arXiv
+      // fetch finished, or the cached record is still a bare-id stub. The
+      // backend re-fetches too (belt-and-suspenders), but doing it here also
+      // updates the header so the user sees the real title post-add.
+      const enriched = await ensurePaperMeta(arxivId);
+      if (enriched) setPaper(enriched);
+      const p = enriched ?? paper;
       const res = await zoteroSaveArxiv(
         creds,
         {
           arxiv_id: arxivId,
-          title: paper?.title || arxivId,
-          authors: paper?.authors || [],
-          doi: paper?.doi || "",
-          abstract: paper?.abstract || "",
-          abs_url: paper?.abs_url || (arxivId ? `https://arxiv.org/abs/${arxivId}` : ""),
-          published: paper?.published || "",
+          title: p?.title ?? "",
+          authors: p?.authors ?? [],
+          doi: p?.doi ?? "",
+          abstract: p?.abstract ?? "",
+          abs_url: p?.abs_url || (arxivId ? `https://arxiv.org/abs/${arxivId}` : ""),
+          pdf_url: p?.pdf_url ?? "",
+          published: p?.published ?? "",
+          primary_category: p?.primary_category ?? "",
         },
         attachPdf && status?.mode === "local"
       );
@@ -154,9 +169,11 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
         const bits = [`Added to Zotero (${res.mode})`];
         if (res.pdfAttached) bits.push("PDF attached");
         else if (attachPdf && res.mode === "local") bits.push("PDF not attached");
+        if (res.noteAdded) bits.push("note added");
         setMsg({ kind: "ok", text: bits.join(" · ") + (res.key ? " — opening…" : "") });
         if (res.key) {
-          setFound([{ key: res.key, title: paper?.title || arxivId, creators: "", itemType: "preprint", year: "", date: "", url: "", doi: paper?.doi || "", arxivId, abstract: "", collections: [], tags: [] }]);
+          const shownTitle = p?.title && p.title !== arxivId ? p.title : arxivId;
+          setFound([{ key: res.key, title: shownTitle, creators: (p?.authors ?? []).join("; "), itemType: "preprint", year: (p?.published ?? "").slice(0, 4), date: p?.published ?? "", url: p?.abs_url ?? "", doi: p?.doi ?? "", arxivId, abstract: p?.abstract ?? "", collections: [], tags: p?.primary_category ? [p.primary_category] : [] }]);
           // Best-effort: open it in Zotero right away.
           window.open(zoteroSelectUrl(res.key), "_blank", "noopener");
         }
@@ -268,7 +285,7 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
             <div className="zotero-tab">
               <div className="zotero-paper-title">{paper?.title || arxivId}</div>
               {paper?.authors?.length ? <div className="zotero-paper-authors">{paper.authors.join(", ")}</div> : null}
-              <div className="zotero-paper-id">arXiv:{arxivId}{paper?.doi ? ` · DOI:${paper.doi}` : ""}</div>
+              <div className="zotero-paper-id">arXiv:{arxivId}{paper?.primary_category ? ` · ${paper.primary_category}` : ""}{paper?.doi ? ` · DOI:${paper.doi}` : ""}</div>
 
               {!connected ? (
                 <div className="zotero-hint">Connect Zotero to search your library.</div>
@@ -299,6 +316,9 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
                   <button className="zotero-add-btn" onClick={addToZotero} disabled={adding}>
                     {adding ? "Adding…" : "Add to Zotero"}
                   </button>
+                  {status?.mode === "local" && (
+                    <div className="zotero-hint zotero-hint-sub">Saves title, authors, arXiv id, date, DOI, abstract, category. Attached notes (笔记) require <a href="#/settings">Web API mode</a> — the local Zotero connector can't link child notes.</div>
+                  )}
                 </div>
               )}
             </div>
