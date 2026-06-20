@@ -321,3 +321,121 @@ function pickContextLength(m: Record<string, unknown>): number | undefined {
   }
   return undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Zotero — all calls go through /api/zotero/* (the backend proxies to either
+// the local Zotero desktop API on 127.0.0.1:23119 or the web API at
+// api.zotero.org). Credentials arrive per-request from the settings store.
+// ---------------------------------------------------------------------------
+export interface ZoteroCreds {
+  mode: "auto" | "local" | "web";
+  userId: string;
+  apiKey: string;
+}
+
+export interface ZoteroItem {
+  key: string;
+  title: string;
+  creators: string;
+  itemType: string;
+  year: string;
+  date: string;
+  url: string;
+  doi: string;
+  arxivId: string;
+  abstract: string;
+  collections: string[];
+  tags: string[];
+}
+
+export interface ZoteroCollection {
+  key: string;
+  name: string;
+  parentKey: string;
+  numItems: number;
+}
+
+function zoteroParams(c: ZoteroCreds, extra: Record<string, string> = {}): URLSearchParams {
+  const p = new URLSearchParams({ mode: c.mode, user_id: c.userId, api_key: c.apiKey });
+  for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
+  return p;
+}
+
+async function zoteroGet(path: string, c: ZoteroCreds, extra: Record<string, string> = {}) {
+  const r = await fetch(`${BASE}/api/zotero/${path}?${zoteroParams(c, extra).toString()}`);
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`zotero ${path} error ${r.status}: ${t.slice(0, 200)}`);
+  }
+  return r.json();
+}
+
+async function zoteroPost(path: string, body: Record<string, unknown>) {
+  const r = await fetch(`${BASE}/api/zotero/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`zotero ${path} error ${r.status}: ${t.slice(0, 200)}`);
+  }
+  return r.json();
+}
+
+/** Check Zotero connectivity. Returns {ok, mode, library?, error?}. */
+export async function zoteroStatus(c: ZoteroCreds): Promise<{ ok: boolean; mode: string; library?: string; error?: string }> {
+  return zoteroGet("status", c);
+}
+
+/** Search/list Zotero items. Empty `q` lists recent items. */
+export async function zoteroSearchItems(
+  c: ZoteroCreds,
+  q: string,
+  limit = 25
+): Promise<{ total: number; results: ZoteroItem[]; mode: string }> {
+  return zoteroGet("items", c, { q, limit: String(limit), qmode: q ? "everything" : "" });
+}
+
+/** List Zotero collections. */
+export async function zoteroListCollections(c: ZoteroCreds): Promise<{ results: ZoteroCollection[]; mode: string }> {
+  return zoteroGet("collections", c);
+}
+
+/** Create a Zotero collection (web mode only). */
+export async function zoteroCreateCollection(
+  c: ZoteroCreds,
+  name: string,
+  parentKey = ""
+): Promise<{ ok: boolean; key?: string }> {
+  return zoteroPost("collections", { mode: c.mode, user_id: c.userId, api_key: c.apiKey, name, parent_key: parentKey });
+}
+
+/** Add a Zotero item to collection(s) (web mode only). */
+export async function zoteroAddToCollection(
+  c: ZoteroCreds,
+  itemKey: string,
+  collectionKeys: string[]
+): Promise<{ ok: boolean; collections: string[] }> {
+  return zoteroPost(`items/${encodeURIComponent(itemKey)}/collections`, {
+    mode: c.mode, user_id: c.userId, api_key: c.apiKey, collection_keys: collectionKeys,
+  });
+}
+
+/** Save the current arXiv paper to Zotero (metadata + optional PDF). The paper
+ *  object matches the app's Paper record (arxiv_id, title, authors, doi,
+ *  abstract, abs_url, published). Returns {ok, mode, key?, pdfAttached?}. */
+export async function zoteroSaveArxiv(
+  c: ZoteroCreds,
+  paper: { arxiv_id?: string; title?: string; authors?: string[]; doi?: string; abstract?: string; abs_url?: string; published?: string },
+  attachPdf: boolean
+): Promise<{ ok: boolean; mode: string; key?: string; pdfAttached?: boolean }> {
+  return zoteroPost("save-arxiv", { mode: c.mode, user_id: c.userId, api_key: c.apiKey, paper, attach_pdf: attachPdf });
+}
+
+/** Build a zotero://select deep link that opens an item in the Zotero desktop
+ *  app (the user library). Works for both local and web modes — the item key
+ *  is the same in a synced library. */
+export function zoteroSelectUrl(itemKey: string): string {
+  return `zotero://select/library/items/${itemKey}`;
+}

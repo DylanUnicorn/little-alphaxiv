@@ -16,6 +16,7 @@ import * as db from "../lib/db";
 import { AnnotationToolbar } from "./AnnotationToolbar";
 import { HighlightLayer } from "./HighlightLayer";
 import { AnnotLayer } from "./AnnotLayer";
+import { ZoteroPanel } from "./ZoteroPanel";
 import { useAnnotations } from "../store/annotations";
 import type { PageSize } from "../types";
 
@@ -36,6 +37,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1); // 1 = fit width
+  const [showZotero, setShowZotero] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
 
@@ -141,6 +143,17 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
         </button>
         <button onClick={zoomIn} title="Zoom in">+</button>
         <AnnotationToolbar />
+        <button
+          className={`zotero-btn ${showZotero ? "active" : ""}`}
+          onClick={() => setShowZotero((v) => !v)}
+          title="Zotero — find / add / organize this paper"
+          aria-label="Zotero"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="17" height="17" rx="4" fill="none" stroke="currentColor" strokeWidth="2" />
+            <path d="M8.5 8h7L8.5 16h7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         <span className="pdf-pagecount">{numPages ? `${numPages} pages` : "…"}</span>
       </div>
       <div className="pdf-scroll" ref={containerRef}>
@@ -157,6 +170,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
             />
           ))}
       </div>
+      {showZotero && <ZoteroPanel arxivId={arxivId} onClose={() => setShowZotero(false)} />}
     </div>
   );
 }

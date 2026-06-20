@@ -1,0 +1,383 @@
+// ZoteroPanel — overlay triggered from the PDF toolbar Zotero icon.
+// Three tabs:
+//   - "This paper": find the current arXiv paper in the Zotero library (by
+//     arXiv id, falling back to title). If found, open it in Zotero via the
+//     zotero://select deep link; if not, add it (metadata + optional PDF).
+//   - "Library": search the library; open any item in Zotero.
+//   - "Collections": list collections; in Web mode, create a collection or add
+//     the current paper to one (organize). Local mode is read-only for
+//     collections by Zotero's API design — the panel says so.
+//
+// All Zotero calls go through /api/zotero/* (backend proxy → local 23119 or
+// web api.zotero.org). Credentials come from the settings store.
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSettings } from "../store/settings";
+import * as db from "../lib/db";
+import {
+  zoteroStatus,
+  zoteroSearchItems,
+  zoteroListCollections,
+  zoteroSaveArxiv,
+  zoteroCreateCollection,
+  zoteroAddToCollection,
+  zoteroSelectUrl,
+  type ZoteroItem,
+  type ZoteroCollection,
+} from "../lib/api";
+import type { Paper } from "../types";
+
+interface Props {
+  arxivId: string;
+  onClose: () => void;
+}
+
+type Tab = "paper" | "library" | "collections";
+
+/** Strip a trailing version so 2401.07041v1 matches 2401.07041. */
+function normArxiv(id: string): string {
+  return (id || "").trim().replace(/v\d+$/, "").toLowerCase();
+}
+
+export function ZoteroPanel({ arxivId, onClose }: Props) {
+  const zotero = useSettings((s) => s.zotero);
+  const [tab, setTab] = useState<Tab>("paper");
+  const [paper, setPaper] = useState<Paper | null>(null);
+
+  const [status, setStatus] = useState<{ ok: boolean; mode: string; library?: string; error?: string } | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(true);
+
+  // "This paper" tab state
+  const [found, setFound] = useState<ZoteroItem[]>([]);
+  const [searchingPaper, setSearchingPaper] = useState(false);
+  const [attachPdf, setAttachPdf] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // "Library" tab state
+  const [libQuery, setLibQuery] = useState("");
+  const [libResults, setLibResults] = useState<ZoteroItem[]>([]);
+  const [libSearching, setLibSearching] = useState(false);
+
+  // "Collections" tab state
+  const [collections, setCollections] = useState<ZoteroCollection[]>([]);
+  const [selectedColl, setSelectedColl] = useState("");
+  const [newCollName, setNewCollName] = useState("");
+  const [collBusy, setCollBusy] = useState(false);
+
+  const creds = useMemo(() => ({ mode: zotero.mode, userId: zotero.userId, apiKey: zotero.apiKey }), [zotero]);
+  const connected = !!status?.ok;
+  const webMode = status?.mode === "web";
+
+  // Load paper metadata + check connection on open.
+  useEffect(() => {
+    let cancelled = false;
+    db.getPaper(arxivId).then((p) => !cancelled && setPaper(p ?? null));
+    (async () => {
+      setCheckingStatus(true);
+      try {
+        const res = await zoteroStatus(creds);
+        if (!cancelled) setStatus(res);
+      } catch (e) {
+        if (!cancelled) setStatus({ ok: false, mode: zotero.mode, error: String((e as Error).message || e) });
+      } finally {
+        if (!cancelled) setCheckingStatus(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arxivId]);
+
+  // Esc to close.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Search the library for the current paper (by arXiv id, then title).
+  const findCurrentPaper = useCallback(async () => {
+    if (!connected) return;
+    setSearchingPaper(true);
+    setMsg(null);
+    try {
+      const matches: ZoteroItem[] = [];
+      const seen = new Set<string>();
+      const add = (items: ZoteroItem[]) => {
+        for (const it of items) {
+          if (!seen.has(it.key)) { seen.add(it.key); matches.push(it); }
+        }
+      };
+      if (arxivId) {
+        const r = await zoteroSearchItems(creds, arxivId, 25);
+        add(r.results.filter((it) => normArxiv(it.arxivId) === normArxiv(arxivId)));
+      }
+      if (matches.length === 0 && paper?.title) {
+        const r = await zoteroSearchItems(creds, paper.title.slice(0, 80), 25);
+        add(r.results.filter((it) => it.title.trim().toLowerCase() === (paper.title || "").trim().toLowerCase()));
+      }
+      setFound(matches);
+    } catch (e) {
+      setMsg({ kind: "err", text: `Search failed: ${String((e as Error).message || e)}` });
+    } finally {
+      setSearchingPaper(false);
+    }
+  }, [arxivId, connected, creds, paper]);
+
+  useEffect(() => {
+    if (connected && tab === "paper" && found.length === 0 && !searchingPaper) {
+      void findCurrentPaper();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, tab]);
+
+  const currentKey = found[0]?.key || "";
+
+  async function addToZotero() {
+    setAdding(true);
+    setMsg(null);
+    try {
+      const res = await zoteroSaveArxiv(
+        creds,
+        {
+          arxiv_id: arxivId,
+          title: paper?.title || arxivId,
+          authors: paper?.authors || [],
+          doi: paper?.doi || "",
+          abstract: paper?.abstract || "",
+          abs_url: paper?.abs_url || (arxivId ? `https://arxiv.org/abs/${arxivId}` : ""),
+          published: paper?.published || "",
+        },
+        attachPdf && status?.mode === "local"
+      );
+      if (res.ok) {
+        const bits = [`Added to Zotero (${res.mode})`];
+        if (res.pdfAttached) bits.push("PDF attached");
+        else if (attachPdf && res.mode === "local") bits.push("PDF not attached");
+        setMsg({ kind: "ok", text: bits.join(" · ") + (res.key ? " — opening…" : "") });
+        if (res.key) {
+          setFound([{ key: res.key, title: paper?.title || arxivId, creators: "", itemType: "preprint", year: "", date: "", url: "", doi: paper?.doi || "", arxivId, abstract: "", collections: [], tags: [] }]);
+          // Best-effort: open it in Zotero right away.
+          window.open(zoteroSelectUrl(res.key), "_blank", "noopener");
+        }
+      } else {
+        setMsg({ kind: "err", text: "Add failed" });
+      }
+    } catch (e) {
+      setMsg({ kind: "err", text: `Add failed: ${String((e as Error).message || e)}` });
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function searchLibrary(q: string) {
+    setLibSearching(true);
+    try {
+      const r = await zoteroSearchItems(creds, q, 50);
+      setLibResults(r.results);
+    } catch (e) {
+      setMsg({ kind: "err", text: `Search failed: ${String((e as Error).message || e)}` });
+    } finally {
+      setLibSearching(false);
+    }
+  }
+
+  async function loadCollections() {
+    if (!connected) return;
+    try {
+      const r = await zoteroListCollections(creds);
+      setCollections(r.results);
+    } catch (e) {
+      setMsg({ kind: "err", text: `Collections failed: ${String((e as Error).message || e)}` });
+    }
+  }
+
+  useEffect(() => {
+    if (connected && tab === "collections" && collections.length === 0) void loadCollections();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, tab]);
+
+  async function createCollection() {
+    if (!newCollName.trim()) return;
+    setCollBusy(true);
+    setMsg(null);
+    try {
+      const res = await zoteroCreateCollection(creds, newCollName.trim());
+      if (res.ok) {
+        setNewCollName("");
+        await loadCollections();
+        setMsg({ kind: "ok", text: "Collection created" });
+      } else setMsg({ kind: "err", text: "Create failed" });
+    } catch (e) {
+      setMsg({ kind: "err", text: `Create failed: ${String((e as Error).message || e)}` });
+    } finally {
+      setCollBusy(false);
+    }
+  }
+
+  async function addToCollection() {
+    if (!selectedColl || !currentKey) return;
+    setCollBusy(true);
+    setMsg(null);
+    try {
+      const res = await zoteroAddToCollection(creds, currentKey, [selectedColl]);
+      if (res.ok) setMsg({ kind: "ok", text: "Added to collection" });
+      else setMsg({ kind: "err", text: "Add to collection failed" });
+    } catch (e) {
+      setMsg({ kind: "err", text: `${String((e as Error).message || e)}` });
+    } finally {
+      setCollBusy(false);
+    }
+  }
+
+  const statusChip = checkingStatus
+    ? "checking…"
+    : connected
+      ? `● ${status!.mode}${status!.library ? ` · ${status!.library}` : ""}`
+      : "✗ offline";
+
+  return (
+    <div className="zotero-overlay" onClick={onClose}>
+      <div className="zotero-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="zotero-head">
+          <strong>Zotero</strong>
+          <span className={`zotero-chip ${connected ? "on" : "off"}`}>{statusChip}</span>
+          <button className="zotero-close" onClick={onClose} title="Close">×</button>
+        </div>
+
+        {!connected && !checkingStatus && (
+          <div className="zotero-banner">
+            Zotero isn’t reachable ({status?.error || "offline"}).{" "}
+            {zotero.mode !== "web"
+              ? "Start the Zotero desktop app and enable “Allow other applications to communicate with Zotero” (Preferences → Advanced), or "
+              : "Check your user ID / API key, or "}
+            <a href="#/settings">open Settings</a> to switch to Web API mode.
+          </div>
+        )}
+
+        <div className="zotero-tabs">
+          <button className={tab === "paper" ? "active" : ""} onClick={() => setTab("paper")}>This paper</button>
+          <button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")} disabled={!connected}>Library</button>
+          <button className={tab === "collections" ? "active" : ""} onClick={() => setTab("collections")} disabled={!connected}>Collections</button>
+        </div>
+
+        {msg && <div className={`zotero-msg ${msg.kind}`}>{msg.text}</div>}
+
+        <div className="zotero-body">
+          {tab === "paper" && (
+            <div className="zotero-tab">
+              <div className="zotero-paper-title">{paper?.title || arxivId}</div>
+              {paper?.authors?.length ? <div className="zotero-paper-authors">{paper.authors.join(", ")}</div> : null}
+              <div className="zotero-paper-id">arXiv:{arxivId}{paper?.doi ? ` · DOI:${paper.doi}` : ""}</div>
+
+              {!connected ? (
+                <div className="zotero-hint">Connect Zotero to search your library.</div>
+              ) : searchingPaper ? (
+                <div className="zotero-hint">Searching your Zotero library…</div>
+              ) : found.length > 0 ? (
+                <div className="zotero-found">
+                  <div className="zotero-hint">✓ Found in your Zotero library:</div>
+                  {found.map((it) => (
+                    <div key={it.key} className="zotero-item">
+                      <div className="zotero-item-main">
+                        <span className="zotero-item-title">{it.title}</span>
+                        {it.creators && <span className="zotero-item-sub">{it.creators}{it.year ? ` (${it.year})` : ""}</span>}
+                      </div>
+                      <a className="zotero-open-btn" href={zoteroSelectUrl(it.key)} target="_blank" rel="noopener noreferrer">Open in Zotero</a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="zotero-notfound">
+                  <div className="zotero-hint">Not in your Zotero library yet.</div>
+                  {status?.mode === "local" && (
+                    <label className="zotero-check">
+                      <input type="checkbox" checked={attachPdf} onChange={(e) => setAttachPdf(e.target.checked)} />
+                      Also save the PDF
+                    </label>
+                  )}
+                  <button className="zotero-add-btn" onClick={addToZotero} disabled={adding}>
+                    {adding ? "Adding…" : "Add to Zotero"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "library" && (
+            <div className="zotero-tab">
+              <form
+                className="zotero-search"
+                onSubmit={(e) => { e.preventDefault(); if (libQuery.trim()) void searchLibrary(libQuery.trim()); }}
+              >
+                <input
+                  placeholder="Search your Zotero library…"
+                  value={libQuery}
+                  onChange={(e) => setLibQuery(e.target.value)}
+                  autoFocus
+                />
+                <button type="submit" disabled={libSearching || !libQuery.trim()}>{libSearching ? "…" : "Search"}</button>
+              </form>
+              {libResults.length > 0 ? (
+                <div className="zotero-list">
+                  {libResults.map((it) => (
+                    <div key={it.key} className="zotero-item">
+                      <div className="zotero-item-main">
+                        <span className="zotero-item-title">{it.title}</span>
+                        {it.creators && <span className="zotero-item-sub">{it.creators}{it.year ? ` (${it.year})` : ""}</span>}
+                      </div>
+                      <a className="zotero-open-btn" href={zoteroSelectUrl(it.key)} target="_blank" rel="noopener noreferrer">Open</a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="zotero-hint">{libQuery ? "No results." : "Search by title, author, or any field."}</div>
+              )}
+            </div>
+          )}
+
+          {tab === "collections" && (
+            <div className="zotero-tab">
+              {!webMode ? (
+                <div className="zotero-hint">
+                  Organizing collections (create / add to) requires <strong>Web API</strong> mode —
+                  the local Zotero API is read-only by design.{" "}
+                  <a href="#/settings">Switch in Settings</a>. Below are your existing collections (read-only):
+                </div>
+              ) : (
+                <div className="zotero-coll-actions">
+                  <div className="zotero-coll-row">
+                    <select value={selectedColl} onChange={(e) => setSelectedColl(e.target.value)} disabled={!collections.length}>
+                      <option value="">{collections.length ? "Select a collection…" : "No collections"}</option>
+                      {collections.map((c) => <option key={c.key} value={c.key}>{c.name} ({c.numItems})</option>)}
+                    </select>
+                    <button onClick={addToCollection} disabled={collBusy || !selectedColl || !currentKey}>
+                      Add current paper
+                    </button>
+                  </div>
+                  <div className="zotero-coll-row">
+                    <input placeholder="New collection name…" value={newCollName} onChange={(e) => setNewCollName(e.target.value)} />
+                    <button onClick={createCollection} disabled={collBusy || !newCollName.trim()}>Create</button>
+                  </div>
+                  {!currentKey && <div className="zotero-hint">Find the current paper first (This paper tab) to add it to a collection.</div>}
+                </div>
+              )}
+              {collections.length > 0 ? (
+                <div className="zotero-list">
+                  {collections.map((c) => (
+                    <div key={c.key} className="zotero-coll-item">
+                      <span>{c.parentKey ? "↳ " : "📁 "}{c.name}</span>
+                      <span className="zotero-coll-count">{c.numItems}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                connected && <div className="zotero-hint">No collections.</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

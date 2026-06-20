@@ -26,6 +26,26 @@ export function SettingsView() {
   const getCachedModels = useSettings((s) => s.getCachedModels);
   const searchSources = useSettings((s) => s.searchSources);
   const setSearchSources = useSettings((s) => s.setSearchSources);
+  const zotero = useSettings((s) => s.zotero);
+  const setZotero = useSettings((s) => s.setZotero);
+  const [zoteroTesting, setZoteroTesting] = useState(false);
+  const [zoteroTestResult, setZoteroTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  async function testZotero() {
+    setZoteroTesting(true);
+    setZoteroTestResult(null);
+    try {
+      const { zoteroStatus } = await import("../lib/api");
+      const res = await zoteroStatus(zotero);
+      setZoteroTestResult(res.ok
+        ? { ok: true, msg: `Connected via ${res.mode}${res.library ? ` — ${res.library}` : ""}` }
+        : { ok: false, msg: res.error || `Not reachable (${res.mode})` });
+    } catch (e) {
+      setZoteroTestResult({ ok: false, msg: String((e as Error).message || e) });
+    } finally {
+      setZoteroTesting(false);
+    }
+  }
 
   const [draft, setDraft] = useState<Omit<Provider, "id">>(EMPTY);
   // Per-provider fetch state for the "Add provider" form
@@ -168,6 +188,70 @@ export function SettingsView() {
               Request a free key at{" "}
               <a href="https://www.semanticscholar.org/product/api#api-key" target="_blank" rel="noopener noreferrer">semanticscholar.org/product/api</a>
               {" "}(1 req/sec with a key; shared pool without).
+            </div>
+          </div>
+        </div>
+
+        <h2>Zotero</h2>
+        <p className="settings-hint">
+          Connect to your Zotero library to find the current paper, add papers,
+          and organize collections straight from the PDF toolbar.{" "}
+          <strong>Local</strong> talks to the Zotero desktop app (no key —
+          start Zotero and enable “Allow other applications to communicate with
+          Zotero” in Preferences → Advanced). <strong>Web</strong> uses the
+          Zotero Web API (needs your userID + API key, library synced to
+          zotero.org) and is required for organizing collections.
+        </p>
+        <div className="search-sources-list">
+          <div className={`search-source-item ${zotero.mode !== "web" || zotero.userId ? "enabled" : ""}`}>
+            <div className="search-source-row">
+              <strong>Connection mode</strong>
+              <select
+                className="zotero-mode-select"
+                value={zotero.mode}
+                onChange={(e) => setZotero({ mode: e.target.value as "auto" | "local" | "web" })}
+              >
+                <option value="auto">Auto (local → web)</option>
+                <option value="local">Local (desktop)</option>
+                <option value="web">Web API</option>
+              </select>
+            </div>
+            <div className="provider-detail">
+              User ID (web):{" "}
+              <input
+                className="search-source-key"
+                type="text"
+                placeholder="web mode only"
+                value={zotero.userId}
+                onChange={(e) => setZotero({ userId: e.target.value })}
+              />
+              {" · "}API key (web):{" "}
+              <input
+                className="search-source-key"
+                type="password"
+                placeholder="web mode only"
+                value={zotero.apiKey}
+                onChange={(e) => setZotero({ apiKey: e.target.value })}
+              />
+              <button
+                className="link-btn"
+                onClick={testZotero}
+                disabled={zoteroTesting}
+                style={{ marginLeft: 8 }}
+              >
+                {zoteroTesting ? "Testing…" : "Test connection"}
+              </button>
+            </div>
+            {zoteroTestResult && (
+              <div className={`provider-detail ${zoteroTestResult.ok ? "zotero-ok" : "zotero-err"}`}>
+                {zoteroTestResult.ok ? "✓ " : "✗ "}{zoteroTestResult.msg}
+              </div>
+            )}
+            <div className="provider-detail">
+              Get a web API key at{" "}
+              <a href="https://www.zotero.org/settings/keys" target="_blank" rel="noopener noreferrer">zotero.org/settings/keys</a>
+              {" "}(enable library + write access). Your userID is on the{" "}
+              <a href="https://www.zotero.org/settings/keys" target="_blank" rel="noopener noreferrer">same settings page</a>.
             </div>
           </div>
         </div>
