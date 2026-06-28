@@ -1,6 +1,6 @@
 // zustand store: flat annotation array + op-stack + IndexedDB persistence + UI state.
 import { create } from "zustand";
-import type { Annotation, Op, Tool } from "../types";
+import type { Annotation, NormPoint, Op, Tool } from "../types";
 import { commit, undoOp, redoOp, type AnnotState } from "../lib/opstack";
 import { listAnnotations, putAnnotation, deleteAnnotation } from "../lib/db";
 import { newId } from "../lib/annotations";
@@ -33,6 +33,11 @@ interface AnnotationUIState {
   setColor: (c: string) => void;
   toggleHighlight: () => void;
   select: (id: string | null) => void;
+  // Freehand session: maps page -> block annotation id currently being appended
+  // to. The first stroke of a session creates the block (add op); subsequent
+  // strokes append (edit op). Cleared when leaving the draw tool.
+  drawSession: Record<number, string>;
+  addDrawStroke: (page: number, stroke: NormPoint[], color: string, width: number) => void;
 }
 
 // Bridge between the store's named arrays and the op-stack's AnnotState shape.
@@ -69,10 +74,11 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
   color: "#FFEB3B",
   highlightOn: false,
   selectedId: null,
+  drawSession: {},
 
   load: async (arxivId) => {
     const annots = await listAnnotations(arxivId);
-    set({ arxivId, annots, undoStack: [], redoStack: [], selectedId: null });
+    set({ arxivId, annots, undoStack: [], redoStack: [], selectedId: null, drawSession: {} });
   },
 
   addAnnot: (partial) => {
@@ -87,6 +93,38 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     const op: Op = { kind: "add", annot };
     persistOp(arxivId, op);
     set((s) => fromOpState(commit(toOpState(s), op)));
+  },
+
+  // Sticky freehand: group a whole drawing session into ONE annotation.
+  // First stroke on a page creates the block (add op) and records its id in
+  // drawSession[page]; subsequent strokes on the same page append via editAnnot
+  // (before = current block, after = block + new stroke). Strokes commit
+  // immediately, so a page unmounting mid-session never loses data. drawSession
+  // is cleared on setTool(!= "draw"), ending the session.
+  addDrawStroke: (page, stroke, color, width) => {
+    const { arxivId, drawSession, annots } = get();
+    if (!arxivId || stroke.length < 2) return;
+    const existingId = drawSession[page];
+    const existing = existingId ? annots.find((a) => a.id === existingId && a.type === "draw") : undefined;
+    if (existing && existing.draw) {
+      const after: Annotation = {
+        ...existing,
+        draw: { ...existing.draw, strokes: [...existing.draw.strokes, stroke] },
+      };
+      get().editAnnot(existing, after);
+      return;
+    }
+    // New session block on this page.
+    const annot: Annotation = {
+      id: newId(), arxiv_id: arxivId, page, type: "draw", color,
+      createdAt: Date.now(), draw: { strokes: [stroke], width },
+    };
+    const op: Op = { kind: "add", annot };
+    persistOp(arxivId, op);
+    set((s) => {
+      const next = fromOpState(commit(toOpState(s), op));
+      return { ...next, drawSession: { ...s.drawSession, [page]: annot.id } };
+    });
   },
 
   removeAnnot: (id) => {
@@ -155,7 +193,15 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     set((s) => fromOpState(redoOp(toOpState(s))));
   },
 
-  setTool: (t) => set({ tool: t, selectedId: t === "none" ? get().selectedId : null }),
+  setTool: (t) =>
+    set((s) => ({
+      tool: t,
+      selectedId: t === "none" ? s.selectedId : null,
+      // Leaving the draw tool ends the freehand session: drop the open-block
+      // pointer. The block itself stays (already committed); only the
+      // "append next stroke here" state resets.
+      drawSession: t === "draw" ? s.drawSession : {},
+    })),
   setColor: (c) => set({ color: c }),
   toggleHighlight: () => set((s) => ({ highlightOn: !s.highlightOn })),
   select: (id) => set({ selectedId: id }),

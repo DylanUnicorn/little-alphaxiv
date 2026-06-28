@@ -3,6 +3,7 @@
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { Conversation, Paper, Annotation } from "../types";
+import { migrateAnnotation } from "./annotations";
 
 interface LaxDB extends DBSchema {
   conversations: {
@@ -89,7 +90,10 @@ export async function savePaper(
 
 export async function listAnnotations(arxivId: string): Promise<Annotation[]> {
   const d = await db();
-  return d.getAllFromIndex("annotations", "by-paper", arxivId);
+  const all = await d.getAllFromIndex("annotations", "by-paper", arxivId);
+  // Migrate legacy single-stroke `draw.points` annotations to the current
+  // multi-stroke `draw.strokes` shape. Idempotent; non-draw annotations pass through.
+  return all.map(migrateAnnotation);
 }
 
 export async function putAnnotation(a: Annotation): Promise<void> {

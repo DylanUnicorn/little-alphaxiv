@@ -1,9 +1,11 @@
 // Annotation layer ABOVE the text layer (z-index 3): rect / draw / text.
-// Renders existing annotations AND handles one-shot creation:
-//   tool==="rect"  -> drag to draw a rectangle
-//   tool==="draw"  -> drag to draw freehand
-//   tool==="text"  -> click to place an editable text box
-// After commit the tool resets to "none" (one-shot).
+// Renders existing annotations AND handles creation:
+//   tool==="rect"  -> drag to draw a rectangle (one-shot: resets to "none" after)
+//   tool==="draw"  -> drag to draw freehand (STICKY: stays in draw mode so you
+//                     can draw many strokes per session; click the toolbar button
+//                     again to finish. All strokes in a session share one
+//                     annotation — selectable/deletable as a single block.)
+//   tool==="text"  -> click to place an editable text box (one-shot)
 import { useEffect, useRef, useState } from "react";
 import { useAnnotations } from "../store/annotations";
 import {
@@ -30,6 +32,7 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
   const highlightOn = useAnnotations((s) => s.highlightOn);
   const color = useAnnotations((s) => s.color);
   const addAnnot = useAnnotations((s) => s.addAnnot);
+  const addDrawStroke = useAnnotations((s) => s.addDrawStroke);
   const setTool = useAnnotations((s) => s.setTool);
   const select = useAnnotations((s) => s.select);
   const moveAnnot = useAnnotations((s) => s.moveAnnot);
@@ -114,9 +117,11 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
       setTool("none");
     } else if (tool === "draw" && draftPoints.length > 1) {
       const pts: NormPoint[] = draftPoints.map((p) => normalizePoint(p.x, p.y, pageSize));
-      addAnnot({ type: "draw", page: pageNumber, draw: { points: pts, width: 0.0025 }, color });
+      // Sticky freehand: append to the session block (created on first stroke,
+      // extended on later strokes). Do NOT reset the tool — stay in draw mode so
+      // the next stroke joins the same block until the toolbar button is clicked again.
+      addDrawStroke(pageNumber, pts, color, 0.0025);
       setDraftPoints([]);
-      setTool("none");
     }
     drawingRef.current = false;
   }
@@ -221,16 +226,21 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
             );
           }
           if (cur.type === "draw" && cur.draw) {
-            const pts = cur.draw.points.map((pt) => { const dp = denormalizePoint(pt, pageSize); return `${dp.x},${dp.y}`; }).join(" ");
-            const bbox = denormalizeRect(bboxOf(cur.draw.points), pageSize);
+            const strokes = cur.draw.strokes;
+            const bbox = denormalizeRect(bboxOf(strokes.flat()), pageSize);
             return (
               <g key={a.id}>
-                <polyline
-                  points={pts} fill="none" stroke={a.color}
-                  strokeWidth={cur.draw.width * pageSize.w} strokeLinejoin="round" strokeLinecap="round"
-                  style={{ pointerEvents: tool === "none" ? "stroke" : "none", cursor: tool === "none" ? "move" : "default" }}
-                  onPointerDown={(e) => startMove(e, a)}
-                />
+                {strokes.map((stroke, i) => {
+                  const pts = stroke.map((pt) => { const dp = denormalizePoint(pt, pageSize); return `${dp.x},${dp.y}`; }).join(" ");
+                  return (
+                    <polyline
+                      key={i} points={pts} fill="none" stroke={a.color}
+                      strokeWidth={cur.draw!.width * pageSize.w} strokeLinejoin="round" strokeLinecap="round"
+                      style={{ pointerEvents: tool === "none" ? "stroke" : "none", cursor: tool === "none" ? "move" : "default" }}
+                      onPointerDown={(e) => startMove(e, a)}
+                    />
+                  );
+                })}
                 {selectedId === a.id && tool === "none" && (
                   <SelectionHandles rect={bbox} onHandleDown={(h, e) => startResize(e, a, h)} />
                 )}
@@ -450,7 +460,7 @@ function moveAnnotGeom(a: Annotation, dxN: number, dyN: number): Annotation {
     return { ...a, rect: { ...a.rect, x: a.rect.x + dxN, y: a.rect.y + dyN } };
   }
   if (a.type === "draw" && a.draw) {
-    return { ...a, draw: { ...a.draw, points: a.draw.points.map((p) => ({ x: p.x + dxN, y: p.y + dyN })) } };
+    return { ...a, draw: { ...a.draw, strokes: a.draw.strokes.map((stroke) => stroke.map((p) => ({ x: p.x + dxN, y: p.y + dyN }))) } };
   }
   if (a.type === "text" && a.text) {
     return { ...a, text: { ...a.text, x: a.text.x + dxN, y: a.text.y + dyN } };
@@ -470,9 +480,9 @@ function resizeAnnotGeom(a: Annotation, handle: string, dxN: number, dyN: number
     return { ...a, text: { ...a.text, x: r.x, y: r.y, w: r.w, h: r.h, fontSize: a.text.fontSize * scale, content: a.text.content } };
   }
   if (a.type === "draw" && a.draw) {
-    const bbox = bboxOf(a.draw.points);
+    const bbox = bboxOf(a.draw.strokes.flat());
     const r = resizeRect(bbox, handle, dxN, dyN);
-    return { ...a, draw: { ...a.draw, points: rescalePoints(a.draw.points, bbox, r) } };
+    return { ...a, draw: { ...a.draw, strokes: a.draw.strokes.map((stroke) => rescalePoints(stroke, bbox, r)) } };
   }
   return a;
 }
@@ -487,6 +497,7 @@ function resizeRect(r: { x: number; y: number; w: number; h: number }, handle: s
 }
 
 function bboxOf(points: { x: number; y: number }[]) {
+  if (points.length === 0) return { x: 0, y: 0, w: 0.001, h: 0.001 };
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);

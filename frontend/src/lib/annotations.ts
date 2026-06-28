@@ -193,3 +193,27 @@ export function deoverlapPixelRects(
   }
   return out;
 }
+
+/**
+ * Migrate a legacy freehand annotation to the current multi-stroke shape.
+ *
+ * Pre-grouping draw annotations stored `draw: { points: NormPoint[]; width }`
+ * — one annotation per stroke. Freehand is now a sticky tool that groups a
+ * whole drawing session (enter draw mode → N strokes → exit) into ONE
+ * annotation with `draw: { strokes: NormPoint[][]; width }`, so the block can
+ * be selected and deleted as a unit. This converts the old single-stroke shape
+ * to a one-element `strokes` array on load.
+ *
+ * Idempotent: annotations already carrying `strokes` pass through unchanged;
+ * non-draw annotations are returned as-is. The legacy `points` field is read
+ * via a cast because the `Annotation` type no longer types it.
+ */
+export function migrateAnnotation(a: Annotation): Annotation {
+  if (a.type !== "draw" || !a.draw) return a;
+  const d = a.draw as { strokes?: NormPoint[][]; points?: NormPoint[]; width: number };
+  if (Array.isArray(d.strokes)) return a;
+  if (Array.isArray(d.points)) {
+    return { ...a, draw: { strokes: [d.points], width: d.width } };
+  }
+  return a;
+}
