@@ -105,20 +105,27 @@ def main():
         print("STEP4_after_create_state:", json.dumps(st))
         page.screenshot(path=str(SHOTS / "01_after_create.png"))
 
-        # NOW the user wants to delete. They click on the highlight.
+        # NOW the user wants to delete. They click on a VISIBLE part of the
+        # highlight (its widest rect) — pdf.js getClientRects can emit zero-width
+        # phantom rects at line starts that have no hit area, so clicking the
+        # first rect is not always meaningful.
         diag = page.evaluate(
             """()=>{
               const out={};
-              const hl = document.querySelector('.highlight-layer .highlight-rect');
-              out.highlight_rect_present = !!hl;
+              const hls=[...document.querySelectorAll('.highlight-layer .highlight-rect')];
+              out.highlight_rect_present = hls.length>0;
+              out.hl_rect_count = hls.length;
               const targets=[...document.querySelectorAll('.annot-svg rect')].filter(r=>r.getAttribute('fill')==='transparent');
               out.click_target_count = targets.length;
               const layer=document.querySelector('.annot-layer');
               out.annot_layer_pe = layer?getComputedStyle(layer).pointerEvents:'n/a';
-              if(hl){
-                const r=hl.getBoundingClientRect();
+              let best=hls[0], bestW=-1;
+              for(const el of hls){const r=el.getBoundingClientRect(); if(r.width>bestW){bestW=r.width;best=el;}}
+              if(best){
+                const r=best.getBoundingClientRect();
                 const cx=r.left+r.width/2, cy=r.top+r.height/2;
                 out.center={x:cx,y:cy};
+                out.hl_box={left:r.left,top:r.top,w:r.width,h:r.height};
                 const el=document.elementFromPoint(cx,cy);
                 out.under_center = el?(el.tagName+'.'+(el.getAttribute('class')||'')):'null';
               }

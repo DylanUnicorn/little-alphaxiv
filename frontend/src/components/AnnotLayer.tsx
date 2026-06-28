@@ -302,11 +302,17 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
             one-shot rect/draw/text tools), so gating targets on !highlightOn
             made them vanish exactly when the user had just made a highlight —
             the "划词后不能删除" bug. Drag-yield (onHighlightMove) keeps text
-            drag-select creation working. */}
+            drag-select creation working.
+            Degenerate (near-zero width/height) rects are skipped: pdf.js
+            Range.getClientRects() can emit zero-width phantom rects at line
+            starts; rendering a click-target for them produces a dead, unclickable
+            zone. The visible highlight layer still draws them (harmless, invisible);
+            only the hit-targets are filtered so every target is actually clickable. */}
         {tool === "none" && highlights.map((a) =>
           (a.highlight?.rects ?? []).map((r, i) => {
             const p = denormalizeRect(r, pageSize);
             const selected = a.id === selectedId;
+            if (p.w < 1 || p.h < 1) return null; // skip degenerate phantom rects
             return (
               <rect
                 key={a.id + "-ht-" + i}

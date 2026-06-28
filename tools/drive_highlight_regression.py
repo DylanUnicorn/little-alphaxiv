@@ -47,10 +47,14 @@ def seed(page):
 
 
 def center_of_first_highlight(page):
+    # Click a VISIBLE part of the highlight (widest rect). pdf.js getClientRects
+    # can emit zero-width phantom rects at line starts that have no hit area.
     return page.evaluate("""()=>{
-      const hl=document.querySelector('.highlight-layer .highlight-rect');
-      if(!hl) return null;
-      const r=hl.getBoundingClientRect();
+      const hls=[...document.querySelectorAll('.highlight-layer .highlight-rect')];
+      if(!hls.length) return null;
+      let best=hls[0], bestW=-1;
+      for(const el of hls){const r=el.getBoundingClientRect(); if(r.width>bestW){bestW=r.width;best=el;}}
+      const r=best.getBoundingClientRect();
       return {x:r.left+r.width/2, y:r.top+r.height/2};
     }""")
 
@@ -116,17 +120,25 @@ def main():
         st = page.evaluate("()=>window.__laxState()")
         rec("create#2 after select", st["count"] == 2, f"count={st['count']} (expected 2)")
 
-        # --- 4) delete the second highlight only ---
-        # The second highlight was just created; its rect is the first .highlight-rect in DOM
-        # of the spans[7..10] region. Click the topmost highlight rect's center.
+        # --- 4) delete a highlight by clicking its widest (visible, clickable) rect ---
+        # pdf.js can emit zero-width phantom rects; click the widest one so the
+        # hit lands on a real SVG target. Either highlight being deleted is fine
+        # — this checks the post-fix select+Delete path works after prior creation.
         c2 = page.evaluate("""()=>{const hs=[...document.querySelectorAll('.highlight-layer .highlight-rect')];
-          if(!hs.length) return null; const r=hs[hs.length-1].getBoundingClientRect();
+          if(!hs.length) return null;
+          let best=hs[0], bestW=-1;
+          for(const el of hs){const r=el.getBoundingClientRect(); if(r.width>bestW){bestW=r.width;best=el;}}
+          const r=best.getBoundingClientRect();
           return {x:r.left+r.width/2,y:r.top+r.height/2};}""")
         if c2:
             page.mouse.click(c2["x"], c2["y"]); page.wait_for_timeout(200)
-            page.keyboard.press("Delete"); page.wait_for_timeout(200)
-            st = page.evaluate("()=>window.__laxState()")
-            rec("delete#2", st["count"] == 1, f"count={st['count']} (expected 1 remaining)")
+            st_sel = page.evaluate("()=>window.__laxState()")
+            if st_sel["selectedId"]:
+                page.keyboard.press("Delete"); page.wait_for_timeout(200)
+                st = page.evaluate("()=>window.__laxState()")
+                rec("delete via click+Delete", st["count"] == 1, f"count={st['count']} (expected 1 remaining)")
+            else:
+                rec("delete via click+Delete", False, "click did not select a highlight")
 
         page.screenshot(path=str(SHOTS / "01_final.png"))
         b.close()

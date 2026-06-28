@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAnnotations } from "../store/annotations";
-import { rectsToNorm, denormalizeRect } from "../lib/annotations";
+import { rectsToNorm, denormalizeRect, fitHighlightRects } from "../lib/annotations";
 import { PALETTE } from "../lib/annotations";
 import type { PageSize } from "../types";
 
@@ -63,14 +63,17 @@ export function HighlightLayer({ pageNumber, pageSize }: Props) {
         return;
       }
       const pageRect = pageWrap.getBoundingClientRect();
-      const clientRects = Array.from(range.getClientRects()).map((r) => {
-        return {
-          left: r.left - pageRect.left,
-          top: r.top - pageRect.top,
-          width: r.width,
-          height: r.height,
-        };
-      });
+      const rawRects = Array.from(range.getClientRects()).map((r) => ({
+        left: r.left - pageRect.left,
+        top: r.top - pageRect.top,
+        width: r.width,
+        height: r.height,
+      }));
+      // pdf.js text-layer line boxes are the full font height tall and anchored
+      // at the baseline, so raw rects sit above the caps and overlap the line
+      // above on tight leading. Fit them to the visible glyphs and de-overlap
+      // adjacent lines before normalizing — see fitHighlightRects.
+      const clientRects = fitHighlightRects(rawRects);
       if (clientRects.length === 0) return;
       // Capture the selected text now (the bubble's onMouseDown preventDefault
       // keeps the selection alive until a color is picked) so highlights carry
