@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAnnotations } from "../store/annotations";
-import { rectsToNorm, denormalizeRect } from "../lib/annotations";
+import { rectsToNorm, denormalizeRect, overlappingHighlightIds } from "../lib/annotations";
 import { PALETTE } from "../lib/annotations";
 import type { PageSize } from "../types";
 
@@ -20,6 +20,7 @@ export function HighlightLayer({ pageNumber, pageSize }: Props) {
   const highlightOn = useAnnotations((s) => s.highlightOn);
   const color = useAnnotations((s) => s.color);
   const addAnnot = useAnnotations((s) => s.addAnnot);
+  const removeAnnot = useAnnotations((s) => s.removeAnnot);
   const annots = useAnnotations((s) =>
     s.annots.filter((a) => a.page === pageNumber && a.type === "highlight")
   );
@@ -88,6 +89,21 @@ export function HighlightLayer({ pageNumber, pageSize }: Props) {
     if (!p) return;
     const rects = rectsToNorm(p.rects, pageSize);
     if (rects.length === 0) return;
+    // "One color per character": before placing the new highlight, remove any
+    // existing highlights on this page whose rects overlap the new selection.
+    // Without this, re-highlighting the same (or partially overlapping) text
+    // stacks a second color rect on the same glyphs; with mix-blend-mode:multiply
+    // the overlapping chars darken into an unreadable block. Each removal is its
+    // own undoable op (and persisted to IDB), then the new highlight is added.
+    // `annots` is already scoped to this page + type==="highlight".
+    //
+    // Undo granularity tradeoff: a re-highlight produces N+1 ops (N removals +
+    // 1 add), so fully reverting it takes N+1 Ctrl+Z presses. Accepted for
+    // correctness (the user's rule is "one color per char", not "one undo per
+    // re-highlight"); the common case (re-highlight same span) is N=1 → 2 undos.
+    for (const id of overlappingHighlightIds(annots, pageNumber, rects)) {
+      removeAnnot(id);
+    }
     addAnnot({
       type: "highlight",
       page: pageNumber,

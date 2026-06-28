@@ -1,4 +1,4 @@
-import type { NormPoint, NormRect, PageSize } from "../types";
+import type { Annotation, NormPoint, NormRect, PageSize } from "../types";
 
 export const PALETTE = [
   "#FFEB3B", // yellow
@@ -48,4 +48,42 @@ export function rectsToNorm(
     w: clamp01(r.width / size.w),
     h: clamp01(r.height / size.h),
   }));
+}
+
+/** Do two page-normalized rects overlap in area? Touching edges (shared edge
+ *  but no interior overlap) and zero-area rects return false — so adjacent
+ *  line rects that cover different characters do NOT count as overlapping.
+ *
+ *  A small epsilon absorbs floating-point noise: getClientRects() + the
+ *  normalize divide introduce sub-epsilon drift, so two line rects that share
+ *  an edge at y=0.15 may compute as 0.15000000000000002 vs 0.15 and would
+ *  otherwise be falsely treated as overlapping. */
+const RECT_EPS = 1e-6;
+export function rectsOverlap(a: NormRect, b: NormRect): boolean {
+  if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
+  const ax2 = a.x + a.w, ay2 = a.y + a.h;
+  const bx2 = b.x + b.w, by2 = b.y + b.h;
+  return a.x < bx2 - RECT_EPS && b.x < ax2 - RECT_EPS
+    && a.y < by2 - RECT_EPS && b.y < ay2 - RECT_EPS;
+}
+
+/** Find existing highlight annotation ids on `page` whose rects overlap any of
+ *  `newRects`. Used at highlight-creation time to enforce "one color per
+ *  character": before adding the new highlight, drop the overlapping existing
+ *  ones so colors never stack on the same glyphs. Non-highlight annotations
+ *  (rect/draw/text) and other pages are ignored. */
+export function overlappingHighlightIds(
+  existing: Annotation[],
+  page: number,
+  newRects: NormRect[]
+): string[] {
+  if (newRects.length === 0) return [];
+  const out: string[] = [];
+  for (const a of existing) {
+    if (a.page !== page || a.type !== "highlight") continue;
+    const rects = a.highlight?.rects ?? [];
+    const overlaps = rects.some((r) => newRects.some((nr) => rectsOverlap(r, nr)));
+    if (overlaps) out.push(a.id);
+  }
+  return out;
 }

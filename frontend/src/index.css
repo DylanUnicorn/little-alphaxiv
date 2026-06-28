@@ -1022,7 +1022,14 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   z-index: 1; pointer-events: none;
 }
 .highlight-rect {
-  position: absolute; opacity: 0.35; mix-blend-mode: multiply;
+  /* mix-blend-mode:multiply makes the highlight read like a real marker on
+     paper (blends with the page background, never fully hides the text).
+     Opacity is kept modest on purpose: dedup (lib/annotations.ts ->
+     overlappingHighlightIds) already guarantees one color per character, so
+     rects never intentionally stack — but if two ever overlap by a sub-pixel
+     FP drift, multiply would compound and darken. 0.3 keeps even that edge
+     case legible while still reading as a saturated highlight on white. */
+  position: absolute; opacity: 0.3; mix-blend-mode: multiply;
   pointer-events: none;
 }
 .highlight-bubble {
