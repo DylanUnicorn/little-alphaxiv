@@ -3,6 +3,7 @@ import {
   PALETTE, normalizePoint, denormalizePoint,
   normalizeRect, denormalizeRect, rectsToNorm, newId,
   rectsOverlap, overlappingHighlightIds, fitHighlightRects,
+  deoverlapPixelRects,
 } from "./annotations";
 import type { Annotation } from "../types";
 
@@ -155,20 +156,21 @@ describe("fitHighlightRects", () => {
   });
 
   it("insets a single rect vertically (top down, bottom up), keeps width/left", () => {
-    // height 20, TOP_INSET 0.12 -> topCut 2.4, BOTTOM_INSET 0.06 -> botCut 1.2
+    // height 20, TOP_INSET 0.18 -> topCut 3.6, BOTTOM_INSET 0.10 -> botCut 2.0
     const out = fitHighlightRects([{ left: 80, top: 100, width: 240, height: 20 }]);
     expect(out).toHaveLength(1);
     expect(out[0].left).toBe(80);
     expect(out[0].width).toBe(240);
-    expect(out[0].top).toBeCloseTo(102.4, 5);
-    expect(out[0].height).toBeCloseTo(16.4, 5);
+    expect(out[0].top).toBeCloseTo(103.6, 5);   // 100 + 3.6
+    expect(out[0].height).toBeCloseTo(14.4, 5); // 20 - 3.6 - 2.0
   });
 
-  it("de-overlaps adjacent line rects: lower top pushed below upper bottom", () => {
-    // Tight leading: two 20px-tall lines whose raw tops are only 15px apart
-    // overlap by 5px. After inset (top 2.4 / bot 1.2 -> upper bottom 118.8),
-    // the lower rect's inset top (117.4) still sits above 118.8, so the trim
-    // pushes it down to 119.8 with a 1px gap.
+  it("aggressive insets eliminate overlap without needing trim step", () => {
+    // Two 20px-tall lines whose raw tops are only 15px apart (overlap by 5px).
+    // With TOP_INSET=0.18 / BOTTOM_INSET=0.10:
+    //   upper: top=103.6, h=14.4 → bottom=118.0
+    //   lower: top=118.6, h=14.4 → bottom=133.0
+    // Lower inset top (118.6) is already BELOW upper bottom (118.0) — no trim.
     const out = fitHighlightRects([
       { left: 80, top: 100, width: 240, height: 20 },
       { left: 80, top: 115, width: 240, height: 20 },
@@ -176,30 +178,25 @@ describe("fitHighlightRects", () => {
     expect(out).toHaveLength(2);
     const upperBottom = out[0].top + out[0].height;
     expect(out[1].top).toBeGreaterThanOrEqual(upperBottom);
-    expect(out[1].top - upperBottom).toBeCloseTo(1, 5); // 1px gap
-    // lower rect keeps its original bottom (inset), only the top moved
-    expect(out[1].top + out[1].height).toBeCloseTo(133.8, 5);
+    // Both rects keep their full inset dimensions (no trim fired)
+    expect(out[1].top + out[1].height).toBeCloseTo(133.0, 5);
   });
 
   it("leaves non-overlapping rects alone (beyond the inset)", () => {
-    // 20px tall, tops 100 apart -> no overlap; second rect's inset top is
-    // unchanged by the trim step.
     const out = fitHighlightRects([
       { left: 80, top: 100, width: 240, height: 20 },
       { left: 80, top: 200, width: 240, height: 20 },
     ]);
-    expect(out[1].top).toBeCloseTo(202.4, 5); // only the 12% inset, no trim
+    expect(out[1].top).toBeCloseTo(203.6, 5); // only the 18% inset, no trim
   });
 
   it("does not trim same-line rects (near-equal tops)", () => {
-    // Two rects on the same visual line (multi-column wrap): tops within 1px.
-    // The trim must not fire — both keep their inset tops.
     const out = fitHighlightRects([
       { left: 80, top: 100, width: 100, height: 20 },
       { left: 200, top: 100.5, width: 100, height: 20 },
     ]);
-    expect(out[0].top).toBeCloseTo(102.4, 5);
-    expect(out[1].top).toBeCloseTo(102.9, 5); // 100.5 + 2.4 inset, not trimmed
+    expect(out[0].top).toBeCloseTo(103.6, 5);  // 100 + 3.6
+    expect(out[1].top).toBeCloseTo(104.1, 5); // 100.5 + 3.6, not trimmed
   });
 
   it("does not mutate the input array", () => {
@@ -207,5 +204,73 @@ describe("fitHighlightRects", () => {
     const inputCopy = { ...input[0] };
     fitHighlightRects(input);
     expect(input[0]).toEqual(inputCopy);
+  });
+});
+
+describe("deoverlapPixelRects", () => {
+  it("returns input as-is for 0 or 1 rect", () => {
+    expect(deoverlapPixelRects([])).toEqual([]);
+    const single = [{ x: 10, y: 20, w: 100, h: 15 }];
+    expect(deoverlapPixelRects(single)).toEqual(single);
+  });
+
+  it("pushes overlapping lower rect down to upper rect's bottom", () => {
+    // Two lines where lower overlaps upper by 8px
+    const out = deoverlapPixelRects([
+      { x: 80, y: 100, w: 240, h: 18 },  // bottom = 118
+      { x: 80, y: 110, w: 240, h: 18 },  // top 110 < 118 → overlap
+    ]);
+    expect(out[1].y).toBe(118); // pushed to upper's bottom
+    expect(out[1].h).toBe(10);  // 128 - 118, original bottom preserved
+  });
+
+  it("preserves non-overlapping rects unchanged", () => {
+    const out = deoverlapPixelRects([
+      { x: 80, y: 100, w: 240, h: 18 },
+      { x: 80, y: 200, w: 240, h: 18 }, // far below, no overlap
+    ]);
+    expect(out[1].y).toBe(200);
+    expect(out[1].h).toBe(18);
+  });
+
+  it("leaves same-line rects (tops within 4px) untouched even if they overlap vertically", () => {
+    const out = deoverlapPixelRects([
+      { x: 80, y: 100, w: 100, h: 18 },
+      { x: 200, y: 102, w: 100, h: 18 }, // top within 4px of prev → same line
+    ]);
+    expect(out[0]).toEqual({ x: 80, y: 100, w: 100, h: 18 });
+    expect(out[1]).toEqual({ x: 200, y: 102, w: 100, h: 18 });
+  });
+
+  it("handles three-line cascade (middle pushes bottom, which also needed push)", () => {
+    const out = deoverlapPixelRects([
+      { x: 80, y: 100, w: 240, h: 18 },  // bottom = 118
+      { x: 80, y: 110, w: 240, h: 18 },  // pushed to y=118, h=10, bottom=128
+      { x: 80, y: 125, w: 240, h: 18 },  // 125 > 118+4=122 → distinct; 125 < 128 → push
+    ]);
+    expect(out[1].y).toBe(118);
+    expect(out[2].y).toBe(128);
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i].y).toBeGreaterThanOrEqual(out[i - 1].y + out[i - 1].h);
+    }
+  });
+
+  it("does not mutate input array", () => {
+    const input = [
+      { x: 80, y: 100, w: 240, h: 18 },
+      { x: 80, y: 110, w: 240, h: 18 },
+    ];
+    const inputCopy = input.map((r) => ({ ...r }));
+    deoverlapPixelRects(input);
+    expect(input).toEqual(inputCopy);
+  });
+
+  it("handles degenerate case where overlap consumes entire rect (gives 1px height)", () => {
+    const out = deoverlapPixelRects([
+      { x: 80, y: 100, w: 240, h: 50 },  // bottom = 150
+      { x: 80, y: 110, w: 240, h: 5 },   // entirely inside upper
+    ]);
+    expect(out[1].y).toBe(150); // pushed to upper bottom
+    expect(out[1].h).toBe(1);    // degenerate
   });
 });

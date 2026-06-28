@@ -120,8 +120,8 @@ export function fitHighlightRects(
   rects: { left: number; top: number; width: number; height: number }[]
 ): { left: number; top: number; width: number; height: number }[] {
   if (rects.length === 0) return [];
-  const TOP_INSET = 0.12;
-  const BOTTOM_INSET = 0.06;
+  const TOP_INSET = 0.18;
+  const BOTTOM_INSET = 0.10;
   const out = rects.map((r) => {
     const topCut = r.height * TOP_INSET;
     const botCut = r.height * BOTTOM_INSET;
@@ -146,6 +146,48 @@ export function fitHighlightRects(
       if (origBottom > newTop) {
         cur.top = newTop;
         cur.height = origBottom - newTop;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Render-time de-overlap for highlight pixel rects.
+ *
+ * Guarantees that consecutive line rects within a single highlight annotation
+ * never overlap vertically — regardless of how the rects were captured or
+ * stored. This is the visual safety net: even old highlights with raw
+ * getClientRects() dimensions render cleanly.
+ *
+ * Operates on denormalized page-pixel rects ({ x, y, w, h }). Sorts by
+ * top; when a lower rect's top intrudes above the previous rect's bottom
+ * AND the two rects are clearly on different lines (tops separated by more
+ * than SAME_LINE_PX), pushes the lower rect's top down to exactly the
+ * previous rect's bottom, preserving its original bottom edge.
+ * Same-line rects (multi-column wrap) are left untouched.
+ */
+export function deoverlapPixelRects(
+  rects: { x: number; y: number; w: number; h: number }[]
+): { x: number; y: number; w: number; h: number }[] {
+  if (rects.length <= 1) return rects;
+  const out = rects.map((r) => ({ ...r }));
+  out.sort((a, b) => a.y - b.y || a.x - b.x);
+  const SAME_LINE_PX = 4; // tops within 4px = same visual line (multi-column wrap)
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1];
+    const cur = out[i];
+    const prevBottom = prev.y + prev.h;
+    // Only act on distinct lines whose rects still overlap after any prior
+    // adjustments. Same-line rects (near-equal tops) are left alone.
+    if (cur.y > prev.y + SAME_LINE_PX && cur.y < prevBottom) {
+      const origBottom = cur.y + cur.h;
+      cur.y = prevBottom; // push down to sit exactly below the upper rect
+      if (origBottom >= cur.y) {
+        cur.h = origBottom - cur.y;
+      } else {
+        // Degenerate: rect fully consumed by overlap. Give it 1px height.
+        cur.h = 1;
       }
     }
   }
