@@ -1060,7 +1060,11 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
      user-select:text so you can still type/edit. */
   -webkit-user-select: none; user-select: none;
 }
-.annot-text.selected { outline: 1px dashed var(--accent); }
+/* No CSS selection outline on .annot-text: the selection visual (dashed frame
+   + 8 handles for move/resize) is drawn entirely by the SVG SelectionHandles
+   in AnnotLayer, sized to the stored text bbox. A second CSS outline here would
+   hug the live font metrics and sit 1-2px off the SVG frame — the "two dashed
+   boxes" symptom. One box is enough. */
 .annot-text-input {
   position: absolute; display: inline-block;
   /* metrics mirror .annot-text so the box measured at commit == the placed

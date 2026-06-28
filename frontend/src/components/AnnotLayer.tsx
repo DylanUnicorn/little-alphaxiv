@@ -399,7 +399,14 @@ function SelectionHandles({
   rect: { x: number; y: number; w: number; h: number };
   onHandleDown: (handle: string, e: React.PointerEvent) => void;
 }) {
-  const hs = 8;
+  // Visible dot is small (8px) for a tidy look, but the hit area underneath it
+  // is much larger (HIT = 16px). The handle is hard to grab at 8px — you must
+  // land a precise pointer exactly on the tiny square — so we render a large
+  // transparent rect first (the actual event target) and draw the small dot
+  // on top with pointer-events:none. The effective grab radius is doubled and
+  // the dot stays visually identical.
+  const DOT = 8;
+  const HIT = 16;
   const handles: [string, number, number][] = [
     ["nw", rect.x, rect.y],
     ["n", rect.x + rect.w / 2, rect.y],
@@ -414,12 +421,23 @@ function SelectionHandles({
     <>
       <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="3 2" />
       {handles.map(([h, hx, hy]) => (
+        // Transparent hit zone: this is what receives the pointerdown. Keep it
+        // stacked below the visible dot so the dot's stroke isn't clipped.
         <rect
           key={h}
-          x={hx - hs / 2} y={hy - hs / 2} width={hs} height={hs}
-          fill="#fff" stroke="var(--accent)" strokeWidth={1}
+          x={hx - HIT / 2} y={hy - HIT / 2} width={HIT} height={HIT}
+          fill="transparent"
           style={{ cursor: "pointer", pointerEvents: "all" }}
           onPointerDown={(e) => onHandleDown(h, e)}
+        />
+      ))}
+      {handles.map(([h, hx, hy]) => (
+        // Visible dot on top — never an event target, just paint.
+        <rect
+          key={h + "-dot"}
+          x={hx - DOT / 2} y={hy - DOT / 2} width={DOT} height={DOT}
+          fill="#fff" stroke="var(--accent)" strokeWidth={1}
+          style={{ pointerEvents: "none" }}
         />
       ))}
     </>
