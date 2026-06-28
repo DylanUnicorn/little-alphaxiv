@@ -36,6 +36,8 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
   const select = useAnnotations((s) => s.select);
   const moveAnnot = useAnnotations((s) => s.moveAnnot);
   const resizeAnnot = useAnnotations((s) => s.resizeAnnot);
+  const editAnnot = useAnnotations((s) => s.editAnnot);
+  const removeAnnot = useAnnotations((s) => s.removeAnnot);
   const layerRef = useRef<HTMLDivElement>(null);
 
   // in-progress creation state
@@ -44,6 +46,10 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
   const [textBox, setTextBox] = useState<{ x: number; y: number } | null>(null);
   const drawingRef = useRef(false);
   const draggedRef = useRef(false);
+  // id of an existing text annotation currently being re-edited via double-click.
+  // While set, the static .annot-text div is swapped for a pre-filled TextInputBox;
+  // a committed change goes through editAnnot (an `edit` op), not addAnnot.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // selection drag state
   const dragRef = useRef<
@@ -148,6 +154,38 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
     }
     setTextBox(null);
     setTool("none");
+  }
+
+  // Commit an in-place edit of an existing text annotation. Mirrors commitText's
+  // rules: trim, re-measure, and discard-if-empty — but discard means REMOVE the
+  // annotation (you cleared the only text it had), not silently keep the old text.
+  // Emits an `edit` op (or `remove` op) so it lands on the undo stack and IDB.
+  function commitEdit(
+    before: Annotation,
+    content: string,
+    boxPx: { x: number; y: number; w: number; h: number },
+  ) {
+    setEditingId(null);
+    const trimmed = content.trim();
+    if (!trimmed) {
+      // cleared the text → remove the annotation (undoable)
+      removeAnnot(before.id);
+      return;
+    }
+    // No-op guard: if neither the text nor the box size changed, don't push a
+    // redundant `edit` op onto the undo stack (otherwise Undo would appear to
+    // do nothing on the surface while consuming one undo step).
+    const sizeChanged = Math.abs(boxPx.w - before.text!.w * pageSize.w) > 1 ||
+                        Math.abs(boxPx.h - before.text!.h * pageSize.h) > 1;
+    if (trimmed === before.text!.content && !sizeChanged) return;
+    const r = normalizeRect(boxPx.x, boxPx.y, boxPx.w, boxPx.h, pageSize);
+    editAnnot(before, {
+      ...before,
+      text: {
+        x: r.x, y: r.y, w: r.w, h: r.h, content: trimmed,
+        fontSize: before.text!.fontSize, // editing never changes font size
+      },
+    });
   }
 
   // ---- selection / move / resize (tool === "none") ----
@@ -358,12 +396,37 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
         const t = cur.text!;
         const px = denormalizeRect({ x: t.x, y: t.y, w: t.w, h: t.h }, pageSize);
         const selected = a.id === selectedId;
+        // Double-click on a placed text annotation (default mode only) swaps the
+        // static div for a pre-filled TextInputBox bound to editingId. The box
+        // commits via editAnnot (an `edit` op on the undo stack), not addAnnot.
+        // Single-click still falls through to startMove (select + drag) — dblclick
+        // fires after the second pointerup, by which point the bare-click path in
+        // onDragUp has already resolved as a select (no move), so the two
+        // interactions don't fight each other.
+        if (editingId === a.id && tool === "none") {
+          return (
+            <TextInputBox
+              key={a.id}
+              x={px.x} y={px.y} color={a.color} pageSize={pageSize}
+              initialContent={t.content}
+              initialFontSize={t.fontSize}
+              onCommit={(content, boxPx) => commitEdit(a, content, boxPx)}
+              onCancel={() => setEditingId(null)}
+            />
+          );
+        }
         return (
           <div
             key={a.id}
             className={"annot-text" + (selected ? " selected" : "")}
             style={{ left: px.x, top: px.y, width: px.w, minHeight: px.h, color: a.color, fontSize: t.fontSize * pageSize.w, cursor: tool === "none" ? "move" : "default", pointerEvents: tool === "none" ? "auto" : "none" }}
             onPointerDown={(e) => { if (tool === "none") startMove(e, a); }}
+            onDoubleClick={(e) => {
+              if (tool !== "none") return;
+              e.stopPropagation();
+              select(a.id);
+              setEditingId(a.id);
+            }}
           >
             {t.content}
           </div>
@@ -384,24 +447,47 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
 
 function TextInputBox({
   x, y, color, pageSize, onCommit, onCancel,
+  initialContent, initialFontSize,
 }: {
   x: number; y: number; color: string; pageSize: PageSize;
   onCommit: (content: string, boxPx: { x: number; y: number; w: number; h: number }) => void;
   onCancel: () => void;
+  // Re-editing an existing text annotation: pre-fill the box with its current
+  // content and use its current font size (creation uses the 0.0175 default).
+  initialContent?: string;
+  initialFontSize?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const committedRef = useRef(false);
   // Font size matches the committed annotation (norm fontSize * page width) so
   // what you type is exactly what gets placed — the box measured at commit then
-  // equals the rendered annotation size, and the hit-area hugs the text.
-  const fontSize = 0.0175 * pageSize.w;
+  // equals the rendered annotation size, and the hit-area hugs the text. When
+  // re-editing, honor the annotation's own fontSize so a resized (larger/
+  // smaller) annotation doesn't snap back to the 0.0175 creation default.
+  const fontSize = (initialFontSize ?? 0.0175) * pageSize.w;
 
-  // Focus on mount. The old code did this during render, where ref.current is
-  // null on the first render, so focus never fired and the user had to click a
-  // second time to start typing.
+  // Focus on mount + pre-fill when editing an existing annotation. The old code
+  // did focus during render, where ref.current is null on the first render, so
+  // focus never fired and the user had to click a second time to start typing.
   useEffect(() => {
-    ref.current?.focus();
-  }, []);
+    const el = ref.current;
+    if (!el) return;
+    if (initialContent != null) {
+      // Seed the existing text, then place the caret at the end so typing
+      // appends (not replaces) — matches the expectation of editing in place.
+      el.innerText = initialContent;
+    }
+    el.focus();
+    // Move caret to end after focus (no-op for an empty creation box).
+    const sel = window.getSelection();
+    if (sel && el.childNodes.length > 0) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false); // collapse to end
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }, [initialContent]);
 
   function finish() {
     if (committedRef.current) return;
