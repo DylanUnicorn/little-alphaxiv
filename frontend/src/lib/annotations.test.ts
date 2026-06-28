@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   PALETTE, normalizePoint, denormalizePoint,
   normalizeRect, denormalizeRect, rectsToNorm, fitHighlightRects, newId,
+  migrateAnnotation,
 } from "./annotations";
 
 describe("PALETTE", () => {
@@ -118,5 +119,35 @@ describe("fitHighlightRects", () => {
     const inputCopy = { ...input[0] };
     fitHighlightRects(input);
     expect(input[0]).toEqual(inputCopy);
+  });
+});
+
+describe("migrateAnnotation", () => {
+  it("passes non-draw annotations through unchanged", () => {
+    const rect = { id: "a1", arxiv_id: "x", page: 1, type: "rect", color: "#FFEB3B", createdAt: 1, rect: { x: 0, y: 0, w: 0.1, h: 0.1 } };
+    expect(migrateAnnotation(rect as never)).toEqual(rect);
+  });
+
+  it("converts legacy single-stroke draw.points to draw.strokes", () => {
+    const legacy = {
+      id: "a2", arxiv_id: "x", page: 1, type: "draw", color: "#F9A8D4", createdAt: 2,
+      draw: { points: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }], width: 0.0025 },
+    };
+    expect(migrateAnnotation(legacy as never).draw).toEqual({
+      strokes: [[{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }]], width: 0.0025,
+    });
+  });
+
+  it("is idempotent on the new strokes shape", () => {
+    const fresh = {
+      id: "a3", arxiv_id: "x", page: 1, type: "draw", color: "#F9A8D4", createdAt: 3,
+      draw: { strokes: [[{ x: 0.1, y: 0.2 }], [{ x: 0.5, y: 0.6 }]], width: 0.0025 },
+    };
+    expect(migrateAnnotation(fresh as never)).toEqual(fresh);
+  });
+
+  it("leaves a draw with neither field unchanged (defensive)", () => {
+    const bare = { id: "a4", arxiv_id: "x", page: 1, type: "draw", color: "#F9A8D4", createdAt: 4, draw: { width: 0.0025 } };
+    expect(migrateAnnotation(bare as never)).toEqual(bare);
   });
 });

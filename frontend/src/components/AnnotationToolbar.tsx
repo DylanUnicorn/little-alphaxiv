@@ -1,5 +1,8 @@
 // PDF annotation toolbar: color, 4 tools, undo/redo.
-// Tools: text/rect/draw are one-shot (set tool; PdfViewer resets to "none" after commit).
+// Tools: text/rect are one-shot (set tool; AnnotLayer resets to "none" after commit).
+// draw is a sticky toggle like highlight — click once to enter freehand mode and
+//   draw many strokes, click again to finish. All strokes drawn in one session
+//   form a single annotation (one block) selectable/deletable as a unit.
 // highlight is a toggle (highlightOn).
 //
 // Color control: a framed slot styled like the tool buttons. The chip is empty
@@ -104,7 +107,7 @@ export function AnnotationToolbar() {
           onClick={() => onTool("rect")}
         >▭</button>
       </Tooltip>
-      <Tooltip label="Freehand" side="bottom">
+      <Tooltip label="Freehand (toggle)" side="bottom">
         <button
           className={"annot-tool-btn" + (tool === "draw" ? " active" : "")}
           onClick={() => onTool("draw")}

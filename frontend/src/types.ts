@@ -196,7 +196,7 @@ export interface Annotation {
   createdAt: number;
   highlight?: { rects: NormRect[]; content?: string };
   rect?: NormRect;
-  draw?: { points: NormPoint[]; width: number }; // width normalized
+  draw?: { strokes: NormPoint[][]; width: number }; // each stroke = NormPoint[]; one annotation = one freehand session (width normalized)
   text?: { x: number; y: number; w: number; h: number; content: string; fontSize: number };
 }
 

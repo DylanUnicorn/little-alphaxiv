@@ -36,7 +36,7 @@ describe("gatherNoteEntries", () => {
       // draw annotations have no text region -> skipped
       {
         id: "a4", arxiv_id: "x", page: 1, type: "draw", color: "#F9A8D4",
-        createdAt: 4, draw: { points: [{ x: 0, y: 0 }], width: 1 },
+        createdAt: 4, draw: { strokes: [[{ x: 0, y: 0 }]], width: 1 },
       },
     ];
     const entries = await gatherNoteEntries(annots, emptyResolver);
