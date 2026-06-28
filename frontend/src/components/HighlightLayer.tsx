@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAnnotations } from "../store/annotations";
-import { rectsToNorm, denormalizeRect, overlappingHighlightIds, fitHighlightRects } from "../lib/annotations";
+import { rectsToNorm, denormalizeRect, overlappingHighlightIds, fitHighlightRects, deoverlapPixelRects } from "../lib/annotations";
 import { PALETTE } from "../lib/annotations";
 import type { PageSize } from "../types";
 
@@ -124,21 +124,37 @@ export function HighlightLayer({ pageNumber, pageSize }: Props) {
       ref={wrapRef}
       style={{ pointerEvents: highlightOn ? "auto" : "none" }}
     >
-      {annots.map((a) =>
-        (a.highlight?.rects ?? []).map((r, i) => {
-          const p = denormalizeRect(r, pageSize);
-          return (
-            <div
-              key={a.id + "-" + i}
-              className="highlight-rect"
-              style={{
-                left: p.x, top: p.y, width: p.w, height: p.h,
-                background: a.color,
-              }}
-            />
-          );
-        })
-      )}
+      {/* One .highlight-anno wrapper PER ANNOTATION carries the opacity + blend
+        (see .highlight-anno in index.css); the .highlight-rect children are
+        opaque. This matters because a multi-line pdf.js selection yields many
+        OVERLAPPING client rects (duplicate-measurement rects, zero-width caret
+        rects, tight-leading line rects — empirically ~48 of 52 consecutive
+        pairs overlap). When each rect had its own opacity:0.35 +
+        mix-blend-mode:multiply, the overlaps compounded into a second layer of
+        color, darkening the middle of a multi-line highlight ("feels like two
+        layers"). Grouping all rects of one highlight under a single opacity
+        layer makes them composite as one union — opaque children paint
+        source-over inside the group, then the whole group is composited once
+        at 0.3 + multiply — so no two rects of the same highlight ever
+        compound, regardless of how they overlap. */}
+      {annots.map((a) => {
+        const rawPixels = (a.highlight?.rects ?? []).map((r) => denormalizeRect(r, pageSize));
+        const rects = deoverlapPixelRects(rawPixels);
+        return (
+          <div key={a.id} className="highlight-anno">
+            {rects.map((p, i) => (
+              <div
+                key={a.id + "-" + i}
+                className="highlight-rect"
+                style={{
+                  left: p.x, top: p.y, width: p.w, height: p.h,
+                  background: a.color,
+                }}
+              />
+            ))}
+          </div>
+        );
+      })}
       {bubble && bubbleHost && createPortal(
         <div className="highlight-bubble" style={{ left: bubble.x, top: bubble.y }}>
           {PALETTE.map((c) => (

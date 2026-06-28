@@ -1021,16 +1021,19 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   position: absolute; left: 0; top: 0; width: 100%; height: 100%;
   z-index: 1; pointer-events: none;
 }
-.highlight-rect {
-  /* mix-blend-mode:multiply makes the highlight read like a real marker on
-     paper (blends with the page background, never fully hides the text).
-     Opacity is kept modest on purpose: dedup (lib/annotations.ts ->
-     overlappingHighlightIds) already guarantees one color per character, so
-     rects never intentionally stack — but if two ever overlap by a sub-pixel
-     FP drift, multiply would compound and darken. 0.3 keeps even that edge
-     case legible while still reading as a saturated highlight on white. */
-  position: absolute; opacity: 0.3; mix-blend-mode: multiply;
+/* One per-annotation group: opacity + mix-blend-mode live HERE, on the
+   wrapper, not on each .highlight-rect. The rects are opaque, so all rects of
+   one highlight composite as a single union (no alpha compounding between
+   overlapping rects), then the union is blended once with the page. Putting
+   opacity:0.35 on each .highlight-rect instead made overlapping rects of the
+   same multi-line highlight stack two 0.35 layers and darken the middle. */
+.highlight-anno {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  opacity: 0.35; mix-blend-mode: multiply;
   pointer-events: none;
+}
+.highlight-rect {
+  position: absolute; pointer-events: none;
 }
 .highlight-bubble {
   position: absolute; z-index: 5; display: flex; gap: 4px;
