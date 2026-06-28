@@ -29,7 +29,6 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
   );
   const selectedId = useAnnotations((s) => s.selectedId);
   const tool = useAnnotations((s) => s.tool);
-  const highlightOn = useAnnotations((s) => s.highlightOn);
   const color = useAnnotations((s) => s.color);
   const addAnnot = useAnnotations((s) => s.addAnnot);
   const addDrawStroke = useAnnotations((s) => s.addDrawStroke);
@@ -53,6 +52,17 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
     | null
   >(null);
   const [dragPreview, setDragPreview] = useState<Annotation | null>(null);
+
+  // Highlight click-to-select drag-yield. A highlight target sits on top of the
+  // text layer, so its pointerdown (pointer-events: all) intercepts any drag
+  // that begins on an existing highlight — including a text drag-select meant
+  // to CREATE a new highlight while highlight mode is on. To stay out of the
+  // way of creation, we treat a press as a SELECT only if it stays a click; if
+  // the pointer drags beyond a small threshold we YIELD (deselect) so the user
+  // can re-attempt the text selection on adjacent text. See
+  // docs/designs/2026-06-18-pdf-annotation-layer-design.md §6 (highlights are
+  // select-only, no move/resize) and the highlight-delete root-cause note.
+  const hlDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
 
   function toLayerPx(e: React.PointerEvent): { x: number; y: number } {
     const rect = layerRef.current!.getBoundingClientRect();
@@ -190,6 +200,38 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
     setDragPreview(null);
   }
 
+  // ---- highlight click-to-select (tool === "none", any highlightOn state) ----
+  // Highlights render their transparent click-targets whenever no drawing tool
+  // is active — INCLUDING while highlight mode is on, so the user can select an
+  // existing highlight and Delete it without first toggling highlight off. The
+  // previous `!highlightOn` gate made targets vanish right after creation (the
+  // highlight toggle is sticky, unlike one-shot rect/draw/text), so highlights
+  // were unselectable exactly when the user had just made one. The drag-yield
+  // below keeps creation working: a drag that begins on a highlight deselects
+  // instead of sticking, so the user can retry the text selection next to it.
+  const HL_DRAG_THRESHOLD = 5; // px; below this a press counts as a click
+  function onHighlightDown(e: React.PointerEvent, a: Annotation) {
+    if (tool !== "none") return;
+    e.stopPropagation();
+    select(a.id);
+    hlDragRef.current = { id: a.id, startX: e.clientX, startY: e.clientY };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+  function onHighlightMove(e: React.PointerEvent) {
+    const d = hlDragRef.current;
+    if (!d) return;
+    if (Math.abs(e.clientX - d.startX) > HL_DRAG_THRESHOLD ||
+        Math.abs(e.clientY - d.startY) > HL_DRAG_THRESHOLD) {
+      // This press became a drag — yield so creation (text drag-select) isn't
+      // blocked by a now-pointless selection on the highlight we started on.
+      select(null);
+      hlDragRef.current = null;
+    }
+  }
+  function onHighlightUp() {
+    hlDragRef.current = null;
+  }
+
   const interactive = tool === "rect" || tool === "draw" || tool === "text";
 
   return (
@@ -198,8 +240,8 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
       ref={layerRef}
       style={{ pointerEvents: interactive ? "auto" : "none", cursor: tool === "text" ? "text" : interactive ? "crosshair" : "default" }}
       onPointerDown={interactive ? onPointerDown : undefined}
-      onPointerMove={interactive ? onPointerMove : onDragMove}
-      onPointerUp={interactive ? onPointerUp : onDragUp}
+      onPointerMove={interactive ? onPointerMove : (e) => { onDragMove(e); onHighlightMove(e); }}
+      onPointerUp={interactive ? onPointerUp : () => { onDragUp(); onHighlightUp(); }}
     >
       <svg
         className="annot-svg"
@@ -263,11 +305,24 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
           }
           return null;
         })}
-        {/* highlight click-targets + selected outline (default mode only) */}
-        {tool === "none" && !highlightOn && highlights.map((a) =>
+        {/* highlight click-targets + selected outline (default mode; any highlightOn).
+            Targets are present EVEN while highlight mode is on, so the user can
+            click an existing highlight and Delete it right after creating it.
+            The highlight toggle is sticky (doesn't reset to "none" like the
+            one-shot rect/draw/text tools), so gating targets on !highlightOn
+            made them vanish exactly when the user had just made a highlight —
+            the "划词后不能删除" bug. Drag-yield (onHighlightMove) keeps text
+            drag-select creation working.
+            Degenerate (near-zero width/height) rects are skipped: pdf.js
+            Range.getClientRects() can emit zero-width phantom rects at line
+            starts; rendering a click-target for them produces a dead, unclickable
+            zone. The visible highlight layer still draws them (harmless, invisible);
+            only the hit-targets are filtered so every target is actually clickable. */}
+        {tool === "none" && highlights.map((a) =>
           (a.highlight?.rects ?? []).map((r, i) => {
             const p = denormalizeRect(r, pageSize);
             const selected = a.id === selectedId;
+            if (p.w < 1 || p.h < 1) return null; // skip degenerate phantom rects
             return (
               <rect
                 key={a.id + "-ht-" + i}
@@ -277,7 +332,7 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
                 strokeWidth={1}
                 strokeDasharray={selected ? "3 2" : undefined}
                 style={{ pointerEvents: "all", cursor: "pointer" }}
-                onPointerDown={(e) => { e.stopPropagation(); select(a.id); }}
+                onPointerDown={(e) => onHighlightDown(e, a)}
               />
             );
           })
