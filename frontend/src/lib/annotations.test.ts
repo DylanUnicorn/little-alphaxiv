@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   PALETTE, normalizePoint, denormalizePoint,
   normalizeRect, denormalizeRect, rectsToNorm, newId,
-  rectsOverlap, overlappingHighlightIds,
+  rectsOverlap, overlappingHighlightIds, fitHighlightRects,
 } from "./annotations";
 import type { Annotation } from "../types";
 
@@ -146,5 +146,66 @@ describe("overlappingHighlightIds", () => {
   it("returns empty when nothing overlaps", () => {
     const existing: Annotation[] = [hl("h1", 1, [{ x: 0.5, y: 0.5, w: 0.1, h: 0.05 }])];
     expect(overlappingHighlightIds(existing, 1, newRects)).toEqual([]);
+  });
+});
+
+describe("fitHighlightRects", () => {
+  it("returns [] for empty input", () => {
+    expect(fitHighlightRects([])).toEqual([]);
+  });
+
+  it("insets a single rect vertically (top down, bottom up), keeps width/left", () => {
+    // height 20, TOP_INSET 0.12 -> topCut 2.4, BOTTOM_INSET 0.06 -> botCut 1.2
+    const out = fitHighlightRects([{ left: 80, top: 100, width: 240, height: 20 }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].left).toBe(80);
+    expect(out[0].width).toBe(240);
+    expect(out[0].top).toBeCloseTo(102.4, 5);
+    expect(out[0].height).toBeCloseTo(16.4, 5);
+  });
+
+  it("de-overlaps adjacent line rects: lower top pushed below upper bottom", () => {
+    // Tight leading: two 20px-tall lines whose raw tops are only 15px apart
+    // overlap by 5px. After inset (top 2.4 / bot 1.2 -> upper bottom 118.8),
+    // the lower rect's inset top (117.4) still sits above 118.8, so the trim
+    // pushes it down to 119.8 with a 1px gap.
+    const out = fitHighlightRects([
+      { left: 80, top: 100, width: 240, height: 20 },
+      { left: 80, top: 115, width: 240, height: 20 },
+    ]);
+    expect(out).toHaveLength(2);
+    const upperBottom = out[0].top + out[0].height;
+    expect(out[1].top).toBeGreaterThanOrEqual(upperBottom);
+    expect(out[1].top - upperBottom).toBeCloseTo(1, 5); // 1px gap
+    // lower rect keeps its original bottom (inset), only the top moved
+    expect(out[1].top + out[1].height).toBeCloseTo(133.8, 5);
+  });
+
+  it("leaves non-overlapping rects alone (beyond the inset)", () => {
+    // 20px tall, tops 100 apart -> no overlap; second rect's inset top is
+    // unchanged by the trim step.
+    const out = fitHighlightRects([
+      { left: 80, top: 100, width: 240, height: 20 },
+      { left: 80, top: 200, width: 240, height: 20 },
+    ]);
+    expect(out[1].top).toBeCloseTo(202.4, 5); // only the 12% inset, no trim
+  });
+
+  it("does not trim same-line rects (near-equal tops)", () => {
+    // Two rects on the same visual line (multi-column wrap): tops within 1px.
+    // The trim must not fire — both keep their inset tops.
+    const out = fitHighlightRects([
+      { left: 80, top: 100, width: 100, height: 20 },
+      { left: 200, top: 100.5, width: 100, height: 20 },
+    ]);
+    expect(out[0].top).toBeCloseTo(102.4, 5);
+    expect(out[1].top).toBeCloseTo(102.9, 5); // 100.5 + 2.4 inset, not trimmed
+  });
+
+  it("does not mutate the input array", () => {
+    const input = [{ left: 80, top: 100, width: 240, height: 20 }];
+    const inputCopy = { ...input[0] };
+    fitHighlightRects(input);
+    expect(input[0]).toEqual(inputCopy);
   });
 });
