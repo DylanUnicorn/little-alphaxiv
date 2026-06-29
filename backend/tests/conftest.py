@@ -14,7 +14,9 @@ import os
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app import db as dbmod
 
@@ -47,7 +49,9 @@ async def client(tmp_path, monkeypatch):
         cur.execute("PRAGMA synchronous=NORMAL")
         cur.close()
 
-    dbmod.async_session_factory = async_sessionmaker(dbmod.engine, expire_on_commit=False)
+    dbmod.async_session_factory = async_sessionmaker(
+        dbmod.engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     from app.main import app
 

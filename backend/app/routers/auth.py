@@ -1,41 +1,83 @@
-"""Auth router: register / login / logout / me.
+"""Auth router: register / login / logout / me + password recovery.
 
 Session = a row in the sessions table (PK = a 32-byte url-safe token). The
 cookie value is an itsdangerous-signed {sid, exp}, NOT the raw id, so a stolen
 DB row id alone can't be replayed. Logout deletes the row AND clears the cookie.
 
-Username-only auth (no email server needed for a LAN app). Username normalized
+Recovery: forgot-password issues a single-use, TTL-bounded reset token (only
+sha256(token) is stored) and emails a reset link (SMTP if configured, else the
+link is printed to the terminal + lax_reset_links.log). reset-password verifies
+the token, sets the new password hash, marks the token used, and DELETES every
+session row for that user (so any old cookie dies the moment the password
+changes), then issues a fresh session (auto-login). forgot-password always
+returns the same generic 200 — no account-existence leak. Username normalized
 to lower+trim; min length 3, password min length 8 — deliberately loose.
 """
 from __future__ import annotations
 
+import hashlib
+import os
+import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from .. import security
 from ..db import get_session
 from ..deps import current_user
-from ..models import AnnotationRow, ConversationRow, Session, User
+from ..email import send_reset_email
+from ..models import AnnotationRow, ConversationRow, PasswordResetRow, Session, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 USERNAME_MIN = 3
 PASSWORD_MIN = 8
 
+# In-process cooldown: {identifier_lower: last_sent_epoch}. Prevents one client
+# from spamming reset emails for the same identifier. Not distributed.
+_forgot_cooldown: dict[str, int] = {}
+FORGOT_COOLDOWN_S = 60
+
+GENERIC_FORGOT_MSG = (
+    "If an account with that identifier exists, a reset link is on its way."
+)
+
+
+def _reset_ttl_seconds() -> int:
+    return int(os.environ.get("LAX_PASSWORD_RESET_TTL_MIN", "30")) * 60
+
+
+def _build_reset_link(token: str) -> str:
+    origin = os.environ.get(
+        "LAX_ALLOWED_ORIGINS", "http://127.0.0.1:5173"
+    ).split(",")[0].strip()
+    return f"{origin.rstrip('/')}/reset?token={token}"
+
 
 class Credentials(BaseModel):
+    """Login body: username + password only."""
     username: str = Field(min_length=USERNAME_MIN)
+    password: str = Field(min_length=PASSWORD_MIN)
+
+
+class RegisterBody(BaseModel):
+    username: str = Field(min_length=USERNAME_MIN)
+    email: EmailStr
     password: str = Field(min_length=PASSWORD_MIN)
 
 
 class MeResponse(BaseModel):
     id: int
     username: str
+    email: str | None = None
     hasData: bool
+
+
+class ForgotBody(BaseModel):
+    identifier: str
 
 
 def _set_session_cookie(response: Response, sid: str, expires_at: int) -> None:
@@ -61,7 +103,7 @@ async def _issue_session(response: Response, session: AsyncSession, user: User) 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=MeResponse)
 async def register(
-    creds: Credentials,
+    creds: RegisterBody,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> MeResponse:
@@ -73,12 +115,22 @@ async def register(
     ).first()
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "username taken")
-    user = User(username=username, password_hash=security.hash_password(creds.password))
+    email_norm = creds.email.strip().lower()
+    email_taken = (
+        await session.exec(select(User).where(User.email == email_norm))
+    ).first()
+    if email_taken is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "email already registered")
+    user = User(
+        username=username,
+        email=email_norm,
+        password_hash=security.hash_password(creds.password),
+    )
     session.add(user)
     await session.commit()
     await session.refresh(user)
     await _issue_session(response, session, user)
-    return MeResponse(id=user.id, username=user.username, hasData=False)
+    return MeResponse(id=user.id, username=user.username, email=user.email, hasData=False)
 
 
 @router.post("/login", response_model=MeResponse)
@@ -93,7 +145,62 @@ async def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
     await _issue_session(response, session, user)
     has_data = await _user_has_data(session, user.id)
-    return MeResponse(id=user.id, username=user.username, hasData=has_data)
+    return MeResponse(id=user.id, username=user.username, email=user.email, hasData=has_data)
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    body: ForgotBody,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Issue a reset link if the identifier matches an account WITH an email.
+
+    Always returns the same generic 200 — no account-existence leak. A new
+    request supersedes the user's prior unused tokens (only the newest link
+    is valid). Send failures are swallowed by the email module.
+    """
+    ident = body.identifier.strip().lower()
+    now = int(time.time())
+    # Cooldown: same identifier can't trigger a second send within 60s.
+    last = _forgot_cooldown.get(ident, 0)
+    if now - last < FORGOT_COOLDOWN_S:
+        return {"ok": True, "message": GENERIC_FORGOT_MSG}
+    _forgot_cooldown[ident] = now
+
+    user = (
+        await session.exec(
+            select(User).where((User.username == ident) | (User.email == ident))
+        )
+    ).first()
+    if user is None or not user.email:
+        # No user, or no email on file → still return generic. No token created.
+        return {"ok": True, "message": GENERIC_FORGOT_MSG}
+
+    # Supersede this user's prior unused tokens so only the newest link works.
+    prior = (
+        await session.exec(
+            select(PasswordResetRow).where(
+                PasswordResetRow.user_id == user.id,
+                PasswordResetRow.used_at.is_(None),
+            )
+        )
+    ).all()
+    for row in prior:
+        row.used_at = now
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    session.add(
+        PasswordResetRow(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=now + _reset_ttl_seconds(),
+        )
+    )
+    await session.commit()
+
+    await send_reset_email(user.email, user.username, _build_reset_link(token))
+    return {"ok": True, "message": GENERIC_FORGOT_MSG}
 
 
 @router.post("/logout")
@@ -119,7 +226,7 @@ async def me(
     session: AsyncSession = Depends(get_session),
 ) -> MeResponse:
     has_data = await _user_has_data(session, user.id)
-    return MeResponse(id=user.id, username=user.username, hasData=has_data)
+    return MeResponse(id=user.id, username=user.username, email=user.email, hasData=has_data)
 
 
 async def _user_has_data(session: AsyncSession, user_id: int) -> bool:
