@@ -251,6 +251,35 @@ async def reset_password(
     )
 
 
+@router.patch("/account")
+async def update_account(
+    body: AccountBody,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Set or clear the authenticated user's recovery email. This is the only
+    way for pre-migration accounts (no email on file) to enable recovery."""
+    if body.email is None:
+        user.email = None
+    else:
+        email_norm = body.email.strip().lower()
+        # Light format check (pydantic didn't validate — email is Optional str).
+        local, _, domain = email_norm.partition("@")
+        if not local or "." not in domain:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid email")
+        taken = (
+            await session.exec(
+                select(User).where(User.email == email_norm, User.id != user.id)
+            )
+        ).first()
+        if taken is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "email already registered")
+        user.email = email_norm
+    session.add(user)
+    await session.commit()
+    return {"email": user.email}
+
+
 @router.post("/logout")
 async def logout(
     request: Request,

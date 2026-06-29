@@ -192,3 +192,47 @@ async def test_reset_garbage_token_returns_401(client):
         json={"token": "not-a-real-token", "new_password": "newpass12"},
     )
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Account email PATCH.
+# ---------------------------------------------------------------------------
+
+
+async def test_set_account_email_unique(client):
+    await _register(client, username="eve", email="eve@example.com")
+    await _register(client, username="frank", email="frank@example.com")
+    # frank's account (last register) holds the cookie. Reset to eve's cookie.
+    await client.post("/api/auth/login", json={"username": "eve", "password": "password123"})
+    # eve tries to take frank's email → 409.
+    r = await client.patch(
+        "/api/auth/account", json={"email": "frank@example.com"}
+    )
+    assert r.status_code == 409
+    # eve changes her own email → ok.
+    r2 = await client.patch(
+        "/api/auth/account", json={"email": "eve2@example.com"}
+    )
+    assert r2.is_success, r2.text
+    assert r2.json()["email"] == "eve2@example.com"
+    # me reflects the new email.
+    me = await client.get("/api/auth/me")
+    assert me.json()["email"] == "eve2@example.com"
+
+
+async def test_set_account_email_invalid_format(client):
+    await _register(client, username="greg", email="greg@example.com")
+    r = await client.patch("/api/auth/account", json={"email": "not-an-email"})
+    assert r.status_code == 400
+
+
+async def test_account_requires_auth(client):
+    r = await client.patch("/api/auth/account", json={"email": "x@example.com"})
+    assert r.status_code == 401
+
+
+async def test_set_account_email_can_clear(client):
+    await _register(client, username="hank", email="hank@example.com")
+    r = await client.patch("/api/auth/account", json={"email": None})
+    assert r.is_success
+    assert r.json()["email"] is None
