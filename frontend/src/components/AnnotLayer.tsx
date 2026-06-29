@@ -191,9 +191,13 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
     }
     // No-op guard: if neither the text nor the box size changed, don't push a
     // redundant `edit` op onto the undo stack (otherwise Undo would appear to
-    // do nothing on the surface while consuming one undo step).
-    const sizeChanged = Math.abs(boxPx.w - before.text!.w * pageSize.w) > 1 ||
-                        Math.abs(boxPx.h - before.text!.h * pageSize.h) > 1;
+    // do nothing on the surface while consuming one undo step). The threshold
+    // is >2 (not >1): finish() now measures offsetWidth (content+padding+1px
+    // border), ~2px larger than the clientWidth-derived size older annotations
+    // were stored with, so a genuinely-unchanged box still reads as +2 and must
+    // stay under the bar to be treated as a no-op.
+    const sizeChanged = Math.abs(boxPx.w - before.text!.w * pageSize.w) > 2 ||
+                        Math.abs(boxPx.h - before.text!.h * pageSize.h) > 2;
     if (trimmed === before.text!.content && !sizeChanged) return;
     const r = normalizeRect(boxPx.x, boxPx.y, boxPx.w, boxPx.h, pageSize);
     editAnnot(before, {
@@ -570,9 +574,21 @@ function TextInputBox({
     // hugs the actual placed content rather than trailing whitespace.
     const trimmed = el.innerText.replace(/ /g, " ").trim();
     el.innerText = trimmed;
-    // clientWidth/Height = content + padding, excluding the input's 1px border,
-    // which exactly matches the committed .annot-text border-box (no border).
-    onCommit(trimmed, { x, y, w: el.clientWidth, h: el.clientHeight });
+    // Measure with offsetWidth/offsetHeight, NOT clientWidth/clientHeight.
+    //   clientWidth = content + padding, EXCLUDING the 1px border; integer-floored.
+    //   offsetWidth = content + padding + border; integer-floored.
+    // The input is inline-block shrink-to-fit, so its content box equals the
+    // text's natural width T (zero slack). clientWidth = floor(T + padding); the
+    // committed .annot-text has NO border, content box = clientWidth - padding =
+    // floor(T+padding) - padding — up to ~1px NARROWER than T. Under
+    // white-space:pre-wrap + word-break:break-word a sub-pixel shortfall pushes
+    // the last CJK character onto its own line ("按回车后最后一个字自己换行").
+    // offsetWidth adds the 1px border back in, so the committed content box is
+    // offsetWidth - padding = floor(T+padding+border) - padding ≈ T + 1px slack —
+    // always >= text width, never wraps. It also equals the input's on-screen size
+    // (border + content), so the dashed selection frame no longer shrinks a hair
+    // on commit (the "虚线框会缩小" symptom).
+    onCommit(trimmed, { x, y, w: el.offsetWidth, h: el.offsetHeight });
   }
 
   return (
