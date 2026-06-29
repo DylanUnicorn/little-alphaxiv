@@ -3,11 +3,13 @@
 // hydrates the stores.
 
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import * as api from "../lib/api";
 
 export default function Login() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -18,14 +20,23 @@ export default function Login() {
     const u = username.trim();
     if (u.length < 3) { setError("Username must be at least 3 characters."); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (mode === "register") {
+      const em = email.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setError("Enter a valid email."); return; }
+      setBusy(true);
+      try {
+        await api.register(u, em, password);
+        window.location.assign("/");
+        return;
+      } catch (err) {
+        setError((err as Error).message || "Registration failed.");
+        setBusy(false);
+        return;
+      }
+    }
     setBusy(true);
     try {
-      if (mode === "register") {
-        await api.register(u, password);
-      } else {
-        await api.login(u, password);
-      }
-      // Cookie is set; hard-navigate so App boot re-runs authenticated.
+      await api.login(u, password);
       window.location.assign("/");
     } catch (err) {
       setError((err as Error).message || "Authentication failed.");
@@ -51,6 +62,18 @@ export default function Login() {
             autoFocus
           />
         </label>
+        {mode === "register" && (
+          <label className="login-field">
+            <span>Email</span>
+            <input
+              type="email"
+              value={email}
+              autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+        )}
         <label className="login-field">
           <span>Password</span>
           <input
@@ -65,6 +88,9 @@ export default function Login() {
         <button type="submit" className="login-submit" disabled={busy}>
           {busy ? "…" : mode === "login" ? "Sign in" : "Register"}
         </button>
+        {mode === "login" && (
+          <Link to="/forgot" className="login-toggle">Forgot password?</Link>
+        )}
         <button
           type="button"
           className="login-toggle"

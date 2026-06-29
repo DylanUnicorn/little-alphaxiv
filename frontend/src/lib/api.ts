@@ -529,6 +529,7 @@ export function zoteroSelectUrl(itemKey: string): string {
 export interface Me {
   id: number;
   username: string;
+  email: string | null;
   hasData: boolean;
 }
 
@@ -536,11 +537,11 @@ async function jfetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${BASE}${path}`, { ...init, credentials: "include" });
 }
 
-export async function register(username: string, password: string): Promise<Me> {
+export async function register(username: string, email: string, password: string): Promise<Me> {
   const r = await jfetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, email, password }),
   });
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
@@ -563,6 +564,39 @@ export async function logout(): Promise<void> {
 export async function getMe(): Promise<Me | null> {
   const r = await jfetch("/api/auth/me");
   if (r.status === 401) return null;
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Request a password-reset link. The backend ALWAYS returns a generic success
+ *  (anti-enumeration), so this resolves even for unknown identifiers. */
+export async function requestPasswordReset(identifier: string): Promise<void> {
+  await jfetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier }),
+  });
+}
+
+/** Reset the password with a token from a reset link. On success the backend
+ *  sets a fresh session cookie (auto-login) and returns Me. */
+export async function resetPassword(token: string, newPassword: string): Promise<Me> {
+  const r = await jfetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Set or clear the authenticated user's recovery email. Pass null to clear. */
+export async function setAccountEmail(email: string | null): Promise<{ email: string | null }> {
+  const r = await jfetch("/api/auth/account", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
