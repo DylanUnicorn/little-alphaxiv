@@ -37,6 +37,9 @@ ENV/
 *.db-shm
 *.db-wal
 
+# ---- Docker runtime data (db + PDF cache + persisted LAX_SECRET_KEY) ----
+/data/
+
 # ---- Playwright / E2E test artifacts (regenerable) ----
 shots/
 shots_real/

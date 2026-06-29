@@ -1,0 +1,58 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+.github
+
+# Local env / secrets — must NEVER enter the image
+.env
+.env.*
+backend/.env
+backend/lax_reset_links.log
+
+# Local databases + runtime data
+backend/*.db
+backend/*.db-*
+data/
+
+# Python caches / venvs
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend build artifacts (built fresh inside the image)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Playwright / test artifacts
+tools/shots*/
+tools/shots/
+**/*.har
+test-results/
+playwright-report/
+
+# Worktrees + local agent state
+.claude/
+.worktrees/
+
+# Docs not needed at runtime
+docs/
+CLAUDE.md
+PRODUCT.md
+README.md
+LICENSE
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
