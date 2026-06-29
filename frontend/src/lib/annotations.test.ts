@@ -205,6 +205,30 @@ describe("fitHighlightRects", () => {
     fitHighlightRects(input);
     expect(input[0]).toEqual(inputCopy);
   });
+
+  it("drops zero-width phantom rects so the bubble lands on the real selection", () => {
+    // pdf.js Range.getClientRects() on a MULTI-LINE selection emits zero-width
+    // phantom rects at left=0 near the page TOP (one per visual line the range
+    // passes through, including lines above the visible selection). Because
+    // fitHighlightRects sorts by (top, left), an unfiltered phantom at top=29
+    // sorts FIRST and becomes out[0] — and HighlightLayer places the color
+    // bubble at out[0], so the bubble pops at the page's TOP-LEFT corner
+    // instead of at the selected text. Filtering zero-area rects (width or
+    // height < 1px) makes out[0] the real topmost selected line. See the
+    // highlight-bubble-topleft root-cause note.
+    const out = fitHighlightRects([
+      { left: 0, top: 29, width: 0, height: 21 },     // phantom (line above)
+      { left: 0, top: 45, width: 0, height: 21 },     // phantom (line above)
+      { left: 407, top: 132, width: 54, height: 17 }, // real 1st selected line
+      { left: 281, top: 196, width: 249, height: 23 },// real 2nd selected line
+    ]);
+    // phantoms dropped — only the two real rects remain
+    expect(out).toHaveLength(2);
+    expect(out.every((r) => r.width > 0 && r.height > 0)).toBe(true);
+    // out[0] is the real topmost selected line (left=407), NOT the phantom at (0,29)
+    expect(out[0].left).toBe(407);
+    expect(out[0].top).toBeCloseTo(135.06, 1); // 132 + 0.18*17
+  });
 });
 
 describe("deoverlapPixelRects", () => {

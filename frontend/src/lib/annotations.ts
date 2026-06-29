@@ -120,9 +120,22 @@ export function fitHighlightRects(
   rects: { left: number; top: number; width: number; height: number }[]
 ): { left: number; top: number; width: number; height: number }[] {
   if (rects.length === 0) return [];
+  // Drop zero-area phantom rects BEFORE sorting. pdf.js Range.getClientRects()
+  // on a multi-line selection emits zero-width phantom rects at left=0 near the
+  // page top (one per visual line the range passes through, including lines
+  // above the visible selection). Because we sort by (top, left) below, an
+  // unfiltered phantom at a small top sorts FIRST and becomes out[0] — and
+  // HighlightLayer places the color bubble at out[0], so the bubble pops at the
+  // page's TOP-LEFT corner instead of at the selected text. A zero-area rect is
+  // never a real selection portion (it paints nothing), so dropping it is safe
+  // for both the bubble position and the stored highlight geometry. The < 1px
+  // threshold matches the render-time degenerate-rect skip and also clears
+  // sub-pixel noise.
+  const clean = rects.filter((r) => r.width >= 1 && r.height >= 1);
+  if (clean.length === 0) return [];
   const TOP_INSET = 0.18;
   const BOTTOM_INSET = 0.10;
-  const out = rects.map((r) => {
+  const out = clean.map((r) => {
     const topCut = r.height * TOP_INSET;
     const botCut = r.height * BOTTOM_INSET;
     return {
