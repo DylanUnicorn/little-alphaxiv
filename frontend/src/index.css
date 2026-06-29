@@ -349,27 +349,50 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 
 /* ---- Login / Register + migration prompt ---- */
 .login-pane { align-items: center; justify-content: center; padding: 24px; }
-.login-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 12px; }
+.login-card {
+  width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 14px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 32px 28px;
+  box-shadow: var(--shadow-md);
+}
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+/* Same recipe as the sidebar .logo-mark (gradient rounded square + α), scaled
+   up to anchor the login lockup so the page reads as the same product. */
+.login-logo {
+  width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-contrast); font-size: 28px; font-weight: 700; line-height: 1;
+  box-shadow: 0 4px 14px var(--accent-soft);
+}
 .login-card h1 { font-size: 22px; font-weight: 600; margin: 0; text-align: center; }
-.login-sub { text-align: center; color: var(--text-dim); font-size: 13px; margin: -4px 0 4px; }
-.login-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.login-sub { text-align: center; color: var(--text-dim); font-size: 13px; margin: -2px 0 6px; }
+.login-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-dim); }
 .login-field input {
-  padding: 8px 10px; font-size: 14px; border: 1px solid var(--border);
-  border-radius: 6px; background: var(--bg-2); color: var(--text);
+  padding: 9px 11px; font-size: 14px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); color: var(--text);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
-.login-field input:focus { outline: none; border-color: var(--accent); }
+.login-field input:hover { border-color: var(--border-strong); }
+.login-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .login-submit {
-  padding: 9px 12px; font-size: 14px; font-weight: 600; border: none; border-radius: 6px;
+  padding: 10px 12px; font-size: 14px; font-weight: 600; border: none; border-radius: 6px;
   background: var(--accent); color: #fff; cursor: pointer; margin-top: 4px;
+  transition: background var(--transition-fast), transform var(--transition-fast);
 }
-.login-submit:disabled { opacity: 0.6; cursor: default; }
+.login-submit:hover { background: var(--accent-2); }
+.login-submit:active { transform: translateY(1px); }
+.login-submit:disabled { opacity: 0.6; cursor: default; transform: none; }
 .login-toggle {
   background: none; border: none; color: var(--text-dim); font-size: 12px;
   cursor: pointer; padding: 4px; text-align: center;
 }
 .login-toggle:hover { color: var(--text); }
-.login-error { color: #ef4444; font-size: 12px; text-align: center; }
-.login-hint { color: var(--text-dim); font-size: 11px; line-height: 1.5; text-align: center; margin-top: 6px; }
+.login-error { color: var(--danger); font-size: 12px; text-align: center; }
+.login-hint {
+  color: var(--text-dim); font-size: 11px; line-height: 1.55; text-align: center;
+  margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border);
+}
 .migrate-prompt {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000;
   display: flex; align-items: center; justify-content: center; padding: 24px;

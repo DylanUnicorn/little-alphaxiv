@@ -47,7 +47,10 @@ export default function Login() {
   return (
     <main className="main-pane login-pane">
       <form className="login-card" onSubmit={submit}>
-        <h1>Little Alphaxiv</h1>
+        <div className="login-brand">
+          <span className="login-logo" aria-hidden="true">α</span>
+          <h1>Little Alphaxiv</h1>
+        </div>
         <p className="login-sub">
           {mode === "login" ? "Sign in to your account" : "Create an account"}
         </p>
@@ -84,7 +87,7 @@ export default function Login() {
             disabled={busy}
           />
         </label>
-        {error && <div className="login-error">{error}</div>}
+        {error && <div className="login-error" role="alert">{error}</div>}
         <button type="submit" className="login-submit" disabled={busy}>
           {busy ? "…" : mode === "login" ? "Sign in" : "Register"}
         </button>
@@ -101,7 +104,7 @@ export default function Login() {
         </button>
         <p className="login-hint">
           Your chat history, annotations, and provider keys are stored on the
-          server (keys encrypted at rest), tied to this account — so switching
+          server (keys encrypted at rest) and tied to this account, so switching
           browsers just means signing back in.
         </p>
       </form>
