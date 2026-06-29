@@ -9,6 +9,8 @@ import { ChatView } from "./views/ChatView";
 import { PaperView } from "./views/PaperView";
 import { SettingsView } from "./views/SettingsView";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import { useConversations } from "./store/conversations";
 import { useSettings } from "./store/settings";
 import { useZoteroNoteSyncStore } from "./store/zoteroNoteSync";
@@ -74,6 +76,8 @@ export default function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot" element={<ForgotPassword />} />
+        <Route path="/reset" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
