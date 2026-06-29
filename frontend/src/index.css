@@ -314,6 +314,14 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .sidebar-foot { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
 .provider-status { font-size: 11px; color: var(--text-dim); }
 .provider-status .warn { color: var(--warn); }
+/* Clickable "No provider" warning → jumps to Settings#providers. Styled as a
+   bare inline link (no button chrome) so it reads like the warning text. */
+.provider-status .provider-jump {
+  border: none; background: none; margin: 0; padding: 0;
+  color: var(--warn); font: inherit; text-align: left; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.provider-status .provider-jump:hover { filter: brightness(1.15); }
 .theme-quick { display: flex; align-items: center; gap: 6px; }
 .theme-quick label { font-size: 11px; color: var(--text-faint); }
 .theme-quick select {

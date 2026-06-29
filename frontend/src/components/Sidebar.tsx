@@ -172,7 +172,13 @@ export function Sidebar() {
       <div className="sidebar-foot">
         <div className="provider-status">
           {providers.length === 0 ? (
-            <span className="warn">⚠ No provider — configure in Settings</span>
+            <button
+              className="warn provider-jump"
+              onClick={() => navigate("/settings#providers")}
+              title="Open Settings → Providers"
+            >
+              ⚠ No provider — configure in Settings
+            </button>
           ) : (
             <span>{providers.length} provider(s) configured</span>
           )}

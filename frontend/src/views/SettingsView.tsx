@@ -33,12 +33,15 @@ export function SettingsView() {
   const [zoteroTestResult, setZoteroTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const location = useLocation();
 
-  // Auto-scroll to the Zotero section when arriving via /settings#zotero (e.g.
-  // from the Zotero panel's "Switch in Settings" link). .settings-shell is the
-  // scroll container; scrollIntoView lands the heading at its top.
+  // Auto-scroll to a settings section when arriving via /settings#<id> (e.g.
+  // "#providers" from the sidebar's "No provider" warning, or "#zotero" from
+  // the Zotero panel's "Switch in Settings" link). .settings-shell is the
+  // scroll container; scrollIntoView lands the heading at its top. Each section
+  // heading carries the matching id + scrollMarginTop (see the h2 elements).
   useEffect(() => {
-    if (location.hash !== "#zotero") return;
-    const el = document.getElementById("zotero");
+    if (!location.hash) return;
+    const id = location.hash.slice(1);
+    const el = document.getElementById(id);
     if (!el) return;
     const raf = requestAnimationFrame(() =>
       el.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -270,7 +273,7 @@ export function SettingsView() {
           </div>
         </div>
 
-        <h2>Providers</h2>
+        <h2 id="providers" style={{ scrollMarginTop: "1rem" }}>Providers</h2>
         <p className="settings-hint">
           Add any OpenAI-compatible endpoint (OpenAI, Anthropic via a compatible
           gateway, local Ollama/OpenAI servers, etc.). Keys are stored only in
