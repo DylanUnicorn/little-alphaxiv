@@ -1,0 +1,42 @@
+# Little Alphaxiv — Docker Compose
+#
+# One-command self-hosted run. The entrypoint auto-generates LAX_SECRET_KEY
+# into the ./data volume on first start, so you can simply:
+#
+#     docker compose up -d
+#
+# Then open http://127.0.0.1:8000  →  /login  →  Register.
+#
+# Optional: create a root-level `.env` (copy from `.env.docker.example`) to set
+# SMTP for password recovery, a custom host port, or secure cookies.
+
+services:
+  little-alphaxiv:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: little-alphaxiv:latest
+    container_name: little-alphaxiv
+    ports:
+      - "${LAX_PORT:-8000}:8000"
+    environment:
+      # Same-origin (frontend served by the backend on :8000) → CORS is normally
+      # a non-issue. Origins listed here are for the rare cross-origin embed case.
+      LAX_ALLOWED_ORIGINS: "${LAX_ALLOWED_ORIGINS:-http://127.0.0.1:8000,http://localhost:8000}"
+      LAX_SECURE_COOKIES: "${LAX_SECURE_COOKIES:-false}"
+      LAX_SESSION_MAX_AGE_DAYS: "${LAX_SESSION_MAX_AGE_DAYS:-30}"
+      # Empty → password-reset links are printed to the container logs.
+      LAX_SMTP_URL: "${LAX_SMTP_URL:-}"
+      LAX_SMTP_FROM: "${LAX_SMTP_FROM:-}"
+      LAX_PASSWORD_RESET_TTL_MIN: "${LAX_PASSWORD_RESET_TTL_MIN:-30}"
+    volumes:
+      # SQLite DB + PDF cache + the persisted LAX_SECRET_KEY all live here.
+      - ./data:/app/data
+    restart: unless-stopped
+    # Tiny health probe: the backend exposes GET /api/health.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -1,14 +1,38 @@
+<div align="center">
+
 # Little Alphaxiv
 
-A self-hosted, alphaxiv-style paper-reading app for you and a few friends.
-Chat with an AI to find arXiv papers, click a link, and the PDF opens in the
-left panel with a paper-aware assistant ready in the right panel. Bring your
-own OpenAI-compatible API key — no quotas, no shared accounts.
+**A self-hosted, alphaxiv-style arXiv paper-reading workspace.**
+Chat with an LLM to discover papers, then read the PDF side-by-side with a
+paper-aware assistant. Bring your own key. Your data stays on your server.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](./backend/requirements.txt)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5+-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
+
+</div>
+
+---
+
+Little Alphaxiv is a self-hosted reading-and-discussion workspace for arXiv
+papers. Ask the assistant what you're looking for in plain language; it searches
+arXiv (and optionally the web) and surfaces results as clickable cards. Click
+one and the PDF opens in the left panel with a paper-aware assistant in the
+right panel — the paper's full text is injected into the conversation, so you
+can discuss the *actual* content, highlight, annotate, and sync notes to Zotero.
+
+Bring your own OpenAI-compatible API key — no quotas, no shared accounts, no
+vendor lock-in. OpenAI, an OpenAI-compatible Anthropic gateway, local Ollama
+with the OpenAI shim, one-api/new-api, etc. all work.
 
 Each user registers an account; their chat history, PDF annotations, and
-provider settings live on the **server** (a SQLite database), encrypted at rest.
-Switch browsers → just sign back in and everything's there. No more "my history
-is gone because I cleared cookies / used a different machine."
+provider settings live on the **server** in a SQLite database, with API keys
+**Fernet-encrypted at rest**. Switch browsers → sign back in → everything's
+there.
 
 ```
  ┌─ Sidebar ─┐  ┌── General chat ──┐     ┌── Paper view ──────────────────┐
@@ -19,93 +43,132 @@ is gone because I cleared cookies / used a different machine."
  └───────────┘
 ```
 
-## What's here
+## ✨ Features
 
-- **`backend/`** — a FastAPI app. Originally a stateless CORS proxy; now also
-  owns a **SQLite database** (`SQLModel` + `aiosqlite` + `Alembic`) for per-user
-  persistence and **user auth** (httpOnly session cookies). It still proxies
-  arXiv / LLM gateways / PDFs (those send no CORS headers), but your API key is
-  now stored server-side, **Fernet-encrypted at rest**, and the browser only
-  ever sends a `provider_id` — the plaintext key never travels with each chat
-  request.
-- **`frontend/`** — Vite + React + TypeScript SPA. State is hydrated from the
-  backend on login; nothing of substance persists in the browser anymore (a
-  tiny `lax-theme` localStorage cache is kept only to avoid a flash of the wrong
-  colorscheme before login resolves).
-- **`docs/designs/`** — the validated design docs.
+- **Conversational paper discovery** — describe what you want; the assistant
+  calls a `search_arxiv` tool (and optionally `web_search`) and renders results
+  as clickable paper cards.
+- **Paper-aware chat** — pdf.js extracts the full text once (cached globally and
+  deduplicated across users); the assistant discusses the paper's actual content.
+- **PDF annotations** — rectangle / freehand / text / highlight tools with an
+  undo-redo op stack, per-user and server-backed.
+- **Per-user accounts** — register/login, httpOnly session cookies, bcrypt
+  passwords; every query is scoped to the authenticated user.
+- **Encrypted-at-rest API keys** — the plaintext key leaves the browser only
+  once (at save); afterward the UI only shows a masked preview (`sk-m…cret`).
+- **Password recovery** — email-based reset (SMTP or console), single-use tokens,
+  session purge on reset.
+- **Multi-provider** — configure multiple OpenAI-compatible providers, set a
+  default per-conversation or globally.
+- **Zotero integration** — local + connector + web API; one-click note sync from
+  annotations.
+- **11 themes** — dark-first, including sepia and solarized for long reading
+  sessions.
+- **One-time browser → server migration** — if you used the old browser-only
+  build, your local data is imported into your account on first login.
 
-## How it works
+## 🧱 Tech stack
 
-- **Auth + persistence:** register/login (`/login`); the backend sets an
-  httpOnly `lax_session` cookie (signed via `itsdangerous`, looked up in a
-  `sessions` table — logout deletes the row). Every API call is scoped to the
-  authenticated `user.id`. Chat history, annotations, provider config, and
-  settings all live in SQLite, per-user.
-- **Discovery (general chat):** you describe what you want; the assistant calls
-  a `search_arxiv` tool (and optionally `web_search`); results render as
-  clickable paper cards. Click → paper view.
-- **Paper view:** the PDF loads via the proxy (cached to disk); pdf.js extracts
-  the full text once (`getTextContent`), cached in a **global** `papers` table
-  (same arxiv_id → same text, deduplicated across users); that text is injected
-  into the chat context so the assistant can discuss the paper's actual content.
-- **Tools run in the browser.** The backend proxies + persists; the OpenAI-style
-  tool-calling loop lives in the frontend (`src/lib/llm.ts`).
-- **One-time migration:** on first login after upgrading from the old
-  browser-only version, if the browser still holds legacy IndexedDB +
-  localStorage data, the app offers to import it into your account (idempotent).
+| Layer      | Technology |
+|------------|------------|
+| Backend    | FastAPI, SQLModel, aiosqlite, Alembic, uvicorn |
+| Frontend   | React 18, Vite 5, TypeScript, pdf.js, Zustand |
+| Database   | SQLite (WAL mode) |
+| Auth       | httpOnly session cookies (itsdangerous) + bcrypt + Fernet |
+| PDF        | pdf.js (text extraction + annotation layer) |
+| Tooling    | Vitest (frontend), pytest (backend), Playwright (E2E) |
 
-## Run it
+## 🚀 Quick start (Docker)
 
-### A. Single-machine (simplest, localhost-only)
-
-Open **two** terminals:
+The fastest way to run Little Alphaxiv — a single image builds the frontend and
+serves it same-origin from the backend. The `LAX_SECRET_KEY` is auto-generated
+into the `./data` volume on first start, so there's **zero config** required.
 
 ```bash
-# Terminal 1 — backend
+git clone https://github.com/DylanUnicorn/little-alphaxiv.git
+cd little-alphaxiv
+docker compose up -d            # builds + starts on http://127.0.0.1:8000
+```
+
+Then:
+
+1. Open **http://127.0.0.1:8000** → you're redirected to `/login`.
+2. Click **Register**, pick a username + email + password.
+3. Go to **⚙ Settings → Providers**, add an OpenAI-compatible provider
+   (see [Configure a provider](#configure-a-provider)), set it default.
+4. Back to the chat — ask: *"find me recent papers on vision transformers"*.
+
+Data (SQLite DB, PDF cache, the persisted secret key) lives in `./data/`.
+View server logs with `docker compose logs -f little-alphaxiv`. Stop with
+`docker compose down`.
+
+> **Password recovery without SMTP:** by default, reset links are printed to the
+> container logs (no mail server needed for localhost). To email them, set
+> `LAX_SMTP_URL` in a root-level `.env` — see
+> [Configuration](#configuration-env-vars).
+
+## 📦 Installation
+
+### A. Docker (recommended)
+
+See [Quick start](#-quick-start-docker) above. Optional advanced config via a
+root-level `.env` (copy from `.env.docker.example`):
+
+```bash
+cp .env.docker.example .env      # optional — all values have sensible defaults
+# edit .env to set LAX_PORT, LAX_SMTP_URL, LAX_SECURE_COOKIES, etc.
+docker compose up -d
+```
+
+Customize the host port without editing the compose file:
+
+```bash
+LAX_PORT=8080 docker compose up -d
+```
+
+### B. Local development (two terminals, localhost-only)
+
+```bash
+# Terminal 1 — backend (Python 3.10+)
 cd backend
-./run.sh                      # Windows: run.bat
+./run.sh                        # Windows: run.bat
 # On first start this auto-creates little_alphaxiv.db + generates backend/.env
 
 # Terminal 2 — frontend
 cd frontend
 npm install
-npm run dev
+npm run dev                     # http://127.0.0.1:5173
 ```
 
-Open **http://127.0.0.1:5173** → you're redirected to `/login` → click
-**Register**, pick a username + email + password → **Settings** → add an OpenAI-compatible
-provider (see below) and set it default → back to the chat. (The email is for
-password recovery — see [Forgot password](#forgot-password).)
+Open **http://127.0.0.1:5173** → register → add a provider → chat. Vite proxies
+`/api/*` → `http://127.0.0.1:8000`. No env vars needed for the default setup.
 
-Vite proxies `/api/*` → `http://127.0.0.1:8000`. No env vars needed for the
-default setup.
+> Windows users: prefer `run.bat` over `bash run.sh` — `bash` may resolve to
+> WSL, whose Python 3.8 can't parse the backend's `str | None` syntax (needs
+> Python 3.10+).
 
-### B. LAN multi-user (the original goal: colleagues register & log in)
+### C. LAN multi-user (colleagues register & log in)
 
-`run.sh`/`run.bat` bind `127.0.0.1` only. For LAN access, serve the built
+`run.sh`/`run.bat` bind `127.0.0.1` only. For LAN access, serve the **built**
 frontend from the backend (same-origin — avoids all cookie/CORS friction):
 
 ```bash
-# 1. Build the frontend (produces frontend/dist)
-cd frontend && npm run build
-
-# 2. Run the backend on 0.0.0.0; it auto-mounts frontend/dist at "/"
+cd frontend && npm run build     # produces frontend/dist
 cd ../backend
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000   # auto-mounts frontend/dist at "/"
 ```
 
 Find your LAN IP (`ipconfig` → the `192.168.x.x` one). Colleagues open
-**`http://<your-ip>:8000/`** in their browser → each registers their own account,
-adds their own provider, and chats. Everyone's data is independent and
-invisible to others.
+**`http://<your-ip>:8000/`**, register their own account, add their own
+provider, and chat. Everyone's data is independent and invisible to others.
 
-> Same-origin serving means you don't need to set `LAX_ALLOWED_ORIGINS`.
 > ⚠️ `--host 0.0.0.0` exposes the backend — keep it on the LAN, not the public
-> internet (the DB now holds everyone's encrypted API keys + chat history).
+> internet (the DB holds everyone's encrypted API keys + chat history). For
+> internet exposure, put it behind TLS and set `LAX_SECURE_COOKIES=true`.
 
-### Configure a provider
+## 🔑 Configure a provider
 
-Click ⚙ Settings → add an OpenAI-compatible provider:
+Click ⚙ **Settings → Providers** → add an OpenAI-compatible provider:
 
 | Field    | Example                                   |
 |----------|-------------------------------------------|
@@ -116,138 +179,203 @@ Click ⚙ Settings → add an OpenAI-compatible provider:
 
 Any OpenAI-compatible endpoint works (OpenAI, an OpenAI-compatible Anthropic
 gateway, local Ollama with the OpenAI shim, one-api/new-api, etc.). Set one as
-default. The key is sent to the server **once** (over your loopback/LAN),
-encrypted with Fernet, and stored; afterward the UI only shows a masked preview
-(`sk-m…cret`).
+default. The key is sent to the server once, encrypted with Fernet, and stored;
+afterward the UI only shows a masked preview.
 
-Then start a new chat and ask: *"find me recent papers on vision transformers"*.
+## ⚙️ Configuration (env vars)
 
-## Configuration (env vars, all optional)
-
-Set in `backend/.env` (copy from `backend/.env.example`) or the environment.
-Defaults work for localhost dev.
+All optional — defaults work for localhost. In Docker, set these in a root
+`.env` (copy from `.env.docker.example`). For native dev, copy
+`backend/.env.example` → `backend/.env`.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `LAX_DATABASE_URL` | `sqlite:///./little_alphaxiv.db` | SQLite file (resolved relative to `backend/`). |
-| `LAX_SECRET_KEY` | *(auto-generated on first run)* | Fernet key for encrypting stored API keys + signing session cookies. Written to `backend/.env` on first start; **keep it secret — losing it orphans all encrypted keys + sessions.** |
+| `LAX_DATABASE_URL` | `sqlite:///./little_alphaxiv.db` | SQLite file. In Docker: `sqlite:////app/data/little_alphaxiv.db`. |
+| `LAX_SECRET_KEY` | *(auto-generated)* | Fernet key for encrypting stored API keys + signing session cookies. Auto-generated into `./data/.lax_secret_key` (Docker) or `backend/.env` (native) on first run. **Keep it secret — losing it orphans all encrypted keys + sessions.** |
 | `LAX_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated browser origins for CORS. Pinned (no `*`) because credentials flow through cookies. Add your LAN origin if running cross-origin. |
-| `LAX_SECURE_COOKIES` | `false` | Set `true` when behind HTTPS so the session cookie gets the `Secure` flag. |
+| `LAX_SECURE_COOKIES` | `false` | Set `true` behind HTTPS so the session cookie gets the `Secure` flag. |
 | `LAX_SESSION_MAX_AGE_DAYS` | `30` | Session cookie + row lifetime. |
-| `LAX_SMTP_URL` | *(unset)* | SMTP URL for sending password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the backend terminal + `backend/lax_reset_links.log` (zero-config for localhost). |
+| `LAX_SMTP_URL` | *(unset)* | SMTP URL for password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the logs (zero-config for localhost). |
 | `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
-| `LAX_PDF_CACHE` | `~/.little_alphaxiv/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). |
+| `LAX_PDF_CACHE` | `~/.little_alphaxiv/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). In Docker: `/app/data/pdf_cache`. |
+| `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
 
-## Status
+## 🧠 How it works
 
-| Area | Feature | State |
-|------|---------|-------|
-| Auth | register/login/logout, httpOnly session cookies, bcrypt | ✅ verified |
-| Password recovery | email reset link (SMTP/console), single-use tokens, session purge on reset | ✅ verified |
-| Persistence | SQLite + per-user conversations/annotations/providers/settings | ✅ verified |
-| Security | API keys Fernet-encrypted at rest; plaintext key leaves browser only at save | ✅ verified |
-| 1 | LLM proxy + streaming chat (now auth-aware, `provider_id`) | ✅ verified |
-| 2 | arXiv search + tool-calling loop | ✅ verified (E2E via mock LLM) |
-| 3 | PDF proxy + pdf.js preview + range | ✅ verified |
-| 4 | Full-text extraction + paper chat | ✅ verified |
-| 5 | Browser → server one-time migration | ✅ verified (E2E: data survives a browser switch) |
-| 6 | anysearch MCP (`web_search`) | ⏳ stub — real wiring TODO |
-| 7 | Settings + multi-provider (per-user) | ✅ verified |
-| 8 | Zotero integration (local + web) | ✅ working; per-request creds (v1) |
+- **Auth + persistence:** register/login; the backend sets an httpOnly
+  `lax_session` cookie (signed via `itsdangerous`, looked up in a `sessions`
+  table — logout deletes the row). Every API call is scoped to the authenticated
+  `user.id`. Chat history, annotations, provider config, and settings all live
+  in SQLite, per-user.
+- **Discovery (general chat):** you describe what you want; the assistant calls
+  `search_arxiv` (and optionally `web_search`); results render as clickable paper
+  cards. Click → paper view.
+- **Paper view:** the PDF loads via the proxy (cached to disk); pdf.js extracts
+  the full text once, cached in a **global** `papers` table (same arxiv_id → same
+  text, deduplicated across users); that text is injected into the chat context.
+- **Tools run in the browser.** The backend proxies + persists; the OpenAI-style
+  tool-calling loop lives in the frontend (`src/lib/llm.ts`).
+- **One-time migration:** on first login after upgrading from the old
+  browser-only version, if the browser still holds legacy IndexedDB + localStorage
+  data, the app offers to import it into your account (idempotent).
 
-### Known follow-ups (non-blocking)
+For a deeper architecture tour, see [`CLAUDE.md`](./CLAUDE.md).
 
-- **Step 6 — real anysearch MCP wiring.** `backend/app/routers/websearch.py` is
-  a placeholder.
-- **~18 Playwright drivers** in `tools/` still use the old localStorage
-  `seed_provider`; only `drive.py` and the new `drive_auth_persistence.py` were
-  adapted to API-driven auth. They'll fail until adapted — doesn't affect the
-  app itself.
-- **`zotero.py` full migration** — the ~960-line router still receives Zotero
-  creds per request (stored encrypted in `user_settings`, returned decrypted to
-  the owner). Functional; a full rewrite to read creds from the DB inside each
-  handler is a future cleanup.
-- **Password recovery now exists** — see [Forgot password](#forgot-password).
-  Emails a single-use reset link (SMTP when configured, else printed to the
-  terminal); resetting purges all of the user's sessions. An admin CLI
-  (`tools/reset_password.py`) is the escape hatch for accounts with no email.
-
-## Forgot password
-
-- On the login page, click **Forgot password?** and enter your username or
-  email. A reset link is sent to the email on file (the endpoint always returns
-  the same generic success — it never reveals whether an account exists).
-- No SMTP configured (`LAX_SMTP_URL` unset)? The link is printed to the backend
-  terminal and appended to `backend/lax_reset_links.log` — fine for localhost.
-- Configure SMTP via `LAX_SMTP_URL` (e.g. `smtps://user:pass@smtp.gmail.com:465`)
-  for real email. Gmail: use an app password, not your account password.
-- Opening the link lets you set a new password; you're then auto-logged-in. The
-  link is single-use and expires after `LAX_PASSWORD_RESET_TTL_MIN` (30 min).
-- Accounts created before email was required (no email on file) can't use the
-  email flow. Set an email in **Settings → Account** while logged in, or — if
-  you're locked out *now* — use the admin CLI to reset directly:
-
-  ```bash
-  python tools/reset_password.py <username>
-  ```
-
-  It bcrypt-hashes a new password straight in the DB (no Fernet key needed) and
-  optionally clears the user's sessions.
-
-## Project layout
+## 📁 Project structure
 
 ```
-little_alphaxiv/
-  backend/
-    app/main.py              # FastAPI app, lifespan (DB+migrations+security init), CORS, routers
-    app/security.py          # Fernet (api keys) + bcrypt (passwords) + itsdangerous (session cookie)
-    app/db.py                # async engine, WAL PRAGMAs, session factory, get_session dependency
-    app/models.py            # 8 SQLModel tables + password_reset
-    app/deps.py              # current_user dependency (the per-user scoping chokepoint)
-    app/routers/auth.py      # /api/auth/{register,login,logout,me,forgot-password,reset-password,account}
-    app/email.py             # password-reset email delivery (SMTP or console backend)
-    app/routers/providers.py # /api/providers — per-user provider CRUD (key masked on read)
-    app/routers/settings.py  # /api/settings — theme, searchSources, zotero (keys encrypted)
-    app/routers/conversations.py  # /api/conversations — messages stored as JSON column
-    app/routers/annotations.py     # /api/annotations — per-user PDF annotations
-    app/routers/papers.py    # /api/papers — GLOBAL paper cache (full_text dedup)
-    app/routers/migrate.py   # /api/migrate/import — one-time browser→server import
-    app/routers/llm.py       # /api/llm — passthrough + SSE (takes provider_id, decrypts key)
-    app/routers/{search,pdf,models,websearch,semantic_scholar,openalex,zotero,zotero_note_sync}.py
-    alembic/                 # migrations (lifespan runs `upgrade head` on startup)
-    run.sh, run.bat, requirements.txt
-  frontend/
-    src/lib/api.ts           # fetch wrappers (credentials:include), SSE parser, auth/CRUD/migrate
-    src/lib/llm.ts           # client-side tool-calling loop
-    src/lib/db.ts            # thin shim → /api/papers (was IndexedDB)
-    src/lib/legacyDb.ts      # read-only IDB reader, used once by migrate.ts
-    src/lib/migrate.ts       # one-time browser→server import
-    src/store/{settings,conversations,annotations,zoteroNoteSync,ui}.ts  # hydrate from backend
-    src/pages/Login.tsx      # register/login + forgot-password link
-    src/pages/ForgotPassword.tsx  # /forgot — request a reset link
-    src/pages/ResetPassword.tsx   # /reset?token=… — set a new password
-    src/components/{ChatPanel,PdfViewer,PaperCard,Sidebar}.tsx
-    src/views/{ChatView,PaperView,SettingsView}.tsx
-  tools/
-    drive_auth_persistence.py  # E2E: register→chat→refresh→fresh-browser-login→data-present→logout
-    drive_password_reset.py    # E2E: register→forgot→reset→auto-login→old-pw-fails→single-use
-    reset_password.py          # admin CLI: reset a user's password directly in the DB
-    mock_llm.py                # mock OpenAI-compatible server on :5050 (no real key needed)
-    drive_*.py                 # other Playwright drivers (most still on the old seed pattern)
-  docs/designs/
+little-alphaxiv/
+├── backend/                  # FastAPI: proxy + per-user persistence + auth
+│   ├── app/
+│   │   ├── main.py           # FastAPI app, lifespan, CORS, static mount, routers
+│   │   ├── security.py       # Fernet (keys) + bcrypt (passwords) + itsdangerous (sessions)
+│   │   ├── db.py             # async engine, WAL PRAGMAs, session factory
+│   │   ├── models.py         # SQLModel tables + password_reset
+│   │   ├── deps.py           # current_user — the per-user scoping chokepoint
+│   │   ├── email.py          # password-reset delivery (SMTP or console)
+│   │   └── routers/          # auth, providers, settings, conversations,
+│   │                         #   annotations, papers, llm, search, pdf, models,
+│   │                         #   zotero, zotero_note_sync, migrate, websearch, …
+│   ├── alembic/              # migrations (lifespan runs `upgrade head` on startup)
+│   ├── tests/                # pytest (conftest builds a per-test temp SQLite)
+│   ├── requirements.txt
+│   └── run.sh / run.bat
+├── frontend/                 # Vite + React + TypeScript SPA
+│   ├── src/
+│   │   ├── lib/              # api, llm (tool-calling loop), stores, annotations
+│   │   ├── components/       # ChatPanel, PdfViewer, AnnotLayer, Sidebar, …
+│   │   ├── views/            # ChatView, PaperView, SettingsView
+│   │   └── store/            # zustand stores (hydrated from backend on login)
+│   └── package.json
+├── tools/                    # Playwright E2E drivers + mock LLM + admin CLIs
+├── docs/designs/             # validated design docs
+├── Dockerfile                # multi-stage: build frontend → run backend + serve dist
+├── docker-compose.yml        # one-command self-hosted run
+└── docker/entrypoint.sh      # auto-generates + persists LAX_SECRET_KEY
 ```
 
-## Security note
+## 🔒 Security
 
-API keys are stored server-side, **Fernet-encrypted at rest** (keyed by
-`LAX_SECRET_KEY`). The plaintext key leaves the browser only once — when you
-save a provider — travels over your loopback/LAN to the backend, and is
-decrypted in memory only for the duration of one upstream LLM call (or to show
-the masked preview back to you, the owner). It is never logged. Passwords are
-bcrypt-hashed. Sessions are httpOnly + signed cookies backed by a DB table
-(logout = row delete).
+- API keys are stored server-side, **Fernet-encrypted at rest** (keyed by
+  `LAX_SECRET_KEY`). The plaintext key leaves the browser only once — when you
+  save a provider — and is decrypted in memory only for the duration of one
+  upstream LLM call (or to show the masked preview back to you, the owner). It
+  is never logged.
+- Passwords are bcrypt-hashed. Sessions are httpOnly + signed cookies backed by
+  a DB table (logout = row delete).
+- Password reset tokens are single-use, TTL-bounded, and only `sha256(token)` is
+  stored. The `forgot-password` endpoint always returns the same generic success
+  — it never reveals whether an account exists (anti-enumeration). Resetting
+  purges all of the user's sessions.
+- The app is designed for a **trusted LAN**. Don't expose it to the public
+  internet without adding TLS (`LAX_SECURE_COOKIES=true`) and reconsidering
+  registration openness.
 
-The app is designed for a trusted LAN. Don't expose it to the public internet
-without adding TLS (`LAX_SECURE_COOKIES=true`) and reconsidering registration
-openness.
+## 🗺 Roadmap
+
+| Area | Status |
+|------|--------|
+| Auth, persistence, encrypted keys, password recovery | ✅ verified |
+| arXiv search + tool-calling, PDF preview, paper chat | ✅ verified |
+| PDF annotations (rect/draw/text/highlight) | ✅ verified |
+| Zotero integration (local + web) | ✅ working; per-request creds (v1) |
+| `web_search` via anysearch MCP | ⏳ stub — real wiring TODO |
+
+Known follow-ups (non-blocking) live in [`CLAUDE.md`](./CLAUDE.md). Notable ones:
+real anysearch MCP wiring; a handful of Playwright drivers in `tools/` still use
+the old localStorage seed pattern; the Zotero router still takes per-request
+creds (functional, future cleanup).
+
+## 🤝 Contributing
+
+Contributions are welcome! See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the
+full guide. The short version:
+
+```bash
+# Backend (Python 3.10+)
+cd backend && ./run.sh                 # Windows: run.bat
+
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Tests (the gates)
+cd frontend && npm run typecheck && npm test      # frontend (TS + Vitest)
+cd backend && python -m pytest                   # backend (pytest)
+```
+
+The E2E rig (Playwright + a mock LLM on `:5050`) lets you verify frontend
+changes with **no real API key** — see [`tools/mock_llm.py`](./tools/mock_llm.py)
+and the `tools/drive_*.py` drivers. `drive_auth_persistence.py` and
+`drive_password_reset.py` are the canonical regressions.
+
+Before opening a PR: run the gates above, keep the diff focused, and
+[open an issue](https://github.com/DylanUnicorn/little-alphaxiv/issues) first for
+larger changes so we can align on direction.
+
+## ❓ FAQ
+
+<details>
+<summary><b>Is my API key safe?</b></summary>
+
+Your key is sent to the server once (over your loopback/LAN), encrypted with
+Fernet, and stored. It's decrypted in memory only for the duration of a single
+upstream LLM call and never logged. The browser only ever holds a masked
+preview. Lose `LAX_SECRET_KEY`, however, and all encrypted keys + sessions are
+orphaned — back up `./data/.lax_secret_key` (Docker) or `backend/.env` (native).
+</details>
+
+<details>
+<summary><b>Can I run this on the public internet?</b></summary>
+
+It's designed for a trusted LAN. If you expose it publicly, put it behind TLS,
+set `LAX_SECURE_COOKIES=true`, restrict `LAX_ALLOWED_ORIGINS`, and reconsider
+whether registration should be open (anyone who registers can store an
+encrypted key + chat history on your server).
+</details>
+
+<details>
+<summary><b>How are papers stored? Are they shared?</b></summary>
+
+PDF full text is extracted once and cached in a **global** `papers` table
+(deduplicated across users by arxiv_id — same paper, one copy). Your
+*conversations* and *annotations* are per-user and invisible to others. The PDF
+file cache is content-addressed and non-sensitive.
+</details>
+
+<details>
+<summary><b>I forgot my password and have no email on file.</b></summary>
+
+Accounts created before email was required can't use the email flow. Set an
+email in **Settings → Account** while logged in, or — if you're locked out now —
+use the admin CLI to reset directly:
+
+```bash
+python tools/reset_password.py <username>   # bcrypt-hashes a new password in the DB
+```
+</details>
+
+<details>
+<summary><b>Which LLM providers work?</b></summary>
+
+Any OpenAI-compatible `/v1/chat/completions` endpoint: OpenAI, an
+OpenAI-compatible Anthropic gateway, local Ollama with the OpenAI shim,
+one-api/new-api, etc. Add the base URL + key in Settings → Providers.
+</details>
+
+## 📄 License
+
+Released under the [MIT License](./LICENSE) — © 2026 DylanUnicorn and
+contributors.
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=DylanUnicorn/little-alphaxiv&type=Date)](https://star-history.com/#DylanUnicorn/little-alphaxiv&Date)
+
+---
+
+<div align="center">
+
+**If Little Alphaxiv is useful to you, please consider giving it a ⭐ — it helps others find it.**
+
+</div>
