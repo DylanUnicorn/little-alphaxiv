@@ -1,8 +1,10 @@
 """LLM proxy — passthrough to an OpenAI-compatible /chat/completions endpoint.
 
-Stateless: base_url + api_key arrive per-request in the JSON body (the browser
-holds them in localStorage). We forward the payload verbatim and stream the
-upstream SSE response back to the client byte-for-byte.
+Auth-aware: the body now carries only {provider_id, payload}. The provider's
+base_url + (decrypted) api_key come from the authenticated user's stored
+ProviderRow, so the plaintext key never crosses the wire from the browser. We
+forward the payload verbatim and stream the upstream SSE response back
+byte-for-byte. SSE piping / _TIMEOUT / error-event injection are unchanged.
 """
 from __future__ import annotations
 
@@ -10,19 +12,22 @@ import json
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from .. import security
+from ..db import get_session
+from ..deps import current_user
+from ..models import ProviderRow, User
 
 router = APIRouter()
 
-# OpenAI-compatible chat completions path appended to the user's base_url.
+# OpenAI-compatible chat completions path appended to the provider's base_url.
 _CHAT_PATH = "/chat/completions"
 # Keep the upstream connection alive across long streaming turns.
 _TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=60.0, pool=15.0)
-
-
-class ProxyRequest(BaseException):
-    """Internal sentinel — not used (kept for clarity)."""
 
 
 def _resolve_target(base_url: str) -> str:
@@ -32,14 +37,44 @@ def _resolve_target(base_url: str) -> str:
     return base + _CHAT_PATH
 
 
+async def _resolve_provider(
+    provider_id: str | None, user: User, session: AsyncSession
+) -> ProviderRow:
+    """Load the user's provider by id, or their default if id is null."""
+    if provider_id:
+        row = await session.get(ProviderRow, provider_id)
+        if row is None or row.user_id != user.id:
+            raise HTTPException(status_code=404, detail="provider not found")
+        return row
+    rows = (
+        await session.exec(
+            select(ProviderRow).where(
+                ProviderRow.user_id == user.id,
+                ProviderRow.is_default == True,  # noqa: E712
+            )
+        )
+    ).all()
+    if not rows:
+        # Fall back to any provider the user has.
+        rows = (
+            await session.exec(select(ProviderRow).where(ProviderRow.user_id == user.id))
+        ).all()
+    if not rows:
+        raise HTTPException(status_code=400, detail="no provider configured")
+    return rows[0]
+
+
 @router.post("/llm")
-async def llm_proxy(request: Request) -> Any:
-    """Forward a chat-completion request to the user-configured OpenAI-compatible endpoint.
+async def llm_proxy(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Forward a chat-completion request to the user's configured provider.
 
     Body shape:
         {
-          "base_url": "https://api.openai.com/v1",
-          "api_key": "sk-...",
+          "provider_id": "<id>" | null,   # null → user's default provider
           "payload": { ...full OpenAI chat completion body incl. messages, tools, stream }
         }
     """
@@ -48,19 +83,14 @@ async def llm_proxy(request: Request) -> Any:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"invalid JSON: {exc}") from exc
 
-    base_url = body.get("base_url")
-    api_key = body.get("api_key")
+    provider_id = body.get("provider_id")
     payload = body.get("payload")
-
-    if not api_key:
-        raise HTTPException(status_code=400, detail="api_key is required")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="payload object is required")
 
-    target = _resolve_target(base_url) if base_url else None
-    if target is None:
-        raise HTTPException(status_code=400, detail="base_url is required")
-
+    provider = await _resolve_provider(provider_id, user, session)
+    target = _resolve_target(provider.base_url)
+    api_key = security.decrypt(provider.api_key_enc)
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",

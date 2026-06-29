@@ -157,7 +157,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   useEffect(() => {
     if (provider && cachedModels.length === 0 && !modelsFetched) {
       setModelsFetched(true);
-      fetchAndCacheModels(provider.id, provider.base_url, provider.api_key);
+      fetchAndCacheModels(provider.id);
     }
   }, [provider?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 

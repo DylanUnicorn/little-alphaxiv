@@ -46,22 +46,36 @@ def new_page(pw, headless=True):
     return page
 
 
+E2E_USER = "e2e_drive"
+E2E_PASS = "testtest123"
+BACK = "http://127.0.0.1:8000"
+
+
 def seed_provider(page):
-    """Inject the mock provider into localStorage before app loads."""
-    page.goto(f"{APP}/settings", wait_until="networkidle")
-    # The settings store persists under 'little-alphaxiv-settings' in localStorage.
-    page.evaluate(
-        """(prov) => {
-      const key = 'little-alphaxiv-settings';
-      const cur = JSON.parse(localStorage.getItem(key) || '{}');
-      const providers = cur.state?.providers || [];
-      providers.push({ id: 'mock-prov', ...prov, is_default: true });
-      cur.state = cur.state || {};
-      cur.state.providers = providers;
-      cur.state.defaultProviderId = 'mock-prov';
-      localStorage.setItem(key, JSON.stringify(cur));
-    }""",
-        MOCK_PROVIDER,
+    """Register/login the e2e user and add the mock provider via the API.
+
+    Persistence is server-side + per-user now, so we authenticate the browser
+    context (cookie set by /login) and POST the provider, instead of injecting
+    into localStorage.
+    """
+    import json
+    # Register (idempotent: ignore 409 if the user already exists).
+    page.request.post(
+        f"{BACK}/api/auth/register",
+        data=json.dumps({"username": E2E_USER, "password": E2E_PASS}),
+        headers={"Content-Type": "application/json"},
+    )
+    # Login to set the cookie in the browser context.
+    page.request.post(
+        f"{BACK}/api/auth/login",
+        data=json.dumps({"username": E2E_USER, "password": E2E_PASS}),
+        headers={"Content-Type": "application/json"},
+    )
+    # Add the mock provider (idempotent via fixed id 'mock-prov').
+    page.request.post(
+        f"{BACK}/api/providers",
+        data=json.dumps({"id": "mock-prov", **MOCK_PROVIDER, "is_default": True}),
+        headers={"Content-Type": "application/json"},
     )
 
 

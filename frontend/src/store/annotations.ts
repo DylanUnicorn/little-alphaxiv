@@ -1,9 +1,9 @@
-// zustand store: flat annotation array + op-stack + IndexedDB persistence + UI state.
+// zustand store: flat annotation array + op-stack + server persistence + UI state.
 import { create } from "zustand";
 import type { Annotation, NormPoint, Op, Tool } from "../types";
 import { commit, undoOp, redoOp, type AnnotState } from "../lib/opstack";
-import { listAnnotations, putAnnotation, deleteAnnotation } from "../lib/db";
-import { newId } from "../lib/annotations";
+import * as api from "../lib/api";
+import { newId, migrateAnnotation } from "../lib/annotations";
 
 // NOTE on naming: the op-stack (AnnotState) uses `undo: Op[]` / `redo: Op[]`
 // arrays. This store exposes `undo()` / `redo()` *actions* of the same names,
@@ -48,19 +48,20 @@ function fromOpState(n: AnnotState) {
   return { annots: n.annots, undoStack: n.undo, redoStack: n.redo };
 }
 
-// Persist the net effect of an op to IndexedDB.
+// Persist the net effect of an op to the server (fire-and-forget; the op-stack
+// is the in-memory source of truth and the UI updates optimistically).
 function persistOp(arxivId: string, op: Op): void {
   switch (op.kind) {
     case "add":
-      void putAnnotation({ ...op.annot, arxiv_id: arxivId });
+      void api.putAnnotation({ ...op.annot, arxiv_id: arxivId });
       break;
     case "remove":
-      void deleteAnnotation(op.annot.id);
+      void api.deleteAnnotation(op.annot.id);
       break;
     case "edit":
     case "move":
     case "resize":
-      void putAnnotation({ ...op.after, arxiv_id: arxivId });
+      void api.putAnnotation({ ...op.after, arxiv_id: arxivId });
       break;
   }
 }
@@ -77,7 +78,11 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
   drawSession: {},
 
   load: async (arxivId) => {
-    const annots = await listAnnotations(arxivId);
+    const raw = await api.listAnnotations(arxivId);
+    // Run the legacy draw.points→draw.strokes migration on read (defensive —
+    // the migrate/import endpoint already bakes it in, but a row written by an
+    // older client would still need this).
+    const annots = raw.map(migrateAnnotation);
     set({ arxivId, annots, undoStack: [], redoStack: [], selectedId: null, drawSession: {} });
   },
 
@@ -171,15 +176,15 @@ export const useAnnotations = create<AnnotationUIState>((set, get) => ({
     // persist the inverse effect
     switch (op.kind) {
       case "add": // inverse = remove
-        void deleteAnnotation(op.annot.id);
+        void api.deleteAnnotation(op.annot.id);
         break;
       case "remove": // inverse = add
-        void putAnnotation({ ...op.annot, arxiv_id: arxivId });
+        void api.putAnnotation({ ...op.annot, arxiv_id: arxivId });
         break;
       case "edit":
       case "move":
       case "resize": // inverse = restore before
-        void putAnnotation({ ...op.before, arxiv_id: arxivId });
+        void api.putAnnotation({ ...op.before, arxiv_id: arxivId });
         break;
     }
     set((s) => fromOpState(undoOp(toOpState(s))));

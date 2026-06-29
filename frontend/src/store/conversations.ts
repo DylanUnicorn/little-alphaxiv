@@ -1,9 +1,10 @@
-// Conversations store, backed by IndexedDB. UI reads from this store; every
-// mutation persists to IDB — EXCEPT empty conversations.
+// Conversations store, backed by the server DB (per-user). UI reads from this
+// store; every mutation persists to the backend via /api/conversations — EXCEPT
+// empty conversations.
 //
 // Empty-conversation rule (standard chat-app behavior):
 //   - A brand-new conversation with 0 messages lives only in memory. It is NOT
-//     written to IDB, so reloading the page discards it.
+//     sent to the backend, so reloading the page discards it.
 //   - The first user message (appendMessages) persists the conversation.
 //   - create({ reuseEmpty: true }) reuses an existing empty conversation of the
 //     same type (+ same paper_id) instead of spawning duplicates, so clicking
@@ -11,7 +12,7 @@
 
 import { create } from "zustand";
 import type { ChatMessage, Conversation, ConversationType } from "../types";
-import * as db from "../lib/db";
+import * as api from "../lib/api";
 
 interface ConvState {
   conversations: Conversation[];
@@ -60,11 +61,11 @@ function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-// Persist a conversation to IDB only if it has at least one message.
+// Persist a conversation to the server only if it has at least one message.
 // Empty conversations stay in-memory only.
 async function persist(conv: Conversation): Promise<void> {
   if (conv.messages.length > 0) {
-    await db.saveConversation(conv);
+    await api.putConversation(conv);
   }
 }
 
@@ -97,22 +98,23 @@ export const useConversations = create<ConvState>((set, get) => ({
 
   load: async () => {
     set({ loading: true });
-    const all = await db.listConversations();
-    // Purge any legacy empty conversations that previous versions may have
-    // persisted, enforcing the invariant that IDB never holds 0-message convs.
-    const empties = all.filter((c) => c.messages.length === 0);
-    const conversations = all.filter((c) => c.messages.length > 0);
-    await Promise.all(empties.map((c) => db.deleteConversation(c.id)));
-    // hasHistory = any persisted user data: conversations (with messages),
-    // annotations, or cached papers. Computed once at load; read-only after.
-    const annotationCount = await db.countAnnotations();
-    const paperCount = await db.countPapers();
+    // The sidebar list endpoint omits messages (too heavy); fetch each
+    // conversation's full body so the in-memory store keeps messages hot (the
+    // chat loop reads getActive().messages directly). LAN-scale, so N small
+    // GETs are fine.
+    const summaries = await api.listConversations();
+    const conversations = await Promise.all(
+      summaries.map((s) => api.getConversation(s.id).catch(() => ({ ...s, messages: [] })))
+    );
+    // Defensive: drop any 0-message rows the server might hold (legacy).
+    const nonEmpty = conversations.filter((c) => c.messages.length > 0);
     set({
-      conversations,
+      conversations: nonEmpty,
       loading: false,
       loaded: true,
-      hasHistory:
-        conversations.length > 0 || annotationCount > 0 || paperCount > 0,
+      // hasHistory is set by the boot sequence from /api/auth/me.hasData; keep
+      // it consistent here too (any persisted conversation counts).
+      hasHistory: get().hasHistory || nonEmpty.length > 0,
     });
   },
 
@@ -223,7 +225,7 @@ export const useConversations = create<ConvState>((set, get) => ({
     }),
 
   remove: async (id) => {
-    await db.deleteConversation(id); // no-op if it was never persisted
+    await api.deleteConversation(id); // no-op if it was never persisted (404 tolerated server-side)
     set((s) => {
       const conversations = s.conversations.filter((c) => c.id !== id);
       const activeId = s.activeId === id ? null : s.activeId;
@@ -232,7 +234,7 @@ export const useConversations = create<ConvState>((set, get) => ({
   },
 
   removeMany: async (ids) => {
-    await Promise.all(ids.map((id) => db.deleteConversation(id)));
+    await Promise.all(ids.map((id) => api.deleteConversation(id)));
     const kill = new Set(ids);
     set((s) => ({
       conversations: s.conversations.filter((c) => !kill.has(c.id)),

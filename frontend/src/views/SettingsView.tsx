@@ -75,8 +75,8 @@ export function SettingsView() {
     setDraftFetching(true);
     // We use a temporary key to avoid polluting the real cache
     try {
-      const { fetchModels } = await import("../lib/api");
-      const models = await fetchModels(draft.base_url, draft.api_key);
+      const { testModels } = await import("../lib/api");
+      const models = await testModels(draft.base_url, draft.api_key);
       setDraftModels(models);
     } catch {
       setDraftModels([]);
@@ -90,7 +90,7 @@ export function SettingsView() {
     const provider = addProvider({ ...draft, name: draft.name || draft.model });
     // Cache models if we fetched them for this draft
     if (draftModels.length > 0) {
-      fetchAndCacheModels(provider.id, draft.base_url, draft.api_key).then(() => {
+      fetchAndCacheModels(provider.id).then(() => {
         // Replace with already-fetched list (avoid redundant network call)
         useSettings.setState((s) => ({
           providerModels: { ...s.providerModels, [provider.id]: draftModels },
@@ -276,8 +276,10 @@ export function SettingsView() {
         <h2 id="providers" style={{ scrollMarginTop: "1rem" }}>Providers</h2>
         <p className="settings-hint">
           Add any OpenAI-compatible endpoint (OpenAI, Anthropic via a compatible
-          gateway, local Ollama/OpenAI servers, etc.). Keys are stored only in
-          your browser (localStorage) and sent to the backend proxy per request.
+          gateway, local Ollama/OpenAI servers, etc.). Keys are stored
+          server-side, encrypted at rest — the plaintext key never leaves your
+          browser except when you first save it. Only a masked preview is shown
+          here afterward.
         </p>
         <p className="settings-hint">
           <strong>Vision model:</strong> used automatically when you send an
@@ -301,14 +303,14 @@ export function SettingsView() {
                   <button className="link-btn danger" onClick={() => removeProvider(p.id)}>remove</button>
                 </div>
                 <div className="provider-detail">{p.base_url} · model: <strong>{p.model}</strong></div>
-                <div className="provider-detail">key: {p.api_key.slice(0, 6)}…{p.api_key.slice(-4)}</div>
+                <div className="provider-detail">key: {p.api_key || "(not set)"}</div>
                 <div className="provider-models-row">
                   <span className="provider-models-label">
                     {hasModels ? `${cached.length} models cached` : "No models cached"}
                   </span>
                   <button
                     className="link-btn fetch-models-btn"
-                    onClick={() => fetchAndCacheModels(p.id, p.base_url, p.api_key)}
+                    onClick={() => fetchAndCacheModels(p.id)}
                   >
                     {hasModels ? "Refresh models" : "Fetch models"}
                   </button>

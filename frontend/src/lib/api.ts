@@ -2,7 +2,7 @@
 // proxies to the FastAPI backend in dev. Keys live in the browser; the proxy
 // is stateless.
 
-import type { Paper, Provider, ModelInfo, TokenUsage } from "../types";
+import type { Paper, Provider, ModelInfo, TokenUsage, Conversation, Annotation } from "../types";
 
 const BASE = ""; // same-origin in dev via Vite proxy
 
@@ -60,10 +60,13 @@ export async function streamChat(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      base_url: provider.base_url,
-      api_key: provider.api_key,
+      // Auth-aware: the backend resolves the provider row by id (or the user's
+      // default if null) and decrypts the stored api_key server-side. The
+      // plaintext key never crosses the wire from the browser anymore.
+      provider_id: provider.id,
       payload,
     }),
+    credentials: "include",
     signal,
   });
 
@@ -100,10 +103,10 @@ export async function completeChat(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      base_url: provider.base_url,
-      api_key: provider.api_key,
+      provider_id: provider.id,
       payload,
     }),
+    credentials: "include",
     signal,
   });
 
@@ -293,21 +296,38 @@ export function pdfUrlForOa(url: string): string {
   return `${BASE}/api/pdf-url?url=${encodeURIComponent(url)}`;
 }
 
-/** Fetch available models from the user's provider via the backend proxy. */
-export async function fetchModels(
-  baseUrl: string,
-  apiKey: string
-): Promise<ModelInfo[]> {
+/** Fetch available models from the user's provider via the backend proxy.
+ *  Auth-aware: takes a provider_id (not inline base_url/api_key); the backend
+ *  resolves the provider row, decrypts the key, and forwards to {base_url}/models. */
+export async function fetchModels(providerId: string): Promise<ModelInfo[]> {
   const r = await fetch(
-    `${BASE}/api/models?base_url=${encodeURIComponent(baseUrl)}&api_key=${encodeURIComponent(apiKey)}`
+    `${BASE}/api/models?provider_id=${encodeURIComponent(providerId)}`,
+    { credentials: "include" }
   );
   if (!r.ok) throw new Error(`models error ${r.status}`);
   const data = await r.json();
+  return normalizeModels(data);
+}
+
+/** Test-fetch /models for credentials typed in the Add-provider form (before the
+ *  provider is saved). The plaintext key is in the request body — same exposure
+ *  as the save flow, and it's the authenticated owner. */
+export async function testModels(baseUrl: string, apiKey: string): Promise<ModelInfo[]> {
+  const r = await fetch(`${BASE}/api/models/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base_url: baseUrl, api_key: apiKey }),
+    credentials: "include",
+  });
+  if (!r.ok) throw new Error(`models test error ${r.status}`);
+  return normalizeModels(await r.json());
+}
+
+function normalizeModels(data: any): ModelInfo[] {
   const raw = (data.data || data.models || []) as Array<Record<string, unknown>>;
   // Pick the standard /v1/models fields plus a context-length if the provider
   // exposes one (PPIO and other OpenAI-compatible gateways sometimes do, under
-  // a few different key names). Previously the `as ModelInfo[]` cast silently
-  // discarded any extra fields, so detection never worked.
+  // a few different key names).
   return raw.map((m) => {
     const context_length = pickContextLength(m);
     return {
@@ -499,4 +519,278 @@ export async function zoteroGetSelectedCollection(
  *  is the same in a synced library. */
 export function zoteroSelectUrl(itemKey: string): string {
   return `zotero://select/library/items/${itemKey}`;
+}
+
+// ---------------------------------------------------------------------------
+// Auth + persistence (server-side, per-user). All calls send credentials:
+// "include" so the httpOnly lax_session cookie travels with them.
+// ---------------------------------------------------------------------------
+
+export interface Me {
+  id: number;
+  username: string;
+  hasData: boolean;
+}
+
+async function jfetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${BASE}${path}`, { ...init, credentials: "include" });
+}
+
+export async function register(username: string, password: string): Promise<Me> {
+  const r = await jfetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function login(username: string, password: string): Promise<Me> {
+  const r = await jfetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function logout(): Promise<void> {
+  await jfetch("/api/auth/logout", { method: "POST" });
+}
+
+export async function getMe(): Promise<Me | null> {
+  const r = await jfetch("/api/auth/me");
+  if (r.status === 401) return null;
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ---- providers ----
+
+export interface ProviderOut {
+  id: string;
+  name: string;
+  base_url: string;
+  api_key: string; // MASKED (first4…last4) — never the plaintext
+  model: string;
+  vision_model?: string | null;
+  is_default: boolean;
+}
+
+export async function listProviders(): Promise<ProviderOut[]> {
+  const r = await jfetch("/api/providers");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function addProvider(body: {
+  id?: string; // frontend-generated; server uses it as the PK
+  name: string; base_url: string; api_key: string; model: string;
+  vision_model?: string | null; is_default?: boolean;
+}): Promise<ProviderOut> {
+  const r = await jfetch("/api/providers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function updateProvider(id: string, body: Partial<{
+  name: string; base_url: string; api_key: string; model: string;
+  vision_model: string | null; is_default: boolean;
+}>): Promise<ProviderOut> {
+  const r = await jfetch(`/api/providers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function removeProvider(id: string): Promise<void> {
+  const r = await jfetch(`/api/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await errText(r));
+}
+
+export async function setDefaultProvider(id: string): Promise<ProviderOut> {
+  const r = await jfetch(`/api/providers/${encodeURIComponent(id)}/default`, { method: "POST" });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ---- settings (non-provider slice) ----
+
+export interface SettingsOut {
+  theme: string;
+  searchSources: {
+    openalex: { enabled: boolean; apiKey: string; email: string };
+    semanticScholar: { enabled: boolean; apiKey: string };
+  };
+  zotero: { mode: "auto" | "local" | "web"; userId: string; apiKey: string };
+  providerModels: Record<string, ModelInfo[]>;
+}
+
+export async function getSettings(): Promise<SettingsOut> {
+  const r = await jfetch("/api/settings");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function patchSettings(body: Partial<SettingsOut>): Promise<SettingsOut> {
+  const r = await jfetch("/api/settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ---- conversations ----
+
+export type ConversationSummary = Omit<Conversation, "messages">;
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const r = await jfetch("/api/conversations");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function getConversation(id: string): Promise<Conversation> {
+  const r = await jfetch(`/api/conversations/${encodeURIComponent(id)}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function putConversation(conv: Conversation): Promise<Conversation> {
+  const r = await jfetch(`/api/conversations/${encodeURIComponent(conv.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(conv),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const r = await jfetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await errText(r));
+}
+
+// ---- annotations ----
+
+export async function listAnnotations(arxivId: string): Promise<Annotation[]> {
+  const r = await jfetch(`/api/annotations?arxiv_id=${encodeURIComponent(arxivId)}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function putAnnotation(a: Annotation): Promise<Annotation> {
+  const r = await jfetch(`/api/annotations/${encodeURIComponent(a.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(a),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function deleteAnnotation(id: string): Promise<void> {
+  const r = await jfetch(`/api/annotations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await errText(r));
+}
+
+export async function clearAnnotations(arxivId: string): Promise<void> {
+  const r = await jfetch(`/api/annotations?arxiv_id=${encodeURIComponent(arxivId)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await errText(r));
+}
+
+// ---- papers (global cache) ----
+
+export type StoredPaper = Paper & { full_text?: string; fetched_at: number };
+
+export async function getPaper(arxivId: string): Promise<StoredPaper | null> {
+  const r = await jfetch(`/api/papers/${encodeURIComponent(arxivId)}`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function putPaper(p: StoredPaper): Promise<StoredPaper> {
+  const r = await jfetch(`/api/papers/${encodeURIComponent(p.arxiv_id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(p),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ---- one-time browser → server migration ----
+
+export interface MigratePayload {
+  conversations: Conversation[];
+  papers: StoredPaper[];
+  annotations: Annotation[];
+  settings: {
+    providers: Array<{ id: string; name: string; base_url: string; api_key: string; model: string; vision_model?: string | null; is_default?: boolean }>;
+    defaultProviderId: string | null;
+    theme: string | null;
+    searchSources: SettingsOut["searchSources"] | null;
+    zotero: SettingsOut["zotero"] | null;
+    providerModels: Record<string, ModelInfo[]> | null;
+  } | null;
+  zoteroNoteSync: Record<string, {
+    enabled: boolean; note_key: string | null; parent_key: string | null;
+    last_synced_at: number | null; last_error: string | null;
+    last_count: number; content_sig: string | null;
+  }> | null;
+}
+
+export async function importLocalData(payload: MigratePayload): Promise<{ imported: Record<string, number> }> {
+  const r = await jfetch("/api/migrate/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+async function errText(r: Response): Promise<string> {
+  const t = await r.text().catch(() => "");
+  return `${r.status}: ${t.slice(0, 300)}`;
+}
+
+// ---- zotero note-sync state (per-user, per-paper) ----
+
+export interface NoteSyncOut {
+  enabled: boolean;
+  noteKey: string | null;
+  parentKey: string | null;
+  lastSyncedAt: number | null;
+  lastError: string | null;
+  lastCount: number;
+  contentSig: string | null;
+}
+
+export async function listNoteSync(): Promise<Record<string, NoteSyncOut>> {
+  const r = await jfetch("/api/zotero-note-sync");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function putNoteSync(arxivId: string, patch: Partial<NoteSyncOut>): Promise<NoteSyncOut> {
+  const r = await jfetch(`/api/zotero-note-sync/${encodeURIComponent(arxivId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
 }
