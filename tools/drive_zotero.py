@@ -82,6 +82,9 @@ with sync_playwright() as pw:
         any("Create Note from Annotations" in t for t in note_labels),
         f'"Create Note from Annotations" checkbox present (got {note_labels})',
     )
+    # The "?" help glyph sits next to the checkbox label in the note-sync head.
+    q = page.query_selector(".zotero-help-q")
+    check(q is not None, '"?" help glyph present next to Create Note checkbox')
     page.screenshot(path=str(SHOTS / "zotero_note_sync.png"), full_page=False)
 
     # close via ×

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   gatherNoteEntries,
   renderNoteHtml,
+  noteContentSignature,
   normArxiv,
   type TextResolver,
 } from "./zoteroNote";
@@ -121,5 +122,37 @@ describe("renderNoteHtml", () => {
   it("shows a placeholder when there are no entries", () => {
     const html = renderNoteHtml({ arxiv_id: "x" } as never, [], 1_700_000_000_000);
     expect(html).toContain("No annotations yet");
+  });
+});
+
+describe("noteContentSignature", () => {
+  const paper = { title: "T", arxiv_id: "2401.07041" } as never;
+  const entries = [
+    { page: 1, color: "#FFEB3B", text: "a note", kind: "highlight" as const, createdAt: 1, top: 0 },
+  ];
+
+  it("is stable across different `now` timestamps (timestamp-independent)", () => {
+    // Same content → same signature even though the rendered HTML's
+    // "updated <stamp>" would differ. This is the skip-skip invariant the
+    // sync engine relies on to avoid bumping Zotero's note version.
+    expect(noteContentSignature(paper, entries)).toBe(noteContentSignature(paper, entries));
+  });
+
+  it("changes when an annotation's text changes", () => {
+    const e2 = [{ ...entries[0], text: "edited note" }];
+    expect(noteContentSignature(paper, e2)).not.toBe(noteContentSignature(paper, entries));
+  });
+
+  it("changes when the entry count changes", () => {
+    const e2 = [
+      entries[0],
+      { page: 2, color: "#93C5FD", text: "more", kind: "text" as const, createdAt: 2, top: 0 },
+    ];
+    expect(noteContentSignature(paper, e2)).not.toBe(noteContentSignature(paper, entries));
+  });
+
+  it("is invariant under entry re-ordering (sorted input assumed)", () => {
+    const reversed = [entries[0]];
+    expect(noteContentSignature(paper, reversed)).toBe(noteContentSignature(paper, entries));
   });
 });

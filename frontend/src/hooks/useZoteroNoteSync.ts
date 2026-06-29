@@ -26,6 +26,7 @@ import {
   ANNOT_NOTE_TAG,
   findZoteroPaperKey,
   gatherNoteEntries,
+  noteContentSignature,
   renderNoteHtml,
 } from "../lib/zoteroNote";
 import * as db from "../lib/db";
@@ -64,6 +65,15 @@ export function useZoteroNoteSync(
       apiKey: st.zotero.apiKey,
     };
 
+    // Default is enabled (see store). But the feature is meaningless without
+    // Web API creds — a paper whose row defaulted on can't run yet. Treat
+    // that as a silent no-op (no error surfaced, no state churn) rather than
+    // a scary "not connected" error, so a user who hasn't set up Zotero is
+    // never bothered. The checkbox in the panel is disabled until web mode
+    // connects anyway; this just keeps the background engine quiet.
+    const hasWebCreds = creds.mode === "web" && !!creds.userId && !!creds.apiKey;
+    if (creds.mode !== "auto" && !hasWebCreds) return;
+
     runningRef.current = true;
     beginSync(arxivId);
     try {
@@ -78,20 +88,29 @@ export function useZoteroNoteSync(
       if (!sameCreds) {
         const res = await zoteroStatus(creds);
         if (!res.ok) {
-          finishSync(arxivId, {
-            count: 0,
-            error: `Zotero not connected: ${res.error || "offline"}`,
-          });
+          // Auto-mode silently skips when Zotero is unreachable (the user
+          // may not have it running); only surface a hard failure for an
+          // explicitly-configured web setup.
+          if (creds.mode === "web") {
+            finishSync(arxivId, {
+              count: 0,
+              error: `Zotero not connected: ${res.error || "offline"}`,
+            });
+          }
           return;
         }
         modeRef.current = { creds, mode: res.mode };
       }
       const mode = modeRef.current!.mode;
       if (mode !== "web") {
-        finishSync(arxivId, {
-          count: 0,
-          error: `Note sync requires Web API mode (current: ${mode}).`,
-        });
+        // Auto-mode resolved to local: notes aren't possible there. Silent
+        // skip (same rationale as above) unless the user explicitly chose web.
+        if (creds.mode === "web") {
+          finishSync(arxivId, {
+            count: 0,
+            error: `Note sync requires Web API mode (current: ${mode}).`,
+          });
+        }
         return;
       }
 
@@ -102,6 +121,14 @@ export function useZoteroNoteSync(
         parentKey = await findZoteroPaperKey(creds, arxivId, paper?.title || "");
       }
       if (!parentKey) {
+        // The paper isn't in Zotero yet. This is expected when "Create Note"
+        // is on by default but the user hasn't added the paper. Surface it as
+        // an informational status (not a scary error) so they know the next
+        // step, but only once a sync actually has something to push — i.e.
+        // only when there are annotations. No annotations → silent.
+        const resolver0 = makePdfTextResolver(st.doc);
+        const entries0 = await gatherNoteEntries(st.annots, resolver0);
+        if (entries0.length === 0) return;
         finishSync(arxivId, {
           count: 0,
           error: "Paper not in Zotero — add it (This paper tab) first.",
@@ -116,6 +143,25 @@ export function useZoteroNoteSync(
       const entries = await gatherNoteEntries(st.annots, resolver);
       const html = renderNoteHtml(paper, entries, Date.now());
 
+      // Content-signature skip: the rendered HTML carries a wall-clock
+      // timestamp, so byte-identical annotations still produce different HTML
+      // each run. Comparing a timestamp-independent signature of the *content*
+      // lets us skip the PATCH entirely when nothing changed — which is what
+      // keeps the note's server version from bumping every 45s and tripping
+      // Zotero desktop's local-vs-remote conflict dialog. We still treat the
+      // skip as a success (refresh lastSyncedAt + persist the sig) so the
+      // status line reflects "up to date" and future runs keep skipping.
+      const sig = noteContentSignature(paper, entries);
+      if (sig && sig === st.sync?.contentSig) {
+        finishSync(arxivId, {
+          noteKey: st.sync.noteKey || undefined,
+          parentKey,
+          count: entries.length,
+          contentSig: sig,
+        });
+        return;
+      }
+
       // Upsert (create-or-update) the tagged child note. The backend patches
       // the cached noteKey if still valid, else discovers by tag, else creates.
       const res = await zoteroUpsertNote(creds, parentKey, html, {
@@ -124,7 +170,8 @@ export function useZoteroNoteSync(
       });
       if (!res.ok || !res.key) {
         // A stale cached key is already retried server-side (tag discovery);
-        // if it still failed, drop the caches so the next run rediscovers.
+        // if it still failed, drop the caches (and the signature) so the next
+        // run rediscovers and does a real rewrite.
         finishSync(arxivId, {
           count: entries.length,
           error: res.error || "sync failed",
@@ -132,7 +179,12 @@ export function useZoteroNoteSync(
         });
         return;
       }
-      finishSync(arxivId, { noteKey: res.key, parentKey, count: entries.length });
+      finishSync(arxivId, {
+        noteKey: res.key,
+        parentKey,
+        count: entries.length,
+        contentSig: sig,
+      });
     } catch (e) {
       finishSync(arxivId, { count: 0, error: String((e as Error).message || e) });
     } finally {

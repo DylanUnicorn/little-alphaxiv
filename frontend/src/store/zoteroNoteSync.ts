@@ -3,6 +3,11 @@
 // (and so the ZoteroPanel reflects the last sync result even after a reload).
 // `syncing` is ephemeral — reset to false on rehydration since no sync is in
 // flight across a reload.
+//
+// Default is ENABLED (`DEFAULT_PAPER_SYNC.enabled = true`). The sync engine
+// still no-ops until Zotero web creds are configured (see useZoteroNoteSync),
+// so a user who never sets up Zotero is never bothered by this — the checkbox
+// simply stays disabled ("requires Web API mode") and nothing runs.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -20,16 +25,25 @@ export interface PaperNoteSync {
   /** annotations included in the last successful sync. */
   lastCount: number;
   syncing: boolean;
+  /** Stable signature of the note HTML we last wrote to Zotero. The sync
+   *  engine computes a signature of the freshly built note and skips the
+   *  PATCH when it equals this — so unchanged annotations never bump the
+   *  note's server version. That is what keeps the desktop client's local
+   *  copy marked synced (no concurrent-modified-field conflict dialog). It is
+   *  dropped whenever the note or parent goes missing (clearKeys) so a
+   *  forced rewrite still happens after a deletion. */
+  contentSig: string | null;
 }
 
 export const DEFAULT_PAPER_SYNC: PaperNoteSync = {
-  enabled: false,
+  enabled: true,
   noteKey: null,
   parentKey: null,
   lastSyncedAt: null,
   lastError: null,
   lastCount: 0,
   syncing: false,
+  contentSig: null,
 };
 
 interface ZoteroNoteSyncState {
@@ -46,6 +60,10 @@ interface ZoteroNoteSyncState {
       /** drop cached noteKey+parentKey so the next run rediscovers (used when
        *  an upsert failed, e.g. the note/parent was deleted in Zotero). */
       clearKeys?: boolean;
+      /** content signature of the note HTML just written (skipped writes pass
+       *  the unchanged signature through). Persisted so the skip persists
+       *  across reloads; dropped on clearKeys so a forced rewrite happens. */
+      contentSig?: string | null;
     }
   ) => void;
 }
@@ -88,6 +106,11 @@ export const useZoteroNoteSyncStore = create<ZoteroNoteSyncState>()(
                 lastCount: r.count,
                 noteKey: r.clearKeys ? null : r.noteKey ?? prev.noteKey ?? null,
                 parentKey: r.clearKeys ? null : r.parentKey ?? prev.parentKey ?? null,
+                contentSig: r.clearKeys
+                  ? null
+                  : r.contentSig !== undefined
+                    ? r.contentSig
+                    : prev.contentSig ?? null,
               },
             },
           };

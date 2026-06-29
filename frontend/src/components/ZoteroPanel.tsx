@@ -461,18 +461,26 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
               )}
 
               <div className="zotero-note-sync">
-                <label
-                  className="zotero-check"
-                  title="Continuously push your highlights and text notes to a Zotero note under this paper"
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!noteSync?.enabled}
-                    disabled={!connected || !webMode}
-                    onChange={(e) => setNoteSyncEnabled(arxivId, e.target.checked)}
-                  />
-                  Create Note from Annotations
-                </label>
+                <div className="zotero-note-sync-head">
+                  <label
+                    className="zotero-check"
+                    title="Continuously push your highlights and text notes to a Zotero note under this paper"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!noteSync?.enabled}
+                      disabled={!connected || !webMode}
+                      onChange={(e) => setNoteSyncEnabled(arxivId, e.target.checked)}
+                    />
+                    Create Note from Annotations
+                  </label>
+                  <Tooltip
+                    label="Creates a Zotero note under this paper and keeps it in sync. Your highlight selections, colored rectangles, and typed text notes are converted into that note (hand-drawn pen strokes are not — they have no recoverable text). Syncs every ~45s and after each edit, while the paper view is open."
+                    side="right"
+                  >
+                    <span className="zotero-help-q" role="img" aria-label="What does Create Note from Annotations do">?</span>
+                  </Tooltip>
+                </div>
                 {connected && !webMode && (
                   <div className="zotero-hint zotero-hint-sub">
                     Note sync requires <a href="/settings#zotero" onClick={(e) => { e.preventDefault(); onClose(); navigate("/settings#zotero"); }}>Web API mode</a> — the local connector can’t attach child notes.

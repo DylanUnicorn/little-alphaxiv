@@ -1465,6 +1465,25 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   flex-direction: column;
   gap: 6px;
 }
+.zotero-note-sync-head { display: flex; align-items: center; gap: 6px; }
+.zotero-help-q {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-2);
+  cursor: help;
+  user-select: none;
+}
+.zotero-help-q:hover { color: var(--text); border-color: var(--accent-2); }
 .zotero-note-status { font-size: 11px; }
 .zotero-note-status a { color: var(--accent-2); }
 .zotero-note-err { color: var(--danger); }
