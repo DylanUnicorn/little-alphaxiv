@@ -8,6 +8,10 @@ Little Alphaxiv — a self-hosted, alphaxiv-style arXiv paper-reading app. Chat 
 
 Not a monorepo: `frontend/` and `backend/` are independent — run both manually.
 
+## Autonomy
+
+Act on your own judgment — don't checkpoint every change. If you spot a bug or have a clear idea for a feature or improvement, just fix or implement it; don't stop to ask for permission first. Pick a reasonable approach, do the work in a worktree (see Workflow below), then report what you changed and why. Only pause to ask when a decision is genuinely irreversible or outward-facing and you can't infer the right call from the code, design docs, or existing conventions.
+
 ## Workflow (always work in a fresh worktree)
 
 For every task, start a **new worktree** under `.claude/worktrees/` and do all edits, testing, and iteration there — never work directly on `main`. When the change is ready, merge it back into `main`. If another agent is mid-merge, wait a bit and retry instead of racing it; if the merge conflicts, resolve them. After a successful merge, delete the worktree (remove the `node_modules` junction first — see "Working in worktrees" below) and push to the remote.
