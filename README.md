@@ -73,8 +73,9 @@ npm run dev
 ```
 
 Open **http://127.0.0.1:5173** → you're redirected to `/login` → click
-**Register**, pick a username + password → **Settings** → add an OpenAI-compatible
-provider (see below) and set it default → back to the chat.
+**Register**, pick a username + email + password → **Settings** → add an OpenAI-compatible
+provider (see below) and set it default → back to the chat. (The email is for
+password recovery — see [Forgot password](#forgot-password).)
 
 Vite proxies `/api/*` → `http://127.0.0.1:8000`. No env vars needed for the
 default setup.
@@ -133,6 +134,9 @@ Defaults work for localhost dev.
 | `LAX_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated browser origins for CORS. Pinned (no `*`) because credentials flow through cookies. Add your LAN origin if running cross-origin. |
 | `LAX_SECURE_COOKIES` | `false` | Set `true` when behind HTTPS so the session cookie gets the `Secure` flag. |
 | `LAX_SESSION_MAX_AGE_DAYS` | `30` | Session cookie + row lifetime. |
+| `LAX_SMTP_URL` | *(unset)* | SMTP URL for sending password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the backend terminal + `backend/lax_reset_links.log` (zero-config for localhost). |
+| `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
+| `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
 | `LAX_PDF_CACHE` | `~/.little_alphaxiv/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). |
 
 ## Status
@@ -140,6 +144,7 @@ Defaults work for localhost dev.
 | Area | Feature | State |
 |------|---------|-------|
 | Auth | register/login/logout, httpOnly session cookies, bcrypt | ✅ verified |
+| Password recovery | email reset link (SMTP/console), single-use tokens, session purge on reset | ✅ verified |
 | Persistence | SQLite + per-user conversations/annotations/providers/settings | ✅ verified |
 | Security | API keys Fernet-encrypted at rest; plaintext key leaves browser only at save | ✅ verified |
 | 1 | LLM proxy + streaming chat (now auth-aware, `provider_id`) | ✅ verified |
@@ -163,8 +168,32 @@ Defaults work for localhost dev.
   creds per request (stored encrypted in `user_settings`, returned decrypted to
   the owner). Functional; a full rewrite to read creds from the DB inside each
   handler is a future cleanup.
-- **No password recovery** — LAN app, no email server. Forgetting a password
-  means deleting `little_alphaxiv.db` (loses all data).
+- **Password recovery now exists** — see [Forgot password](#forgot-password).
+  Emails a single-use reset link (SMTP when configured, else printed to the
+  terminal); resetting purges all of the user's sessions. An admin CLI
+  (`tools/reset_password.py`) is the escape hatch for accounts with no email.
+
+## Forgot password
+
+- On the login page, click **Forgot password?** and enter your username or
+  email. A reset link is sent to the email on file (the endpoint always returns
+  the same generic success — it never reveals whether an account exists).
+- No SMTP configured (`LAX_SMTP_URL` unset)? The link is printed to the backend
+  terminal and appended to `backend/lax_reset_links.log` — fine for localhost.
+- Configure SMTP via `LAX_SMTP_URL` (e.g. `smtps://user:pass@smtp.gmail.com:465`)
+  for real email. Gmail: use an app password, not your account password.
+- Opening the link lets you set a new password; you're then auto-logged-in. The
+  link is single-use and expires after `LAX_PASSWORD_RESET_TTL_MIN` (30 min).
+- Accounts created before email was required (no email on file) can't use the
+  email flow. Set an email in **Settings → Account** while logged in, or — if
+  you're locked out *now* — use the admin CLI to reset directly:
+
+  ```bash
+  python tools/reset_password.py <username>
+  ```
+
+  It bcrypt-hashes a new password straight in the DB (no Fernet key needed) and
+  optionally clears the user's sessions.
 
 ## Project layout
 
@@ -174,9 +203,10 @@ little_alphaxiv/
     app/main.py              # FastAPI app, lifespan (DB+migrations+security init), CORS, routers
     app/security.py          # Fernet (api keys) + bcrypt (passwords) + itsdangerous (session cookie)
     app/db.py                # async engine, WAL PRAGMAs, session factory, get_session dependency
-    app/models.py            # 8 SQLModel tables
+    app/models.py            # 8 SQLModel tables + password_reset
     app/deps.py              # current_user dependency (the per-user scoping chokepoint)
-    app/routers/auth.py      # /api/auth/{register,login,logout,me}
+    app/routers/auth.py      # /api/auth/{register,login,logout,me,forgot-password,reset-password,account}
+    app/email.py             # password-reset email delivery (SMTP or console backend)
     app/routers/providers.py # /api/providers — per-user provider CRUD (key masked on read)
     app/routers/settings.py  # /api/settings — theme, searchSources, zotero (keys encrypted)
     app/routers/conversations.py  # /api/conversations — messages stored as JSON column
@@ -194,11 +224,15 @@ little_alphaxiv/
     src/lib/legacyDb.ts      # read-only IDB reader, used once by migrate.ts
     src/lib/migrate.ts       # one-time browser→server import
     src/store/{settings,conversations,annotations,zoteroNoteSync,ui}.ts  # hydrate from backend
-    src/pages/Login.tsx      # register/login
+    src/pages/Login.tsx      # register/login + forgot-password link
+    src/pages/ForgotPassword.tsx  # /forgot — request a reset link
+    src/pages/ResetPassword.tsx   # /reset?token=… — set a new password
     src/components/{ChatPanel,PdfViewer,PaperCard,Sidebar}.tsx
     src/views/{ChatView,PaperView,SettingsView}.tsx
   tools/
     drive_auth_persistence.py  # E2E: register→chat→refresh→fresh-browser-login→data-present→logout
+    drive_password_reset.py    # E2E: register→forgot→reset→auto-login→old-pw-fails→single-use
+    reset_password.py          # admin CLI: reset a user's password directly in the DB
     mock_llm.py                # mock OpenAI-compatible server on :5050 (no real key needed)
     drive_*.py                 # other Playwright drivers (most still on the old seed pattern)
   docs/designs/
