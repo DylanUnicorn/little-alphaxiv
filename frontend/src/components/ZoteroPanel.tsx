@@ -475,7 +475,7 @@ export function ZoteroPanel({ arxivId, onClose }: Props) {
                     Create Note from Annotations
                   </label>
                   <Tooltip
-                    label="Creates a Zotero note under this paper and keeps it in sync. Your highlight selections, colored rectangles, and typed text notes are converted into that note (hand-drawn pen strokes are not — they have no recoverable text). Syncs every ~45s and after each edit, while the paper view is open."
+                    label="Creates a Zotero note under this paper and keeps it in sync. Your highlight selections and typed text notes are converted into that note. Rectangles and hand-drawn pen strokes are not (they have no recoverable text). Syncs every ~45s and after each edit, while the paper view is open."
                     side="right"
                   >
                     <span className="zotero-help-q" role="img" aria-label="What does Create Note from Annotations do">?</span>
