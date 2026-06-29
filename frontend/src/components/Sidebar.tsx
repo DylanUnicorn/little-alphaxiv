@@ -192,6 +192,14 @@ export function Sidebar() {
           </select>
         </div>
         <button className="settings-btn" onClick={() => navigate("/settings")}>⚙ Settings</button>
+        <button
+          className="settings-btn"
+          onClick={async () => {
+            try { await import("../lib/api").then((m) => m.logout()); } catch { /* ignore */ }
+            useSettings.getState().reset();
+            window.location.assign("/login");
+          }}
+        >⎋ Log out</button>
       </div>
     </aside>
   );

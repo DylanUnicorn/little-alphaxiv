@@ -1,63 +1,55 @@
-// App shell: sidebar + routed main pane. Loads conversations on mount.
+// App shell: sidebar + routed main pane. Boot authenticates via /api/auth/me;
+// unauthenticated users are redirected to /login, authenticated users hydrate
+// the stores (settings + conversations + zotero-note-sync) then open a chat.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
-import { OriginBanner } from "./components/OriginBanner";
 import { ChatView } from "./views/ChatView";
 import { PaperView } from "./views/PaperView";
 import { SettingsView } from "./views/SettingsView";
+import Login from "./pages/Login";
 import { useConversations } from "./store/conversations";
 import { useSettings } from "./store/settings";
-import { redirectTargetForCanonicalHost } from "./lib/origin";
+import { useZoteroNoteSyncStore } from "./store/zoteroNoteSync";
+import * as api from "./lib/api";
+import { hasLocalDataToMigrate, importLocalData } from "./lib/migrate";
+
+type BootState = "checking" | "unauthenticated" | "authenticated";
 
 export default function App() {
-  const load = useConversations((s) => s.load);
+  const navigate = useNavigate();
+  const [boot, setBoot] = useState<BootState>("checking");
+  const [migrateOffer, setMigrateOffer] = useState(false);
+  const loadConversations = useConversations((s) => s.load);
   const create = useConversations((s) => s.create);
   const setActive = useConversations((s) => s.setActive);
   const conversations = useConversations((s) => s.conversations);
   const loaded = useConversations((s) => s.loaded);
-  const hasHistory = useConversations((s) => s.hasHistory);
-  const navigate = useNavigate();
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
 
+  // Boot: authenticate, then hydrate stores.
   useEffect(() => {
-    load();
-  }, [load]);
-
-  // Loopback-origin unification: localhost and 127.0.0.1 are different browser
-  // origins with isolated storage. An EMPTY 127.0.0.1 is safe to redirect to
-  // the canonical localhost (never strands data); this is the only redirect
-  // direction. Runs once after load() completes.
-  useEffect(() => {
-    if (!loaded) return;
-    const target = redirectTargetForCanonicalHost(
-      location.hostname,
-      location.protocol,
-      hasHistory,
-      location.origin,
-      location.pathname,
-      location.search,
-      location.hash
-    );
-    if (target) location.replace(target);
-  }, [loaded, hasHistory]);
-
-  // If we arrived on localhost via our own redirect, strip the ?laxredir=1
-  // marker so the URL stays clean. The banner reads its presence to suppress
-  // itself for this arrival (see OriginBanner / shouldShowOriginBanner).
-  useEffect(() => {
-    if (!loaded) return;
-    if (location.hostname !== "localhost" || location.protocol !== "http:") return;
-    const params = new URLSearchParams(location.search);
-    if (!params.has("laxredir")) return;
-    params.delete("laxredir");
-    const qs = params.toString();
-    const cleanSearch = qs ? `?${qs}` : "";
-    if (cleanSearch !== location.search) {
-      history.replaceState(null, "", `${location.pathname}${cleanSearch}${location.hash}`);
-    }
-  }, [loaded]);
+    let cancelled = false;
+    (async () => {
+      const me = await api.getMe();
+      if (cancelled) return;
+      if (!me) {
+        setBoot("unauthenticated");
+        return;
+      }
+      await Promise.all([
+        useSettings.getState().load(),
+        loadConversations(),
+        useZoteroNoteSyncStore.getState().load(),
+      ]);
+      if (cancelled) return;
+      setBoot("authenticated");
+      // Offer to import any leftover browser data once.
+      hasLocalDataToMigrate().then((has) => { if (!cancelled) setMigrateOffer(has); });
+    })();
+    return () => { cancelled = true; };
+  }, [loadConversations]);
 
   // On the root path: open the most recent conversation, or create a fresh
   // general chat. Empty chats are never persisted, so after a reload there are
@@ -74,9 +66,37 @@ export default function App() {
     navigate(`/chat/${c.id}`);
   }
 
+  if (boot === "checking") {
+    return <div className="app"><main className="main-pane"><div className="chat-empty">Loading…</div></main></div>;
+  }
+
+  if (boot === "unauthenticated") {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <div className="app">
-      <OriginBanner />
+      {migrateOffer && (
+        <MigratePrompt
+          onImport={async () => {
+            try {
+              const r = await importLocalData();
+              alert(`Imported: ${JSON.stringify(r.imported)}. Reloading…`);
+            } catch (e) {
+              alert(`Import failed: ${(e as Error).message}`);
+            } finally {
+              setMigrateOffer(false);
+              window.location.reload();
+            }
+          }}
+          onDismiss={() => setMigrateOffer(false)}
+        />
+      )}
       <div className="app-main">
         <Sidebar />
         <Routes>
@@ -85,6 +105,7 @@ export default function App() {
           <Route path="/paper/:arxivId" element={<PaperView />} />
           <Route path="/paper/:arxivId/:convId" element={<PaperView />} />
           <Route path="/settings" element={<SettingsView />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
@@ -96,7 +117,26 @@ function RootLanding({ loaded, onMount }: { loaded: boolean; onMount: () => void
   useEffect(() => {
     if (!loaded) return;
     onMount();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-line react-hooks/exhaustive-deps
   }, [loaded]);
   return <main className="main-pane"><div className="chat-empty">Starting…</div></main>;
+}
+
+function MigratePrompt({ onImport, onDismiss }: { onImport: () => void; onDismiss: () => void }) {
+  return (
+    <div className="migrate-prompt">
+      <div className="migrate-prompt-card">
+        <h3>Import your local browser data?</h3>
+        <p>
+          We found chat history, annotations, or settings saved in this browser.
+          Import them into your account so they're preserved and available on
+          other devices. (This runs once; re-importing is harmless.)
+        </p>
+        <div className="migrate-prompt-actions">
+          <button className="login-submit" onClick={onImport}>Import</button>
+          <button className="login-toggle" onClick={onDismiss}>Not now</button>
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -32,6 +32,11 @@ venv/
 env/
 ENV/
 
+# ---- SQLite database (per-user persistence; runtime-generated, not tracked) ----
+*.db
+*.db-shm
+*.db-wal
+
 # ---- Playwright / E2E test artifacts (regenerable) ----
 shots/
 shots_real/

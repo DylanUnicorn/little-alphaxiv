@@ -346,6 +346,42 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .chat-empty { color: var(--text-dim); text-align: center; margin-top: 48px; font-size: 14px; padding: 0 20px; }
 .chat-empty .empty-title { font-size: 17px; color: var(--text); font-weight: 600; margin-bottom: 6px; }
 .chat-empty .empty-sub { font-size: 13px; line-height: 1.6; }
+
+/* ---- Login / Register + migration prompt ---- */
+.login-pane { align-items: center; justify-content: center; padding: 24px; }
+.login-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 12px; }
+.login-card h1 { font-size: 22px; font-weight: 600; margin: 0; text-align: center; }
+.login-sub { text-align: center; color: var(--text-dim); font-size: 13px; margin: -4px 0 4px; }
+.login-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.login-field input {
+  padding: 8px 10px; font-size: 14px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-2); color: var(--text);
+}
+.login-field input:focus { outline: none; border-color: var(--accent); }
+.login-submit {
+  padding: 9px 12px; font-size: 14px; font-weight: 600; border: none; border-radius: 6px;
+  background: var(--accent); color: #fff; cursor: pointer; margin-top: 4px;
+}
+.login-submit:disabled { opacity: 0.6; cursor: default; }
+.login-toggle {
+  background: none; border: none; color: var(--text-dim); font-size: 12px;
+  cursor: pointer; padding: 4px; text-align: center;
+}
+.login-toggle:hover { color: var(--text); }
+.login-error { color: #ef4444; font-size: 12px; text-align: center; }
+.login-hint { color: var(--text-dim); font-size: 11px; line-height: 1.5; text-align: center; margin-top: 6px; }
+.migrate-prompt {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.migrate-prompt-card {
+  max-width: 420px; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 10px;
+}
+.migrate-prompt-card h3 { margin: 0; font-size: 16px; }
+.migrate-prompt-card p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text-dim); }
+.migrate-prompt-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
 .chat-suggestions { display: flex; flex-direction: column; gap: 8px; max-width: 480px; margin: 22px auto 0; }
 .suggestion-chip {
   text-align: left; padding: 11px 14px; border-radius: var(--radius-md);
