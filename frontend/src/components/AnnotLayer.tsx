@@ -362,10 +362,19 @@ export function AnnotLayer({ pageNumber, pageSize }: Props) {
             const p = denormalizeRect(cur.rect, pageSize);
             return (
               <g key={a.id}>
+                {/* In default mode the rect body must be grabbable for move,
+                    not just its 1.5px border. pointer-events:"stroke" made ONLY
+                    the border hittable, so you had to land the pointer exactly
+                    on the edge to move/delete ("判定范围太小"). "all" makes the
+                    translucent fill catch the pointer too — the whole rect is
+                    a move target, matching the forgiving SelectionHandles
+                    pattern below (wide invisible hit + small visible paint).
+                    In drawing modes the rect must NOT swallow clicks (you draw
+                    new rects over old ones), so it goes pointer-events:none. */}
                 <rect
                   x={p.x} y={p.y} width={p.w} height={p.h}
-                  fill={a.color} fillOpacity={0.2} stroke={a.color} strokeWidth={1.5}
-                  style={{ pointerEvents: tool === "none" ? "stroke" : "none", cursor: tool === "none" ? "move" : "default" }}
+                  fill={a.color} fillOpacity={0.2} stroke={a.color} strokeWidth={2.5}
+                  style={{ pointerEvents: tool === "none" ? "all" : "none", cursor: tool === "none" ? "move" : "default" }}
                   onPointerDown={(e) => startMove(e, a)}
                 />
                 {selectedId === a.id && tool === "none" && (
