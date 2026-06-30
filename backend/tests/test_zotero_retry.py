@@ -180,3 +180,38 @@ async def test_list_collections_retries_then_returns_results(monkeypatch):
     assert len(body["results"]) == 1
     assert body["results"][0]["name"] == "My Collection"
     assert _FakeClient.calls == 2  # retried once after the blip
+
+
+# --------------------------------------------------------------------------- #
+# status: the connectivity probe (was a bare httpx.AsyncClient with NO retry
+# and a blank "web-unreachable: " when str(exc) was empty — the symptom the
+# Docker user saw). Now routes through _zotero_get for retry + type-name fallback.
+# --------------------------------------------------------------------------- #
+async def test_status_web_retries_timeout_then_ok(monkeypatch):
+    # The exact symptom: a transient ReadTimeout on the status probe. Retry
+    # once → success, instead of immediately reporting "unreachable".
+    _script(monkeypatch, [httpx.ReadTimeout("read timed out"), _FakeResp(200, json_data=[])])
+    resp = await zotero.status(mode="web", user_id="u", api_key="k")
+    assert resp.status_code == 200
+    body = json.loads(resp.body)
+    assert body["ok"] is True
+    assert body["mode"] == "web"
+    assert _FakeClient.calls == 2  # timed out, retried, succeeded
+
+
+async def test_status_web_persistent_blip_is_descriptive(monkeypatch):
+    # Blank-message ConnectError ("") — the empty str() that produced the
+    # user's "web-unreachable: " (trailing blank). Must surface the type name
+    # so the error is never blank, and report ok:False only after the retry.
+    _script(monkeypatch, [httpx.ConnectError(""), httpx.ConnectError("")])
+    resp = await zotero.status(mode="web", user_id="u", api_key="k")
+    assert resp.status_code == 200
+    body = json.loads(resp.body)
+    assert body["ok"] is False
+    assert body["mode"] == "web"
+    err = body["error"]
+    assert isinstance(err, str) and err.strip()  # never blank
+    assert "web-unreachable" in err
+    assert "ConnectError" in err  # type-name fallback filled the empty str()
+    assert _FakeClient.calls == 2  # tried, retried once, gave up
+
