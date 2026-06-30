@@ -48,13 +48,15 @@ class _FakeResp:
 class _FakeClient:
     """Stand-in for httpx.AsyncClient whose `.get()` yields a scripted
     sequence (one item per attempt). Shared class-level state so the fresh
-    client instance created on each retry continues the same script."""
+    client instance created on each retry continues the same script.
+    Records the `proxy` kwarg so the LAX_ZOTERO_PROXY wiring can be asserted."""
 
     script: list = []  # each item: a _FakeResp or a BaseException to raise
     calls: int = 0
+    last_proxy: object = "UNSET"  # proxy= kwarg from the most recent construction
 
     def __init__(self, *args, **kwargs):
-        pass
+        _FakeClient.last_proxy = kwargs.get("proxy", "UNSET")
 
     async def __aenter__(self):
         return self
@@ -69,6 +71,12 @@ class _FakeClient:
         if isinstance(item, BaseException):
             raise item
         return item
+
+    async def post(self, url, *args, **kwargs):
+        # Writes (.post) reuse the same script as reads (.get) — the proxy
+        # wiring under test is in the AsyncClient construction, identical for
+        # both, so a get-shaped fake suffices for write-path assertions.
+        return await self.get(url, headers=kwargs.get("headers"))
 
 
 def _script(monkeypatch, items):
@@ -214,4 +222,53 @@ async def test_status_web_persistent_blip_is_descriptive(monkeypatch):
     assert "web-unreachable" in err
     assert "ConnectError" in err  # type-name fallback filled the empty str()
     assert _FakeClient.calls == 2  # tried, retried once, gave up
+
+
+# --------------------------------------------------------------------------- #
+# LAX_ZOTERO_PROXY: route only Zotero WEB calls through a proxy (the Docker
+# container-bypasses-host-Clash fix). Local calls (loopback) must never proxy.
+# --------------------------------------------------------------------------- #
+async def test_status_web_forwards_proxy_when_set(monkeypatch):
+    # When LAX_ZOTERO_PROXY is set, web-mode status passes proxy= to the client
+    # so the request can route through (e.g.) host.docker.internal:7890.
+    _script(monkeypatch, [_FakeResp(200, json_data=[])])
+    monkeypatch.setattr(zotero, "_ZOTERO_PROXY", "http://host.docker.internal:7890")
+    resp = await zotero.status(mode="web", user_id="u", api_key="k")
+    assert resp.status_code == 200
+    assert _FakeClient.last_proxy == "http://host.docker.internal:7890"
+
+
+async def test_status_web_no_proxy_when_unset(monkeypatch):
+    # Backward compat: empty/unset LAX_ZOTERO_PROXY = proxy=None, direct.
+    _script(monkeypatch, [_FakeResp(200, json_data=[])])
+    monkeypatch.setattr(zotero, "_ZOTERO_PROXY", None)
+    resp = await zotero.status(mode="web", user_id="u", api_key="k")
+    assert resp.status_code == 200
+    assert _FakeClient.last_proxy is None
+
+
+async def test_status_local_never_proxies_even_if_set(monkeypatch):
+    # Local mode hits the loopback (127.0.0.1:23119) — must NEVER be proxied,
+    # even when LAX_ZOTERO_PROXY is set, or the loopback call gets misrouted.
+    _script(monkeypatch, [_FakeResp(200, json_data=[])])
+    monkeypatch.setattr(zotero, "_ZOTERO_PROXY", "http://host.docker.internal:7890")
+    resp = await zotero.status(mode="local", user_id="", api_key="")
+    assert resp.status_code == 200
+    assert _FakeClient.last_proxy is None  # local = trust_env=False = no proxy
+
+
+async def test_create_collection_web_forwards_proxy(monkeypatch):
+    # A web WRITE (bare AsyncClient, not _zotero_get) must also route through
+    # the proxy — writes hit api.zotero.org too and would otherwise stall the
+    # same way reads do.
+    _script(monkeypatch, [
+        _FakeResp(200, json_data={"success": {"0": "KEY1"}}),
+        _FakeResp(200, json_data={"success": {"0": "KEY1"}}),  # not reached
+    ])
+    monkeypatch.setattr(zotero, "_ZOTERO_PROXY", "http://host.docker.internal:7890")
+    from app.routers.zotero import CreateCollectionRequest
+    resp = await zotero.create_collection(
+        CreateCollectionRequest(mode="web", user_id="u", api_key="k", name="X"))
+    assert resp.status_code == 200
+    assert _FakeClient.last_proxy == "http://host.docker.internal:7890"
 

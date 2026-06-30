@@ -32,6 +32,15 @@ services:
       LAX_SMTP_URL: "${LAX_SMTP_URL:-}"
       LAX_SMTP_FROM: "${LAX_SMTP_FROM:-}"
       LAX_PASSWORD_RESET_TTL_MIN: "${LAX_PASSWORD_RESET_TTL_MIN:-30}"
+      # Proxy for Zotero WEB calls ONLY (api.zotero.org). Docker Desktop's
+      # container egress bypasses the host's system proxy, so from inside a
+      # container api.zotero.org is reached over the raw NIC — which from
+      # networks that throttle it produces persistent ReadTimeout / RST. Set
+      # this to a proxy the container can reach (Clash/V2Ray "Allow LAN" on,
+      # binding 0.0.0.0:7890) so Zotero routes through the clean host path.
+      # Empty = direct (current behavior). Only Zotero web is affected;
+      # arXiv / PDF / LLM stay direct.
+      LAX_ZOTERO_PROXY: "${LAX_ZOTERO_PROXY:-}"
     volumes:
       # SQLite DB + PDF cache + the persisted LAX_SECRET_KEY all live here.
       - ./data:/app/data
