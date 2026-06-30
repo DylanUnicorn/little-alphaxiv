@@ -254,10 +254,17 @@ async def status(
         # hasn't enabled "Allow other applications to communicate with Zotero".
         url = f"{_LOCAL_READ}/users/{user_seg}/items?limit=1&format=keys"
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
-                r = await client.get(url, headers={"User-Agent": _UA})
+            # Route through _zotero_get so a transient blip (the Zotero desktop
+            # connector occasionally drops a loopback connection) is retried once
+            # instead of immediately reporting "unreachable".
+            r = await _zotero_get(url, headers={"User-Agent": _UA},
+                                  timeout=_TIMEOUT, trust_env=False)
         except httpx.RequestError as exc:
-            return JSONResponse(content={"ok": False, "mode": "local", "error": f"local-unreachable: {exc}"})
+            # str(exc) can be "" (terse ConnectError on a reset); fall back to
+            # the type name so the surfaced error is never the blank
+            # "local-unreachable: " the user would otherwise see.
+            return JSONResponse(content={"ok": False, "mode": "local",
+                                         "error": f"local-unreachable: {str(exc) or type(exc).__name__}"})
         if r.status_code != 200:
             return JSONResponse(content={"ok": False, "mode": "local",
                                          "error": f"local-read-disabled (Zotero returned {r.status_code}). "
@@ -270,10 +277,19 @@ async def status(
         return JSONResponse(content={"ok": False, "mode": "web", "error": "missing user_id or api_key"})
     url = f"{_WEB}/users/{user_seg}/items?limit=1&format=keys"
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(url, headers=_headers_web(api_key))
+        # Route through _zotero_get so a transient blip (TCP reset / ReadTimeout
+        # — common from networks where api.zotero.org is intermittently
+        # interfered with; measured 15/15 success on a good moment but RSTs
+        # happen on bad ones) is retried once instead of immediately reporting
+        # "unreachable". Same retry the items/collections reads already get.
+        r = await _zotero_get(url, headers=_headers_web(api_key),
+                              timeout=_TIMEOUT, trust_env=True)
     except httpx.RequestError as exc:
-        return JSONResponse(content={"ok": False, "mode": "web", "error": f"web-unreachable: {exc}"})
+        # str(exc) can be "" (e.g. a terse ConnectError on a reset); fall back
+        # to the type name so the surfaced error is never the blank
+        # "web-unreachable: " the user would otherwise see.
+        return JSONResponse(content={"ok": False, "mode": "web",
+                                     "error": f"web-unreachable: {str(exc) or type(exc).__name__}"})
     if r.status_code == 403:
         return JSONResponse(content={"ok": False, "mode": "web", "error": "invalid api key (403)"})
     if r.status_code != 200:
