@@ -1,9 +1,9 @@
 """Password-reset endpoint tests.
 
-Console mail backend (no LAX_SMTP_URL) → reset links land in
-backend/lax_reset_links.log, which we scrape. Covers: anti-enumeration,
-token creation + supersede, single-use reset, expiry, session purge, and the
-account-email PATCH endpoint.
+Console mail backend (no LAX_SMTP_URL) → reset links land in the reset-link
+log next to the DB (backend/data/lax_reset_links.log locally), which we scrape.
+Covers: anti-enumeration, token creation + supersede, single-use reset,
+expiry, session purge, and the account-email PATCH endpoint.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import time
 from sqlmodel import select
 
 from app import db as dbmod
-from app.email import _LOG_PATH
+from app.paths import reset_log_path
 from app.models import PasswordResetRow, User
 
 
@@ -36,13 +36,14 @@ async def _register(
 
 async def _grab_reset_link(client, identifier):
     """Trigger a forgot and scrape the latest reset link from the console log."""
-    _LOG_PATH.write_text("", encoding="utf-8")
+    log = reset_log_path()
+    log.write_text("", encoding="utf-8")
     r = await client.post(
         "/api/auth/forgot-password",
         json={"identifier": identifier},
     )
     assert r.is_success, f"forgot failed: {r.status} {r.text}"
-    lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+    lines = log.read_text(encoding="utf-8").splitlines()
     m = re.search(r"(https?://\S+/reset\?token=\S+)", lines[-1])
     assert m, f"no reset link in log: {lines}"
     return m.group(1)

@@ -22,6 +22,8 @@ import bcrypt
 from cryptography.fernet import Fernet, InvalidToken
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from . import paths
+
 # ---------------------------------------------------------------------------
 # Secret-key management
 # ---------------------------------------------------------------------------
@@ -30,7 +32,11 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 # itsdangerous serializer (itsdangerous derives its own signing key from this).
 # Losing it orphans every encrypted API key AND every active session.
 SECRET_KEY_ENV = "LAX_SECRET_KEY"
-# backend/app/security.py → up two dirs → backend/.env
+# backend/.env — now a LEGACY fallback only. Pre-consolidation, the auto-
+# generated key was written here; new keys persist to paths.secret_key_path()
+# (next to the DB → backend/data/.lax_secret_key locally, /app/data/.lax_secret_key
+# in Docker). run.sh / run.bat don't load .env into the environment, so we read
+# this file directly during the one-time migration below.
 _env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 
 
@@ -52,28 +58,53 @@ def _read_env_file_value(path: str, key: str) -> str:
     return ""
 
 
+def _chmod_600(path: str) -> None:
+    """Best-effort restrict a secret file to its owner (no-op-ish on Windows)."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def _ensure_secret_key() -> str:
     """Return a valid Fernet key for LAX_SECRET_KEY.
 
-    Resolution order: env var → backend/.env value → generate + write to
-    backend/.env on first run. Persisting to .env lets the server restart
-    without re-setting the env var (run.sh / run.bat don't load .env). If a
-    .env exists but has NO key line, generate one into it (refusing would
-    strand a user whose auto-generated file got the line deleted).
+    Resolution order (mirrors docker/entrypoint.sh):
+      1. LAX_SECRET_KEY env var (operator-set, e.g. via compose) — used as-is.
+      2. The persisted key file next to the DB (paths.secret_key_path()) — reused.
+      3. One-time migration from backend/.env (pre-consolidation) → write to the
+         key file, so existing keys survive the move out of backend/.env.
+      4. First run: generate a Fernet key + persist to the key file.
+
+    Persisting next to the DB keeps the key stable across restarts (run.sh /
+    run.bat don't load .env) and co-located with the data it protects.
     """
     key = os.environ.get(SECRET_KEY_ENV, "").strip()
     if key:
         return key
-    key = _read_env_file_value(_env_file, SECRET_KEY_ENV)
-    if key:
-        return key
-
-    # First run: generate and persist so it survives restarts.
+    paths.ensure_db_parent_dir()
+    key_file = paths.secret_key_path()
+    # 2. Reuse an existing persisted key.
+    if key_file.exists():
+        try:
+            existing = key_file.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing
+        except OSError:
+            pass
+    # 3. Migrate from legacy backend/.env so existing keys survive the move.
+    legacy_key = _read_env_file_value(_env_file, SECRET_KEY_ENV)
+    if legacy_key:
+        try:
+            key_file.write_text(legacy_key + "\n", encoding="utf-8")
+            _chmod_600(str(key_file))
+        except OSError:
+            pass
+        return legacy_key
+    # 4. First run: generate + persist (mirrors docker/entrypoint.sh).
     generated = Fernet.generate_key().decode()
-    os.makedirs(os.path.dirname(_env_file), exist_ok=True)
-    with open(_env_file, "a", encoding="utf-8") as f:
-        f.write("\n# Auto-generated on first run. KEEP SECRET. Losing it orphans all encrypted keys + sessions.\n")
-        f.write(f"{SECRET_KEY_ENV}={generated}\n")
+    key_file.write_text(generated + "\n", encoding="utf-8")
+    _chmod_600(str(key_file))
     os.environ[SECRET_KEY_ENV] = generated
     return generated
 

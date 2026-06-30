@@ -2,8 +2,10 @@
 
 Two backends, chosen by config:
   * SMTP   — when LAX_SMTP_URL is set (e.g. smtps://user:pass@host:465).
-  * Console — otherwise: print the link + append to backend/lax_reset_links.log
-    (zero-config for localhost; the E2E driver scrapes the link from here).
+  * Console — otherwise: print the link + append to the reset-link log that
+    lives next to the DB (backend/data/lax_reset_links.log locally,
+    /app/data/lax_reset_links.log in Docker; zero-config for localhost; the
+    E2E driver scrapes the link from here).
 
 Never raises: a send failure is logged and swallowed so the forgot-password
 endpoint can't leak send state or 500. Network IO runs in a worker thread via
@@ -15,11 +17,10 @@ import asyncio
 import os
 import urllib.parse
 from email.message import EmailMessage
-from pathlib import Path
 
 import smtplib
 
-_LOG_PATH = Path(__file__).resolve().parent.parent / "lax_reset_links.log"
+from . import paths
 
 
 def _parse_smtp_url(url: str) -> dict:
@@ -102,7 +103,8 @@ def _send_console_sync(to: str, username: str, link: str) -> None:
     line = f"[lax] password-reset link for {to} (user={username}): {link}"
     print(line, flush=True)
     try:
-        with _LOG_PATH.open("a", encoding="utf-8") as f:
+        paths.ensure_db_parent_dir()
+        with paths.reset_log_path().open("a", encoding="utf-8") as f:
             f.write(line + "\n")
     except OSError as exc:
         print(f"[lax] failed to write reset link log: {exc}", flush=True)

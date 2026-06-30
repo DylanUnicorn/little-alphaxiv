@@ -27,8 +27,8 @@ import bcrypt
 
 def _db_path() -> Path:
     backend = Path(__file__).resolve().parent.parent / "backend"
-    url = os.environ.get("LAX_DATABASE_URL", "sqlite:///./little_alphaxiv.db")
-    fname = url.split("///")[-1] if "///" in url else "little_alphaxiv.db"
+    url = os.environ.get("LAX_DATABASE_URL", "sqlite:///./data/little_alphaxiv.db")
+    fname = url.split("///")[-1] if "///" in url else "data/little_alphaxiv.db"
     p = Path(fname)
     if not p.is_absolute():
         p = backend / p
