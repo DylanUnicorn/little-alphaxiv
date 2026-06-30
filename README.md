@@ -2,6 +2,8 @@
 
 # Little Alphaxiv
 
+**English** | [中文](./README.zh-CN.md)
+
 **A self-hosted, alphaxiv-style arXiv paper-reading workspace.**
 Chat with an LLM to discover papers, then read the PDF side-by-side with a
 paper-aware assistant. Bring your own key. Your data stays on your server.
@@ -111,7 +113,7 @@ View server logs with `docker compose logs -f little-alphaxiv`. Stop with
 
 ### A. Docker (recommended)
 
-See [Quick start](#-quick-start-docker) above. Optional advanced config via a
+See [Quick start](#quick-start-docker) above. Optional advanced config via a
 root-level `.env` (copy from `.env.docker.example`):
 
 ```bash
