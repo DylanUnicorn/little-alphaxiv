@@ -20,6 +20,23 @@ paper-aware assistant. Bring your own key. Your data stays on your server.
 
 ---
 
+## 🎬 Demos
+
+<details>
+<summary><b>Click to expand demo GIFs</b></summary>
+
+| General chat → paper discovery | Paper view (PDF + paper-aware assistant) |
+|:---:|:---:|
+| <img src="./example_demo/main-paper-chat.gif" width="420" alt="General chat discovering papers" /> | <img src="./example_demo/pdf-preview-page.gif" width="420" alt="Paper view with PDF and assistant" /> |
+
+| Highlight & annotate PDFs | Zotero note sync |
+|:---:|:---:|
+| <img src="./example_demo/change-theme.gif" width="420" alt="Highlighting and annotating a PDF" /> | <img src="./example_demo/zotero-sync.gif" width="420" alt="Syncing annotations to Zotero" /> |
+
+</details>
+
+---
+
 Little Alphaxiv is a self-hosted reading-and-discussion workspace for arXiv
 papers. Ask the assistant what you're looking for in plain language; it searches
 arXiv (and optionally the web) and surfaces results as clickable cards. Click

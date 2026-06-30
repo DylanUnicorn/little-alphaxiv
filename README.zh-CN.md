@@ -20,6 +20,23 @@ key，数据留在你自己的服务器上。
 
 ---
 
+## 🎬 演示
+
+<details>
+<summary><b>点击展开演示 GIF</b></summary>
+
+| 通用聊天 → 论文发现 | 论文视图（PDF + 懂论文的助手） |
+|:---:|:---:|
+| <img src="./example_demo/main-paper-chat.gif" width="420" alt="通用聊天发现论文" /> | <img src="./example_demo/pdf-preview-page.gif" width="420" alt="论文视图：PDF 与助手" /> |
+
+| PDF 划线高亮与批注 | Zotero 笔记同步 |
+|:---:|:---:|
+| <img src="./example_demo/change-theme.gif" width="420" alt="PDF 划线高亮与批注" /> | <img src="./example_demo/zotero-sync.gif" width="420" alt="批注同步到 Zotero" /> |
+
+</details>
+
+---
+
 Little Alphaxiv 是一个自托管的 arXiv 论文阅读与讨论工作区。用自然语言告诉
 助手你想找什么，它会搜索 arXiv（可选联网搜索），把结果渲染成可点击的卡片。
 点击其一，左侧打开 PDF，右侧是「懂这篇论文」的助手——论文全文已注入对话上下
