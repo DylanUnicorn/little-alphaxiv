@@ -15,9 +15,9 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 from . import paths, security
 from .db import close_db, init_db
@@ -113,9 +113,33 @@ async def health() -> dict:
 
 
 # Serve the built frontend in production (same-origin → no CORS friction).
-# Mounted LAST so it never shadows /api/* routes. Only mounts if the dist dir
-# exists; dev uses the Vite server on :5173 instead.
+# Only mounts if the dist dir exists; dev uses the Vite server on :5173 instead.
 _dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "frontend", "dist")
 _dist = os.path.normpath(_dist)
 if os.path.isdir(_dist):
-    app.mount("/", StaticFiles(directory=_dist, html=True), name="frontend")
+    # SPA history-fallback: React Router uses BrowserRouter (history mode), so
+    # deep links like /reset, /login, /chat/:id, /paper/<id> must serve
+    # index.html (not 404) — the client router then renders the right view.
+    # StaticFiles(html=True) only falls back for directory requests, not for
+    # arbitrary paths, so we add an explicit catch-all AFTER /api/* routes.
+    # It serves a real static file if one exists at the path (assets/*,
+    # favicon.svg, …), otherwise index.html for the client router to handle.
+    _index = os.path.join(_dist, "index.html")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str, request: Request):
+        # Never shadow API routes: an unmatched /api/* returns a proper 404
+        # JSON (not the SPA shell), so clients get a real error status.
+        if full_path.startswith("api/"):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        # Serve a real static file if it exists at that path (path traversal
+        # guarded by the startswith check — candidate must stay under _dist).
+        candidate = os.path.normpath(os.path.join(_dist, full_path))
+        if (
+            full_path
+            and candidate.startswith(_dist + os.sep)
+            and os.path.isfile(candidate)
+        ):
+            return FileResponse(candidate)
+        # Otherwise fall back to index.html for the client router to handle.
+        return FileResponse(_index)
