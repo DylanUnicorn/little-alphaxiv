@@ -38,8 +38,9 @@ sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, errors="replace")
 APP = os.environ.get("APP_URL", "http://127.0.0.1:5173").rstrip("/")
 ARXIV_ID = "1706.03762"  # "Attention Is All You Need" — 15 pages, real arxiv fetch
 
-# Backend on-disk PDF cache (same path as backend/app/routers/pdf.py default).
-PDF_CACHE = Path.home() / ".little_alphaxiv" / "pdf_cache"
+# Backend on-disk PDF cache (same path as backend/app/routers/pdf.py default:
+# backend/data/pdf_cache locally, /app/data/pdf_cache in Docker).
+PDF_CACHE = Path(__file__).resolve().parent.parent / "backend" / "data" / "pdf_cache"
 
 
 def clear_backend_pdf_cache(arxiv_id: str) -> None:

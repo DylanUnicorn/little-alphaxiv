@@ -8,7 +8,7 @@ Covers the full link:
   5. Token is single-use: reusing it → 401.
   6. Forgot with unknown identifier still returns success (anti-enumeration).
 
-Run with backend + frontend up. Scrapes the link from backend/lax_reset_links.log
+Run with backend + frontend up. Scrapes the link from backend/data/lax_reset_links.log
 (console mail backend). Defaults match the dev proxy.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, errors="replace")
 
 FRONT = os.environ.get("LAX_FRONT", "http://127.0.0.1:5173")
 BACK = os.environ.get("LAX_BACK", "http://127.0.0.1:8000")
-LOG = Path(__file__).resolve().parent.parent / "backend" / "lax_reset_links.log"
+LOG = Path(__file__).resolve().parent.parent / "backend" / "data" / "lax_reset_links.log"
 
 USERNAME = f"e2e_{int(time.time()) % 100000}"
 EMAIL = f"{USERNAME}@example.com"

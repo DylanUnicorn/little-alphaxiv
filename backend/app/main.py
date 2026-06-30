@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import security
+from . import paths, security
 from .db import close_db, init_db
 from .routers import (
     annotations,
@@ -43,6 +43,10 @@ from .routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 0. Consolidate any pre-consolidation scattered data files (DB, reset log)
+    #    into backend/data/. No-op in Docker/tests — there LAX_DATABASE_URL is
+    #    set explicitly, so the legacy backend-root files are left untouched.
+    paths.migrate_legacy_paths()
     # 1. DB engine + tables (bootstrap; Alembic owns migrations going forward).
     await init_db()
     # 2. Run Alembic migrations to head so the schema is current.

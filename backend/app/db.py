@@ -15,28 +15,23 @@ PRAGMAs applied on every fresh connection via a SQLAlchemy connect event:
 """
 from __future__ import annotations
 
-import os
 from typing import AsyncIterator
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from . import paths
+
 # The aiosqlite driver. The user-facing env var LAX_DATABASE_URL uses the
-# sqlite:/// form (familiar); we rewrite to sqlite+aiosqlite:/// here.
+# sqlite:/// form (familiar); paths.resolved_db_url() rewrites relative paths
+# to absolute (against backend/, → backend/data/…) and we swap the driver here.
 
 
 def _database_url() -> str:
-    url = os.environ.get("LAX_DATABASE_URL", "sqlite:///./little_alphaxiv.db")
-    # Resolve relative to the backend/ dir so the .db file lives next to the
-    # app, regardless of where uvicorn was launched from.
-    if url.startswith("sqlite:///") and not url.startswith("sqlite:////"):
-        path = url[len("sqlite:///"):]
-        if not os.path.isabs(path):
-            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            path = os.path.join(backend_dir, path)
-        url = f"sqlite:///{path}"
-    return url.replace("sqlite:///", "sqlite+aiosqlite:///")
+    # resolved_db_url() handles the sqlite:/// → absolute rewrite + passes
+    # non-sqlite URLs through unchanged; we just swap in the aiosqlite driver.
+    return paths.resolved_db_url().replace("sqlite:///", "sqlite+aiosqlite:///")
 
 
 engine: AsyncEngine = create_async_engine(
@@ -88,6 +83,9 @@ async def init_db() -> None:
     # (needed by alembic/env.py's target_metadata); the import side effect is
     # all we want here.
     from . import models  # noqa: F401
+    # SQLite won't create the DB file's parent dir — make sure backend/data/
+    # (or wherever LAX_DATABASE_URL points) exists before the first connect.
+    paths.ensure_db_parent_dir()
     # Touch the engine so PRAGMAs (WAL etc.) get applied on the first conn.
     async with engine.connect() as conn:
         await conn.exec_driver_sql("SELECT 1")

@@ -134,7 +134,7 @@ LAX_PORT=8080 docker compose up -d
 # Terminal 1 — backend (Python 3.10+)
 cd backend
 ./run.sh                        # Windows: run.bat
-# On first start this auto-creates little_alphaxiv.db + generates backend/.env
+# On first start this auto-creates backend/data/little_alphaxiv.db + generates backend/data/.lax_secret_key
 
 # Terminal 2 — frontend
 cd frontend
@@ -192,15 +192,15 @@ All optional — defaults work for localhost. In Docker, set these in a root
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `LAX_DATABASE_URL` | `sqlite:///./little_alphaxiv.db` | SQLite file. In Docker: `sqlite:////app/data/little_alphaxiv.db`. |
-| `LAX_SECRET_KEY` | *(auto-generated)* | Fernet key for encrypting stored API keys + signing session cookies. Auto-generated into `./data/.lax_secret_key` (Docker) or `backend/.env` (native) on first run. **Keep it secret — losing it orphans all encrypted keys + sessions.** |
+| `LAX_DATABASE_URL` | `sqlite:///./data/little_alphaxiv.db` | SQLite file (relative paths resolve under `backend/`). Default `backend/data/little_alphaxiv.db`; Docker `sqlite:////app/data/little_alphaxiv.db`. The secret key + reset log live next to the DB. |
+| `LAX_SECRET_KEY` | *(auto-generated)* | Fernet key for encrypting stored API keys + signing session cookies. Auto-generated into `backend/data/.lax_secret_key` (native) or `./data/.lax_secret_key` (Docker) on first run — the DB, PDF cache, secret key, and reset log all live in one data dir. **Keep it secret — losing it orphans all encrypted keys + sessions.** |
 | `LAX_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated browser origins for CORS. Pinned (no `*`) because credentials flow through cookies. Add your LAN origin if running cross-origin. |
 | `LAX_SECURE_COOKIES` | `false` | Set `true` behind HTTPS so the session cookie gets the `Secure` flag. |
 | `LAX_SESSION_MAX_AGE_DAYS` | `30` | Session cookie + row lifetime. |
 | `LAX_SMTP_URL` | *(unset)* | SMTP URL for password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the logs (zero-config for localhost). |
 | `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
-| `LAX_PDF_CACHE` | `~/.little_alphaxiv/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). In Docker: `/app/data/pdf_cache`. |
+| `LAX_PDF_CACHE` | `backend/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). In Docker: `/app/data/pdf_cache`. |
 | `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
 
 ## 🧠 How it works
@@ -324,7 +324,7 @@ Your key is sent to the server once (over your loopback/LAN), encrypted with
 Fernet, and stored. It's decrypted in memory only for the duration of a single
 upstream LLM call and never logged. The browser only ever holds a masked
 preview. Lose `LAX_SECRET_KEY`, however, and all encrypted keys + sessions are
-orphaned — back up `./data/.lax_secret_key` (Docker) or `backend/.env` (native).
+orphaned — back up `./data/.lax_secret_key` (Docker) or `backend/data/.lax_secret_key` (native).
 </details>
 
 <details>

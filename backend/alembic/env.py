@@ -20,20 +20,15 @@ backend_dir = os.path.dirname(this_dir)
 sys.path.insert(0, backend_dir)
 
 from app import models  # noqa: E402 — registers all SQLModel tables
+from app.paths import resolved_db_url  # noqa: E402
 import sqlmodel  # noqa: E402
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Resolve the DB URL the same way app.db does (relative path → backend/ dir).
-_url = os.environ.get("LAX_DATABASE_URL", "sqlite:///./little_alphaxiv.db")
-if _url.startswith("sqlite:///") and not _url.startswith("sqlite:////"):
-    _path = _url[len("sqlite:///"):]
-    if not os.path.isabs(_path):
-        _path = os.path.join(backend_dir, _path)
-    _url = f"sqlite:///{_path}"
-config.set_main_option("sqlalchemy.url", _url)
+# Resolve the DB URL the same way app.db does (relative path → backend/data/).
+config.set_main_option("sqlalchemy.url", resolved_db_url())
 
 target_metadata = sqlmodel.SQLModel.metadata
 

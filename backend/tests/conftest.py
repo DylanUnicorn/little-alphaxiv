@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 
 import pytest_asyncio
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -20,6 +21,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app import db as dbmod
 
+# A throwaway Fernet key pinned per session so tests never read or migrate the
+# real backend/.env (which would copy the production secret into a temp file).
+_TEST_SECRET_KEY = Fernet.generate_key().decode()
+
 
 @pytest_asyncio.fixture
 async def client(tmp_path, monkeypatch):
@@ -27,6 +32,7 @@ async def client(tmp_path, monkeypatch):
     db_url = f"sqlite:///{db_file}"
     monkeypatch.setenv("LAX_DATABASE_URL", db_url)
     os.environ["LAX_DATABASE_URL"] = db_url
+    monkeypatch.setenv("LAX_SECRET_KEY", _TEST_SECRET_KEY)
 
     # Rebuild the module-level engine + factory to point at the fresh temp DB.
     # get_session() references `async_session_factory` as a module global at

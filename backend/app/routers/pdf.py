@@ -10,7 +10,6 @@ Basic single-range support is included so pdf.js can request byte ranges
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 
@@ -18,13 +17,15 @@ import httpx
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, Response
 
+from .. import paths
 from ._papershared import is_safe_external_url
 
 router = APIRouter()
 
-_CACHE_DIR = Path(
-    os.environ.get("LAX_PDF_CACHE", Path.home() / ".little_alphaxiv" / "pdf_cache")
-)
+# PDF disk cache (content-addressed, global, non-sensitive). Default lives in
+# the consolidated data dir (backend/data/pdf_cache locally, /app/data/pdf_cache
+# in Docker where the Dockerfile sets LAX_PDF_CACHE explicitly).
+_CACHE_DIR = paths.pdf_cache_dir()
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
 
