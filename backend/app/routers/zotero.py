@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import os
 import re
 import uuid
 from datetime import date
@@ -50,6 +51,18 @@ _WEB = "https://api.zotero.org"
 # Connector endpoints live directly under /connector (no /api prefix).
 _LOCAL_READ = f"{_LOCAL}/api"
 _LOCAL_CONN = _LOCAL
+
+# Optional HTTP(S) proxy for Zotero WEB-mode calls ONLY (the local API on
+# 127.0.0.1:23119 is never proxied — it's loopback). Docker Desktop on Windows
+# runs the container in a WSL2 VM whose egress bypasses the host's system
+# proxy (Clash/V2Ray at 127.0.0.1:7890 on the Windows host), so from inside a
+# container api.zotero.org is reached over the raw NIC — which, from networks
+# that intermittently throttle api.zotero.org, produces persistent ReadTimeout
+# / ConnectError("")(RST). Setting LAX_ZOTERO_PROXY to a proxy the container CAN
+# reach (e.g. http://host.docker.internal:7890 with Clash's "Allow LAN" on,
+# binding 0.0.0.0:7890) routes only the Zotero web calls through that clean
+# path. Empty/unset = current behavior (direct). See docs/designs.
+_ZOTERO_PROXY = os.environ.get("LAX_ZOTERO_PROXY", "").strip() or None
 
 _TIMEOUT = httpx.Timeout(connect=4.0, read=30.0, write=15.0, pool=10.0)
 _PDF_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=15.0)
@@ -94,11 +107,17 @@ async def _zotero_get(
     """GET a Zotero read URL with one retry on transient errors. Raises the
     last httpx.RequestError on persistent failure; returns the httpx.Response
     (status unchecked) on success — the caller inspects status_code and handles
-    4xx/5xx. 429 / 5xx are retried once before being surfaced."""
+    4xx/5xx. 429 / 5xx are retried once before being surfaced.
+
+    Proxy: web-mode calls (trust_env=True) route through LAX_ZOTERO_PROXY when
+    set, so a Docker container whose egress bypasses the host's system proxy can
+    still reach api.zotero.org over a clean path. Local-mode calls
+    (trust_env=False, loopback) are never proxied."""
+    proxy = _ZOTERO_PROXY if trust_env else None
     for attempt in range(_RETRY_MAX_ATTEMPTS):
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True,
-                                         trust_env=trust_env) as client:
+                                         trust_env=trust_env, proxy=proxy) as client:
                 r = await client.get(url, headers=headers)
         except httpx.RequestError as exc:
             if _is_transient(exc) and attempt + 1 < _RETRY_MAX_ATTEMPTS:
@@ -477,7 +496,7 @@ async def create_item(req: CreateItemRequest) -> Any:
     token = uuid.uuid4().hex
     headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
                "Zotero-Write-Token": token}
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, proxy=_ZOTERO_PROXY) as client:
         try:
             r = await client.post(f"{_WEB}/users/{user_seg}/items", json=[item], headers=headers)
         except httpx.RequestError as exc:
@@ -533,7 +552,7 @@ async def create_collection(req: CreateCollectionRequest) -> Any:
     token = uuid.uuid4().hex
     headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
                "Zotero-Write-Token": token}
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, proxy=_ZOTERO_PROXY) as client:
         try:
             r = await client.post(f"{_WEB}/users/{req.user_id}/collections", json=[payload], headers=headers)
         except httpx.RequestError as exc:
@@ -565,7 +584,7 @@ async def add_to_collection(item_key: str, req: AddToCollectionRequest) -> Any:
     if not (req.user_id and req.api_key):
         raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
     headers = _headers_web(req.api_key)
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, proxy=_ZOTERO_PROXY) as client:
         # GET current item to read its version + existing collections (merge, not replace).
         try:
             g = await client.get(f"{_WEB}/users/{req.user_id}/items/{item_key}", headers=headers)
@@ -729,7 +748,7 @@ async def upsert_note(parent_key: str, req: UpsertNoteRequest) -> Any:
         raise HTTPException(status_code=400, detail="web mode requires user_id and api_key")
     headers = _headers_web(req.api_key)
     tag = req.tag or ANNOT_NOTE_TAG
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, proxy=_ZOTERO_PROXY) as client:
         if req.note_key:
             ok, key = await _patch_note(client, req.user_id, req.note_key, req.html, headers, tag)
             if ok:
@@ -1008,7 +1027,7 @@ async def save_arxiv(req: SaveArxivRequest) -> Any:
     headers = {**_headers_web(req.api_key), "Content-Type": "application/json",
                "Zotero-Write-Token": token}
     note_added = False
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, proxy=_ZOTERO_PROXY) as client:
         try:
             r = await client.post(f"{_WEB}/users/{req.user_id}/items", json=[item], headers=headers)
         except httpx.RequestError as exc:
