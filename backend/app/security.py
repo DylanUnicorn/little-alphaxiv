@@ -69,7 +69,7 @@ def _chmod_600(path: str) -> None:
 def _ensure_secret_key() -> str:
     """Return a valid Fernet key for LAX_SECRET_KEY.
 
-    Resolution order (mirrors docker/entrypoint.sh):
+    Resolution order (mirrors deploy/entrypoint.sh):
       1. LAX_SECRET_KEY env var (operator-set, e.g. via compose) — used as-is.
       2. The persisted key file next to the DB (paths.secret_key_path()) — reused.
       3. One-time migration from backend/.env (pre-consolidation) → write to the
@@ -101,7 +101,7 @@ def _ensure_secret_key() -> str:
         except OSError:
             pass
         return legacy_key
-    # 4. First run: generate + persist (mirrors docker/entrypoint.sh).
+    # 4. First run: generate + persist (mirrors deploy/entrypoint.sh).
     generated = Fernet.generate_key().decode()
     key_file.write_text(generated + "\n", encoding="utf-8")
     _chmod_600(str(key_file))

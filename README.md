@@ -9,7 +9,7 @@ Chat with an LLM to discover papers, then read the PDF side-by-side with a
 paper-aware assistant. Bring your own key. Your data stays on your server.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](./deploy/docker-compose.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](./backend/requirements.txt)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -84,12 +84,12 @@ there.
 
 The fastest way to run Little Alphaxiv — a single image builds the frontend and
 serves it same-origin from the backend. The `LAX_SECRET_KEY` is auto-generated
-into the `./data` volume on first start, so there's **zero config** required.
+into the `deploy/data` volume on first start, so there's **zero config** required.
 
 ```bash
 git clone https://github.com/DylanUnicorn/little-alphaxiv.git
 cd little-alphaxiv
-docker compose up -d            # builds + starts on http://127.0.0.1:8000
+cd deploy && docker compose up -d   # builds + starts on http://127.0.0.1:8000
 ```
 
 Then:
@@ -100,23 +100,26 @@ Then:
    (see [Configure a provider](#configure-a-provider)), set it default.
 4. Back to the chat — ask: *"find me recent papers on vision transformers"*.
 
-Data (SQLite DB, PDF cache, the persisted secret key) lives in `./data/`.
-View server logs with `docker compose logs -f little-alphaxiv`. Stop with
+Data (SQLite DB, PDF cache, the persisted secret key) lives in `deploy/data/`.
+View server logs with `docker compose logs -f little-alphaxiv` (run from
+`deploy/`, or `docker logs little-alphaxiv` from anywhere). Stop with
 `docker compose down`.
 
 > **Password recovery without SMTP:** by default, reset links are printed to the
 > container logs (no mail server needed for localhost). To email them, set
-> `LAX_SMTP_URL` in a root-level `.env` — see
+> `LAX_SMTP_URL` in a `.env` next to `docker-compose.yml` — see
 > [Configuration](#configuration-env-vars).
 
 ## 📦 Installation
 
 ### A. Docker (recommended)
 
-See [Quick start](#quick-start-docker) above. Optional advanced config via a
-root-level `.env` (copy from `.env.docker.example`):
+See [Quick start](#quick-start-docker) above. All Docker files live in the
+`deploy/` directory — run commands from there. Optional advanced config via a
+`.env` in `deploy/` (copy from `deploy/.env.docker.example`):
 
 ```bash
+cd deploy
 cp .env.docker.example .env      # optional — all values have sensible defaults
 # edit .env to set LAX_PORT, LAX_SMTP_URL, LAX_SECURE_COOKIES, etc.
 docker compose up -d
@@ -125,6 +128,7 @@ docker compose up -d
 Customize the host port without editing the compose file:
 
 ```bash
+cd deploy
 LAX_PORT=8080 docker compose up -d
 ```
 
@@ -134,7 +138,10 @@ LAX_PORT=8080 docker compose up -d
 # Terminal 1 — backend (Python 3.10+)
 cd backend
 ./run.sh                        # Windows: run.bat
-# On first start this auto-creates backend/data/little_alphaxiv.db + generates backend/data/.lax_secret_key
+# run.sh/run.bat auto-point the backend at deploy/data/ (the SAME data dir
+# Docker uses), so native dev and the container share one DB + secret key —
+# no data fork. On first start this auto-creates deploy/data/little_alphaxiv.db
+# + generates deploy/data/.lax_secret_key.
 
 # Terminal 2 — frontend
 cd frontend
@@ -143,14 +150,17 @@ npm run dev                     # http://127.0.0.1:5173
 ```
 
 Open **http://127.0.0.1:5173** → register → add a provider → chat. Vite proxies
-`/api/*` → `http://127.0.0.1:8000`. No env vars needed for the default setup.
+`/api/*` → `http://127.0.0.1:8000`. No env vars needed for the default setup —
+`run.sh`/`run.bat` set `LAX_DATABASE_URL` + `LAX_PDF_CACHE` to `../deploy/data/`
+for you (set your own to override). To run the backend and the container
+**simultaneously**, don't — they share one SQLite file; use one or the other.
 
-> **Upgrading from an older version?** On first start after updating, the
-> backend auto-migrates your existing data into the consolidated `backend/data/`
-> dir — the SQLite DB (with all your accounts, conversations, papers, and saved
-> providers), the Fernet secret key, and the password-reset link log move out of
-> the backend root. Nothing to do; everything carries over intact (the secret key
-> is reused, so encrypted API keys + active sessions keep working).
+> **Upgrading from an older version?** If you have data in the old
+> `backend/data/` location (pre-2026-06-30), copy it into `deploy/data/` to keep
+> using it: `cp -r backend/data/* deploy/data/` (Windows: `Copy-Item
+> backend\data\* deploy\data\ -Recurse -Force`). Everything carries over intact
+> — the Fernet secret key is reused, so encrypted API keys + active sessions
+> keep working. A fresh install just starts empty in `deploy/data/`.
 
 > Windows users: prefer `run.bat` over `bash run.sh` — `bash` may resolve to
 > WSL, whose Python 3.8 can't parse the backend's `str | None` syntax (needs
@@ -193,21 +203,22 @@ afterward the UI only shows a masked preview.
 
 ## ⚙️ Configuration (env vars)
 
-All optional — defaults work for localhost. In Docker, set these in a root
-`.env` (copy from `.env.docker.example`). For native dev, copy
-`backend/.env.example` → `backend/.env`.
+All optional — defaults work for localhost. In Docker, set these in a `.env`
+next to `deploy/docker-compose.yml` (copy from `deploy/.env.docker.example`).
+For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
+`backend/.env.example` → `backend/.env` only to override other vars.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `LAX_DATABASE_URL` | `sqlite:///./data/little_alphaxiv.db` | SQLite file (relative paths resolve under `backend/`). Default `backend/data/little_alphaxiv.db`; Docker `sqlite:////app/data/little_alphaxiv.db`. The secret key + reset log live next to the DB. |
-| `LAX_SECRET_KEY` | *(auto-generated)* | Fernet key for encrypting stored API keys + signing session cookies. Auto-generated into `backend/data/.lax_secret_key` (native) or `./data/.lax_secret_key` (Docker) on first run — the DB, PDF cache, secret key, and reset log all live in one data dir. **Keep it secret — losing it orphans all encrypted keys + sessions.** |
+| `LAX_DATABASE_URL` | `sqlite:///./data/little_alphaxiv.db` | SQLite file (relative paths resolve under `backend/`). `run.sh`/`run.bat` point this at `../deploy/data/little_alphaxiv.db`; Docker uses `sqlite:////app/data/little_alphaxiv.db`. The secret key + reset log live next to the DB. |
+| `LAX_SECRET_KEY` | *(auto-generated)* | Fernet key for encrypting stored API keys + signing session cookies. Auto-generated into `deploy/data/.lax_secret_key` (native dev + Docker share it) on first run — the DB, PDF cache, secret key, and reset log all live in one data dir. **Keep it secret — losing it orphans all encrypted keys + sessions.** |
 | `LAX_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated browser origins for CORS. Pinned (no `*`) because credentials flow through cookies. Add your LAN origin if running cross-origin. |
 | `LAX_SECURE_COOKIES` | `false` | Set `true` behind HTTPS so the session cookie gets the `Secure` flag. |
 | `LAX_SESSION_MAX_AGE_DAYS` | `30` | Session cookie + row lifetime. |
 | `LAX_SMTP_URL` | *(unset)* | SMTP URL for password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the logs (zero-config for localhost). |
 | `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
-| `LAX_PDF_CACHE` | `backend/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). In Docker: `/app/data/pdf_cache`. |
+| `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`. |
 | `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
 
 ## 🧠 How it works
@@ -259,9 +270,13 @@ little-alphaxiv/
 │   └── package.json
 ├── tools/                    # Playwright E2E drivers + mock LLM + admin CLIs
 ├── docs/designs/             # validated design docs
-├── Dockerfile                # multi-stage: build frontend → run backend + serve dist
-├── docker-compose.yml        # one-command self-hosted run
-└── docker/entrypoint.sh      # auto-generates + persists LAX_SECRET_KEY
+├── deploy/                   # all Docker files (build + run + data volume)
+│   ├── Dockerfile            # multi-stage: build frontend → run backend + serve dist
+│   ├── docker-compose.yml    # one-command self-hosted run (build context = repo root)
+│   ├── entrypoint.sh         # auto-generates + persists LAX_SECRET_KEY
+│   ├── .env.docker.example   # optional compose env overrides
+│   └── data/                 # runtime data volume (DB + key + PDF cache; gitignored)
+└── .dockerignore             # build-context exclusions (stays at repo root)
 ```
 
 ## 🔒 Security
@@ -331,7 +346,7 @@ Your key is sent to the server once (over your loopback/LAN), encrypted with
 Fernet, and stored. It's decrypted in memory only for the duration of a single
 upstream LLM call and never logged. The browser only ever holds a masked
 preview. Lose `LAX_SECRET_KEY`, however, and all encrypted keys + sessions are
-orphaned — back up `./data/.lax_secret_key` (Docker) or `backend/data/.lax_secret_key` (native).
+orphaned — back up `deploy/data/.lax_secret_key` (native dev + Docker share it).
 </details>
 
 <details>

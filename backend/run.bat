@@ -12,6 +12,15 @@ setlocal enableextensions enabledelayedexpansion
 cd /d "%~dp0"
 title Little Alphaxiv backend
 
+REM Point local dev at the SAME data dir Docker uses (..\deploy\data\), so the
+REM native dev server and the container share one DB + PDF cache + secret key
+REM (no data fork). Only set if the operator hasn't configured their own — an
+REM explicit LAX_DATABASE_URL / LAX_PDF_CACHE always wins.
+set "DEPLOY_DATA=%~dp0..\deploy\data"
+if not defined LAX_DATABASE_URL set "LAX_DATABASE_URL=sqlite:///%DEPLOY_DATA%\little_alphaxiv.db"
+if not defined LAX_PDF_CACHE set "LAX_PDF_CACHE=%DEPLOY_DATA%\pdf_cache"
+if not exist "%DEPLOY_DATA%" mkdir "%DEPLOY_DATA%" 2>nul
+
 REM --- Activate the project's required env (Python 3.10) ----------------------
 REM `conda activate` needs the conda shell hook loaded. Try the common conda
 REM locations explicitly so this works in a plain cmd / Explorer double-click,

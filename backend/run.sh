@@ -6,6 +6,19 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Point local dev at the SAME data dir Docker uses (../deploy/data/), so the
+# native dev server and the container share one DB + PDF cache + secret key
+# (no data fork). Only set if the operator hasn't configured their own — an
+# explicit LAX_DATABASE_URL / LAX_PDF_CACHE always wins.
+DEPLOY_DATA="$SCRIPT_DIR/../deploy/data"
+if [ -z "${LAX_DATABASE_URL:-}" ]; then
+  export LAX_DATABASE_URL="sqlite:///$DEPLOY_DATA/little_alphaxiv.db"
+fi
+if [ -z "${LAX_PDF_CACHE:-}" ]; then
+  export LAX_PDF_CACHE="$DEPLOY_DATA/pdf_cache"
+fi
+mkdir -p "$DEPLOY_DATA" 2>/dev/null || true
+
 # Activate Agent_env if conda is present (per global Python env rule).
 if command -v conda >/dev/null 2>&1; then
   if conda env list | grep -q "Agent_env"; then

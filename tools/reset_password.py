@@ -27,12 +27,13 @@ import bcrypt
 
 def _db_path() -> Path:
     backend = Path(__file__).resolve().parent.parent / "backend"
-    url = os.environ.get("LAX_DATABASE_URL", "sqlite:///./data/little_alphaxiv.db")
-    fname = url.split("///")[-1] if "///" in url else "data/little_alphaxiv.db"
+    # Default matches run.sh/run.bat → deploy/data/little_alphaxiv.db (relative to backend/).
+    url = os.environ.get("LAX_DATABASE_URL", "sqlite:///../deploy/data/little_alphaxiv.db")
+    fname = url.split("///")[-1] if "///" in url else "../deploy/data/little_alphaxiv.db"
     p = Path(fname)
     if not p.is_absolute():
         p = backend / p
-    return p
+    return p.resolve()
 
 
 def main(argv: list[str]) -> int:

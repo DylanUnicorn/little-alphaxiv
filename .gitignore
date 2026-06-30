@@ -37,10 +37,11 @@ ENV/
 *.db-shm
 *.db-wal
 
-# ---- Runtime data (local dev: backend/data/, Docker host: ./data/) ----
+# ---- Runtime data (local dev: backend/data/, Docker host: deploy/data/) ----
 # SQLite DB + PDF cache + persisted LAX_SECRET_KEY + reset-link log. Never tracked.
 /data/
 backend/data/
+deploy/data/
 
 # ---- Playwright / E2E test artifacts (regenerable) ----
 shots/

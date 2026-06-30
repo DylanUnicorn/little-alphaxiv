@@ -56,7 +56,7 @@ See the [README](./README.md#-contributing) and `CLAUDE.md` for the full rig
    intentionally disabled; the empty-conversation rule; same-origin serving).
 4. **Don't re-enable `React.StrictMode`** without reworking SSE abort behavior —
    double-mounting aborts in-flight streams.
-5. **Never commit secrets** — `.env`, `*.db`, and the whole `backend/data/`
+5. **Never commit secrets** — `.env`, `*.db`, and the whole `deploy/data/`
    dir (DB, PDF cache, `lax_reset_links.log`, `.lax_secret_key`) are already
    gitignored. Keep it that way.
 

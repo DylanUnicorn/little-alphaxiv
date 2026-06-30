@@ -10,10 +10,12 @@
 backend/.env
 backend/lax_reset_links.log
 
-# Local databases + runtime data
+# Local databases + runtime data (never bake into the image)
 backend/*.db
 backend/*.db-*
+backend/data/
 data/
+deploy/data/
 
 # Python caches / venvs
 **/__pycache__/

@@ -5,9 +5,13 @@
 # Stage 2 runs the FastAPI backend and serves those assets same-origin at "/"
 # (see backend/app/main.py — frontend/dist is mounted last, after /api/*).
 #
-# Build:  docker compose build
-# Run:    docker compose up -d
+# Build:  cd deploy && docker compose build
+# Run:    cd deploy && docker compose up -d
 # Open:   http://127.0.0.1:8000  → redirected to /login → Register.
+#
+# This Dockerfile lives in deploy/ but the build context is the repo root
+# (set in docker-compose.yml: context = ..), so COPY paths are relative to
+# the repo root (frontend/, backend/, deploy/entrypoint.sh).
 
 # ─────────────────────────── Stage 1: frontend ───────────────────────────
 FROM node:20-alpine AS frontend-builder
@@ -47,7 +51,7 @@ COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 # Entrypoint: auto-generates + persists LAX_SECRET_KEY into the data volume on
 # first run (so `docker compose up -d` works with zero config), then execs uvicorn.
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY deploy/entrypoint.sh /entrypoint.sh
 # Strip any CRLF in case the file was checked out on Windows without .gitattributes.
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 

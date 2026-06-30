@@ -3,18 +3,21 @@
 # One-command self-hosted run. The entrypoint auto-generates LAX_SECRET_KEY
 # into the ./data volume on first start, so you can simply:
 #
-#     docker compose up -d
+#     cd deploy && docker compose up -d
 #
 # Then open http://127.0.0.1:8000  →  /login  →  Register.
 #
-# Optional: create a root-level `.env` (copy from `.env.docker.example`) to set
-# SMTP for password recovery, a custom host port, or secure cookies.
+# Optional: create a `.env` next to this file (copy from `.env.docker.example`)
+# to set SMTP for password recovery, a custom host port, or secure cookies.
+#
+# Build context is the repo root (..) so the Dockerfile can COPY frontend/ +
+# backend/. The data volume (./data) is relative to this file → deploy/data/.
 
 services:
   little-alphaxiv:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: deploy/Dockerfile
     image: little-alphaxiv:latest
     container_name: little-alphaxiv
     ports:
