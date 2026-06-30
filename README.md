@@ -145,6 +145,13 @@ npm run dev                     # http://127.0.0.1:5173
 Open **http://127.0.0.1:5173** → register → add a provider → chat. Vite proxies
 `/api/*` → `http://127.0.0.1:8000`. No env vars needed for the default setup.
 
+> **Upgrading from an older version?** On first start after updating, the
+> backend auto-migrates your existing data into the consolidated `backend/data/`
+> dir — the SQLite DB (with all your accounts, conversations, papers, and saved
+> providers), the Fernet secret key, and the password-reset link log move out of
+> the backend root. Nothing to do; everything carries over intact (the secret key
+> is reused, so encrypted API keys + active sessions keep working).
+
 > Windows users: prefer `run.bat` over `bash run.sh` — `bash` may resolve to
 > WSL, whose Python 3.8 can't parse the backend's `str | None` syntax (needs
 > Python 3.10+).
