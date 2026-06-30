@@ -392,10 +392,6 @@ one-api/new-api, etc. Add the base URL + key in Settings → Providers.
 Released under the [MIT License](./LICENSE) — © 2026 DylanUnicorn and
 contributors.
 
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=DylanUnicorn/little-alphaxiv&type=Date)](https://star-history.com/#DylanUnicorn/little-alphaxiv&Date)
-
 ---
 
 <div align="center">

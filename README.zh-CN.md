@@ -362,10 +362,6 @@ Providers」里填 base URL + key。
 
 基于 [MIT 许可证](./LICENSE) 发布 —— © 2026 DylanUnicorn 及贡献者。
 
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=DylanUnicorn/little-alphaxiv&type=Date)](https://star-history.com/#DylanUnicorn/little-alphaxiv&Date)
-
 ---
 
 <div align="center">
