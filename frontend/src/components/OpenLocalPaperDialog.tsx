@@ -120,6 +120,46 @@ function UploadTab({
       if (a && !next.authors) next.authors = a;
       const s = str(info.Subject);
       if (s && !next.abstract) next.abstract = s;
+      // DOI: publisher/arXiv PDFs often embed it in the Info dict (as a URL).
+      const doiRaw = str(info.DOI) || str(info.doi);
+      if (doiRaw && !next.doi) {
+        let d = doiRaw.trim().toLowerCase();
+        for (const p of ["https://doi.org/", "http://doi.org/", "doi:"]) {
+          if (d.startsWith(p)) { d = d.slice(p.length); break; }
+        }
+        if (d) next.doi = d;
+      }
+      // No DOI but an arXiv id -> synthesize the arXiv DOI (10.48550/arxiv.<id>).
+      if (!next.doi) {
+        const axRaw = str(info.arXivID) || str(info.arxiv_id) || str(info.arXiv);
+        if (axRaw) {
+          const m = axRaw.match(/(\d{4}\.\d{4,5})/);
+          if (m) next.doi = `10.48550/arxiv.${m[1]}`;
+        }
+      }
+      // Page-1 text: a second pass for DOI/abstract the Info dict lacks.
+      // pdf.js already parsed the PDF here, so this is cheap and gives the user
+      // real values immediately (no LLM round-trip needed for the common case).
+      try {
+        const page = await doc.getPage(1);
+        const tc = await page.getTextContent();
+        const pageText = tc.items
+          .map((i) => ("str" in i ? i.str : ""))
+          .join(" ")
+          .replace(/\s+/g, " ");
+        if (!next.doi) {
+          const dm = pageText.match(/\b10\.\d{4,9}\/[^\s"<>]+/);
+          if (dm) next.doi = dm[0].replace(/[.,;)\]]+$/, "");
+        }
+        if (!next.abstract) {
+          const am = pageText.match(
+            /(?:Abstract|ABSTRACT)\s*[:：]?\s*([\s\S]{40,2500}?)(?=\s*(?:Keywords|Index Terms|Introduction|1\.\s*Introduction|I\.\s*Introduction))/
+          );
+          if (am) next.abstract = am[1].trim().slice(0, 2000);
+        }
+      } catch {
+        /* best-effort — page-1 text is optional */
+      }
       // Filename stem is a decent last-resort title.
       if (!next.title) next.title = f.name.replace(/\.pdf$/i, "");
       setMeta(next);
@@ -153,19 +193,24 @@ function UploadTab({
       const raw = await completeChat({
         provider,
         messages: [
-          { role: "system", content: "Extract paper metadata from the given first-page text. Respond with ONLY a JSON object: {\"title\": string, \"authors\": string[], \"abstract\": string}. Omit a field if not present." },
+          { role: "system", content: "Extract paper metadata from the given first-page text. Respond with ONLY a JSON object (no markdown fences, no prose): {\"title\": string, \"authors\": string[], \"abstract\": string, \"doi\": string}. Omit a field if not present." },
           { role: "user", content: `First page text:\n${pageText}` },
         ],
       });
-      const parsed = JSON.parse(raw) as Partial<Meta>;
+      // LLMs often wrap JSON in ```json fences or add surrounding prose; extract
+      // the {...} substring before parsing so a fenced reply doesn't crash this.
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      const parsed = (jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(raw)) as Partial<Meta>;
       setMeta((m) => ({
         title: parsed.title || m.title,
         authors: Array.isArray(parsed.authors) ? parsed.authors.join("; ") : m.authors,
         abstract: parsed.abstract || m.abstract,
-        doi: m.doi,
+        doi: parsed.doi || m.doi,
       }));
-    } catch {
-      setError("LLM enrichment failed. You can edit the metadata by hand.");
+    } catch (e) {
+      setError(
+        `LLM enrichment failed: ${(e as Error).message || "unknown error"}. You can edit the metadata by hand.`
+      );
     } finally {
       setEnriching(false);
     }
