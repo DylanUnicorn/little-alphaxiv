@@ -122,6 +122,12 @@ View server logs with `docker compose logs -f little-alphaxiv` (run from
 > `LAX_SMTP_URL` in a `.env` next to `docker-compose.yml` — see
 > [Configuration](#configuration-env-vars).
 
+> **Find non-arXiv papers (IEEE/ACM/Springer, DOI-only):** the assistant falls
+> back to `web_search` when the academic search tools come up empty. To enable
+> it, set `ANYSEARCH_API_KEY` in `deploy/.env` (copy from
+> `deploy/.env.docker.example`). Without it, `web_search` is a no-op and the
+> assistant sticks to arXiv/OpenAlex/Semantic Scholar.
+
 ## 📦 Installation
 
 ### A. Docker (recommended)
@@ -232,6 +238,8 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
 | `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`. |
 | `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
+| `ANYSEARCH_API_KEY` | *(unset)* | API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. Unset → `web_search` reports "not configured" and the model falls back to academic tools (no crash). Same env var your Claude Code MCP config can reference. In Docker, set it in `deploy/.env`. |
+| `LAX_ANYSEARCH_URL` | `https://api.anysearch.com/mcp` | Override the anysearch MCP endpoint URL. |
 
 ## 🧠 How it works
 
