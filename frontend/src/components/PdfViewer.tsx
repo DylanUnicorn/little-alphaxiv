@@ -52,6 +52,13 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   // scroll-save listener so the intermediate scrollIntoView/frac steps don't
   // overwrite the saved value with a transient position.
   const restoringRef = useRef(false);
+  // Last-known-good scroll position (page + frac), cached on every debounced
+  // scroll-save. The unmount save reads THIS, not the live DOM, because by the
+  // time React runs our cleanup during SPA navigation the .pdf-scroll container
+  // has already collapsed to zero height — getBoundingClientRect returns
+  // all-zeros, which computeScrollPos misreads as "all pages above the
+  // viewport" → {page: numPages, frac: 0} → restore jumps to the last page.
+  const lastPosRef = useRef<{ page: number; frac: number } | null>(null);
 
   // "Create Note from Annotations": while enabled for this paper, continuously
   // push highlights + text notes to a child note in Zotero. Needs the pdf.js
@@ -110,48 +117,47 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   }, [arxivId, pdfUrlOverride]);
 
   // --- Per-paper scroll-position memory (save) ---
-  // Debounced (rAF) save of the topmost visible page + fraction on scroll,
-  // plus a final synchronous save on unmount/paper-change so navigating away
-  // (e.g. to Settings) or a hard refresh always captures the last position.
-  // Restore lives in the effect below; restoringRef suppresses saves during
-  // the restore's intermediate scroll steps.
-  const DBG = true; // DEBUG: remove after root-causing scroll-restore bug
+  // Debounced (rAF) save of the topmost visible page + fraction on scroll.
+  // The unmount save persists lastPosRef (cached on each save), NOT a fresh
+  // rect read: at SPA-navigation unmount the .pdf-scroll container has already
+  // collapsed to zero height, so a live getBoundingClientRect pass returns
+  // all-zeros, which computeScrollPos misreads as "every page above the
+  // viewport" → {page: numPages, frac: 0} → restore jumps to the last page.
+  // restoringRef suppresses saves during the restore's intermediate steps.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let raf = 0;
-    const save = (why: string) => {
+    const save = () => {
       raf = 0;
-      if (restoringRef.current) {
-        if (DBG) console.log("[ssave] suppressed (restoring)", why, arxivId);
-        return;
-      }
+      if (restoringRef.current) return;
       const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
-      if (!wraps.length) {
-        if (DBG) console.log("[ssave] no wraps", why, arxivId);
-        return;
-      }
+      if (!wraps.length) return;
       const cTop = container.getBoundingClientRect().top;
       const rects = Array.from(wraps, (w) => {
         const r = w.getBoundingClientRect();
         return { top: r.top, height: r.height };
       });
+      // Defensive: skip degenerate (zero-height) rects — see the unmount note
+      // above. Shouldn't happen during normal scrolling, but guards teardown races.
+      if (rects[0].height === 0) return;
       const pos = computeScrollPos(rects, cTop);
-      const first = rects[0], last = rects[rects.length - 1];
-      if (DBG) console.log(`[ssave] ${why} arxiv=${arxivId} scrollTop=${container.scrollTop} scrollH=${container.scrollHeight} clientH=${container.clientHeight} cTop=${cTop.toFixed(0)} wraps=${wraps.length} firstTop=${first.top.toFixed(0)} firstH=${first.height.toFixed(0)} lastTop=${last.top.toFixed(0)} lastH=${last.height.toFixed(0)} →`, pos);
-      if (pos) savePdfScroll(arxivId, pos);
+      if (pos) {
+        lastPosRef.current = pos; // cache last-known-good for the unmount save
+        savePdfScroll(arxivId, pos);
+      }
     };
     const onScroll = () => {
       if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => save("scroll"));
+      raf = requestAnimationFrame(save);
     };
     container.addEventListener("scroll", onScroll, { passive: true });
-    if (DBG) console.log("[ssave] listener attached", arxivId);
     return () => {
       container.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
-      save("unmount"); // final capture before unmount / paper switch
-      if (DBG) console.log("[ssave] listener removed (unmount)", arxivId);
+      // Persist the cached last-known-good position. Do NOT read live rects
+      // here — the container has collapsed by cleanup time on SPA navigation.
+      if (lastPosRef.current) savePdfScroll(arxivId, lastPosRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arxivId]);
@@ -165,7 +171,6 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   useEffect(() => {
     if (!doc || numPages === 0) return;
     const saved = loadPdfScroll(arxivId);
-    if (DBG) console.log("[rstore] effect fired", arxivId, "saved=", saved, "numPages=", numPages);
     if (!saved || saved.page < 1 || saved.page > numPages) return;
     restoringRef.current = true;
     let cancelled = false;
@@ -176,11 +181,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
       const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
       const target = wraps[saved.page - 1];
       if (!target) { restoringRef.current = false; return; }
-      const tRect0 = target.getBoundingClientRect();
-      if (DBG) console.log(`[rstore] before scrollIntoView page=${saved.page} scrollTop=${container.scrollTop} targetTop=${tRect0.top.toFixed(0)} targetH=${tRect0.height.toFixed(0)}`);
       target.scrollIntoView({ block: "start" });
-      const tRect1 = target.getBoundingClientRect();
-      if (DBG) console.log(`[rstore] after  scrollIntoView page=${saved.page} scrollTop=${container.scrollTop} targetTop=${tRect1.top.toFixed(0)} targetH=${tRect1.height.toFixed(0)} frac=${saved.frac}`);
       if (saved.frac <= 0) { restoringRef.current = false; return; }
       // Poll until the target page has rendered (real height) before applying
       // the fractional delta; bail after 1.5s and apply best-effort.
@@ -195,9 +196,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
         const cTop = container.getBoundingClientRect().top;
         const r = target.getBoundingClientRect();
         const delta = computeFracDelta({ top: r.top, height: r.height }, cTop, saved.frac);
-        const before = container.scrollTop;
         container.scrollTop += delta;
-        if (DBG) console.log(`[rstore] applyFrac rendered=${rendered} cTop=${cTop.toFixed(0)} targetTop=${r.top.toFixed(0)} targetH=${r.height.toFixed(0)} delta=${delta.toFixed(0)} scrollTop ${before.toFixed(0)}→${container.scrollTop}`);
         restoringRef.current = false;
       };
       raf = requestAnimationFrame(applyFrac);
