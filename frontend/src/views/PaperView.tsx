@@ -23,6 +23,7 @@ import { useAnnotations } from "../store/annotations";
 import { pdfUrlForOa, paperUploadUrl } from "../lib/api";
 import * as db from "../lib/db";
 import { ensurePaperMeta, hasRealTitle, paperThreadTitle } from "../lib/paperMeta";
+import { resolvePdfSource } from "../lib/paperSource";
 import type { StylePreset } from "../types";
 
 export function PaperView() {
@@ -43,7 +44,15 @@ export function PaperView() {
   const [convIdState, setConvId] = useState<string | null>(convId ?? null);
   const [fullText, setFullText] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(true);
+  // pdfUrlOverride + pdfUrlForId are a pair: the override is the URL to load
+  // (when the paper isn't a plain arXiv paper), and pdfUrlForId is the arxivId
+  // that override was resolved FOR. PdfViewer refuses to call getDocument until
+  // pdfUrlForId === arxivId — this kills the race where, on a paper switch,
+  // the stale override from the PREVIOUS paper lags one render behind arxivId
+  // and PdfViewer briefly loads the wrong PDF (decoupling it from the chat +
+  // annotation store → highlights saved to the wrong paper_id = ghost annots).
   const [pdfUrlOverride, setPdfUrlOverride] = useState<string | undefined>(undefined);
+  const [pdfUrlForId, setPdfUrlForId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const initRef = useRef<string | null>(null);
 
@@ -55,11 +64,21 @@ export function PaperView() {
     db.getPaper(arxivId).then(async (p) => {
       if (cancelled) return;
       if (p?.full_text) { setFullText(p.full_text); setExtracting(false); }
-      if (p?.oa_pdf_url) setPdfUrlOverride(pdfUrlForOa(p.oa_pdf_url));
-      else if (p?.source === "upload" || p?.source === "zotero")
-        // User-private PDF (uploaded or Zotero-imported): serve via the
-        // auth-gated per-user upload endpoint instead of arXiv/pdf-url.
-        setPdfUrlOverride(paperUploadUrl(arxivId));
+      // Resolve which PDF endpoint this paper loads from. The `default` branch
+      // (normal arXiv paper) maps to `undefined` — this is what CLEARS a stale
+      // override left over from a previously-viewed uploaded/OA paper; without
+      // it, PdfViewer kept loading the wrong PDF after switching papers. The
+      // pair is committed together (override + the id it was resolved for) so
+      // PdfViewer's pdfUrlForId guard can tell a fresh resolution from a stale
+      // one. db.getPaper swallows errors → p=undefined → default fallback, so
+      // this always resolves (PdfViewer never hangs waiting).
+      const src = resolvePdfSource(p);
+      setPdfUrlOverride(
+        src.kind === "oa" ? pdfUrlForOa(src.url) :
+        src.kind === "upload" ? paperUploadUrl(arxivId) :
+        undefined
+      );
+      setPdfUrlForId(arxivId);
       // Direct-URL navigation (bookmark / refresh / external link) can leave a
       // bare-id stub: title = arxivId, no authors/abstract/DOI. Fetch the real
       // arXiv metadata so the chat-title context, sidebar, and Zotero "add"
@@ -181,7 +200,7 @@ export function PaperView() {
   return (
     <main className="main-pane paper-view">
       <ResizablePanels
-        left={<PdfViewer arxivId={arxivId} pdfUrlOverride={pdfUrlOverride} onTextExtracted={onTextExtracted} />}
+        left={<PdfViewer arxivId={arxivId} pdfUrlOverride={pdfUrlOverride} pdfUrlForId={pdfUrlForId} onTextExtracted={onTextExtracted} />}
         right={
           <div className="chat-col-inner">
             {convIdState && (

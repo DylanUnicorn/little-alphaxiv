@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolvePaperId, openTarget, buildSearchTools, webToPapers } from "./paperSource";
+import { resolvePaperId, openTarget, buildSearchTools, webToPapers, resolvePdfSource } from "./paperSource";
 import type { Paper } from "../types";
 
 function p(over: Partial<Paper> = {}): Paper {
@@ -135,5 +135,49 @@ describe("webToPapers", () => {
     const [p0] = webToPapers([{ rank: 1, title: "X", url: "https://example.com/p", snippet: long }]);
     expect(p0.abstract.length).toBeLessThanOrEqual(243); // 240 + ellipsis
     expect(p0.abstract.endsWith("…")).toBe(true);
+  });
+});
+
+describe("resolvePdfSource", () => {
+  it("returns default for a normal arXiv paper (the branch that clears a stale override)", () => {
+    expect(resolvePdfSource(p({ arxiv_id: "2401.12345", source: "arxiv" }))).toEqual({ kind: "default" });
+  });
+
+  it("returns default when the record is not cached yet (null / undefined)", () => {
+    expect(resolvePdfSource(null)).toEqual({ kind: "default" });
+    expect(resolvePdfSource(undefined)).toEqual({ kind: "default" });
+  });
+
+  it("returns default for a bare web result with no OA PDF and no upload source", () => {
+    expect(resolvePdfSource(p({ source: "web" }))).toEqual({ kind: "default" });
+  });
+
+  it("routes an OA paper to the pdf-url proxy with its oa_pdf_url", () => {
+    expect(resolvePdfSource(p({ source: "openalex", oa_pdf_url: "https://example.org/a.pdf" }))).toEqual({
+      kind: "oa",
+      url: "https://example.org/a.pdf",
+    });
+  });
+
+  it("routes an uploaded paper to the per-user upload endpoint", () => {
+    expect(resolvePdfSource(p({ source: "upload" }))).toEqual({ kind: "upload" });
+  });
+
+  it("routes a Zotero-imported paper to the per-user upload endpoint", () => {
+    expect(resolvePdfSource(p({ source: "zotero" }))).toEqual({ kind: "upload" });
+  });
+
+  it("prefers oa_pdf_url over source when both are set (OA paper tagged with a non-upload source)", () => {
+    expect(resolvePdfSource(p({ source: "openalex", oa_pdf_url: "https://x/y.pdf" }))).toEqual({
+      kind: "oa",
+      url: "https://x/y.pdf",
+    });
+  });
+
+  it("documents the precedence order: oa_pdf_url > source(upload|zotero) > default", () => {
+    // source=upload with no oa_pdf_url → upload (source wins over default).
+    expect(resolvePdfSource(p({ arxiv_id: "2401.1", source: "upload" }))).toEqual({ kind: "upload" });
+    // source=arxiv (or anything else) with no oa_pdf_url → default.
+    expect(resolvePdfSource(p({ arxiv_id: "2401.1", source: "arxiv" }))).toEqual({ kind: "default" });
   });
 });
