@@ -33,6 +33,15 @@ export function scrollKey(arxivId: string): string {
   return `lax-pdf-scroll:${arxivId}`;
 }
 
+/** Schema version stamped into every saved entry. `loadPdfScroll` ignores
+ *  entries whose version doesn't match — this auto-clears stale data written
+ *  by older, buggy versions of this feature (e.g. the v1 unmount bug that
+ *  wrote `{page: numPages, frac: 0}` for every paper, causing a persistent
+ *  "jumps to last page" regression that the unmount-cache fix alone couldn't
+ *  clear because the corrupted values were already in localStorage). Bump this
+ *  whenever the save format changes incompatibly. */
+const SCROLL_POS_VERSION = 1;
+
 /** Clamp to [0, 1]. */
 export function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
@@ -88,12 +97,16 @@ export function computeFracDelta(
   return savedFrac * targetRect.height - scrolledPast;
 }
 
-/** Load a paper's saved scroll position, or null if none / corrupt. */
+/** Load a paper's saved scroll position, or null if none / wrong version / corrupt.
+ *  Entries without a matching `v` are ignored (and overwritten on the next
+ *  save) — this is how stale data from older buggy versions gets cleared. */
 export function loadPdfScroll(arxivId: string): PdfScrollPos | null {
   try {
     const raw = localStorage.getItem(scrollKey(arxivId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PdfScrollPos>;
+    const parsed = JSON.parse(raw) as Partial<PdfScrollPos> & { v?: unknown };
+    // Reject entries from a different/older schema version (stale buggy data).
+    if (parsed.v !== SCROLL_POS_VERSION) return null;
     const page = Number(parsed.page);
     const frac = Number(parsed.frac);
     if (!Number.isFinite(page) || !Number.isFinite(frac) || page < 1) return null;
@@ -103,10 +116,11 @@ export function loadPdfScroll(arxivId: string): PdfScrollPos | null {
   }
 }
 
-/** Save a paper's current scroll position. */
+/** Save a paper's current scroll position. Stamps the schema version so future
+ *  loads can reject stale entries from incompatible older versions. */
 export function savePdfScroll(arxivId: string, pos: PdfScrollPos): void {
   try {
-    localStorage.setItem(scrollKey(arxivId), JSON.stringify(pos));
+    localStorage.setItem(scrollKey(arxivId), JSON.stringify({ ...pos, v: SCROLL_POS_VERSION }));
   } catch {
     /* quota / private mode — best-effort, ignore */
   }

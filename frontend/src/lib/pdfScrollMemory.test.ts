@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   scrollKey,
   clamp01,
   computeScrollPos,
   computeFracDelta,
+  loadPdfScroll,
+  savePdfScroll,
 } from "./pdfScrollMemory";
 
 describe("clamp01", () => {
@@ -124,3 +126,55 @@ describe("computeFracDelta", () => {
     expect(computeFracDelta(target, containerTop, 0)).toBe(-12);
   });
 });
+
+// In-memory localStorage stub (the repo's vitest runs in the node env — no
+// jsdom — so provide a minimal store for the load/save round-trip + version
+// tests). Scoped per-test via beforeEach reset.
+function makeStore() {
+  const m = new Map<string, string>();
+  return {
+    getItem: (k: string) => (m.has(k) ? m.get(k)! : null),
+    setItem: (k: string, v: string) => { m.set(k, String(v)); },
+    removeItem: (k: string) => { m.delete(k); },
+    clear: () => m.clear(),
+  } as unknown as Storage;
+}
+
+describe("loadPdfScroll / savePdfScroll (schema versioning)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", makeStore());
+  });
+
+  it("round-trips a position and stamps the schema version", () => {
+    savePdfScroll("2401.12345", { page: 7, frac: 0.42 });
+    // The raw entry must carry v:1 so future loads accept it.
+    const raw = localStorage.getItem(scrollKey("2401.12345"));
+    expect(JSON.parse(raw!).v).toBe(1);
+    expect(loadPdfScroll("2401.12345")).toEqual({ page: 7, frac: 0.42 });
+  });
+
+  it("rejects stale entries written by the buggy v1 (no version field)", () => {
+    // This is the regression: the v1 unmount bug wrote {page: lastPage, frac:0}
+    // with NO version. Such entries must be ignored so restore doesn't jump to
+    // the last page forever.
+    localStorage.setItem(scrollKey("2401.12345"), JSON.stringify({ page: 15, frac: 0 }));
+    expect(loadPdfScroll("2401.12345")).toBeNull();
+  });
+
+  it("rejects entries with a wrong (future/incompatible) version", () => {
+    localStorage.setItem(scrollKey("2401.12345"), JSON.stringify({ page: 3, frac: 0.5, v: 99 }));
+    expect(loadPdfScroll("2401.12345")).toBeNull();
+  });
+
+  it("rejects corrupt (non-JSON / bad fields) entries", () => {
+    localStorage.setItem(scrollKey("2401.12345"), "{not json");
+    expect(loadPdfScroll("2401.12345")).toBeNull();
+    localStorage.setItem(scrollKey("2401.12345"), JSON.stringify({ page: 0, frac: 0.5, v: 1 }));
+    expect(loadPdfScroll("2401.12345")).toBeNull(); // page < 1
+  });
+
+  it("returns null when no entry exists", () => {
+    expect(loadPdfScroll("nope")).toBeNull();
+  });
+});
+
