@@ -61,7 +61,7 @@ export function webToPapers(results: WebSearchResult[]): Paper[] {
     const url = (r.url || "").trim();
     if (!url) continue;
     const arxivId = extractArxivId(url);
-    const doi = extractDoi(url);
+    const doi = extractDoiFromUrl(url);
     const snippet = (r.snippet || "").trim();
     const abstract =
       snippet.length > WEB_SNIPPET_CAP ? `${snippet.slice(0, WEB_SNIPPET_CAP)}…` : snippet;
@@ -87,8 +87,10 @@ export function webToPapers(results: WebSearchResult[]): Paper[] {
 
 /** Extract a lowercased DOI from a URL. Matches doi.org/<doi> and the common
  *  publisher path /doi/<doi> (ACM, IEEE, Springer). Strips a trailing query
- *  string / fragment. Returns null when no DOI is present. */
-function extractDoi(url: string): string | undefined {
+ *  string / fragment. Returns undefined when no DOI is present. Exported so the
+ *  Markdown renderer can turn DOI-bearing links (the model often writes them as
+ *  plain text, not via a tool call) into unfetchable 3-button cards. */
+export function extractDoiFromUrl(url: string): string | undefined {
   const m = url.match(/(?:doi\.org\/|\/doi\/)(10\.\d{4,9}\/[^\s?#]+)/i);
   if (!m) return undefined;
   return m[1].replace(/\/+$/, "").toLowerCase();

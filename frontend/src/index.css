@@ -604,6 +604,18 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .arxiv-inline-id { font-size: 11px; color: var(--accent); font-family: var(--font-mono); }
 .arxiv-inline-cta { font-size: 11px; color: var(--accent); flex-shrink: 0; white-space: nowrap; align-self: center; }
 
+/* Inline 3-button card for a DOI/publisher link the model wrote as text
+   (paywalled non-arXiv paper). Mirrors .arxiv-inline-card's shell but stacks a
+   title row + a row of 3 small action buttons (Upload / Zotero / Open source). */
+.doi-inline-card {
+  display: flex; flex-direction: column; gap: 8px; width: 100%;
+  margin: 8px 0; padding: 10px 12px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--text);
+}
+.doi-inline-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.doi-inline-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.doi-inline-actions .paper-action { font-size: 12px; padding: 4px 9px; line-height: 1.4; }
+
 /* ---------- Paper view (two-panel) ---------- */
 .paper-view { flex-direction: row; }
 .paper-status { font-size: 12px; color: var(--text-dim); padding: 6px 20px; border-bottom: 1px solid var(--border); }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolvePaperId, openTarget, buildSearchTools, webToPapers } from "./paperSource";
+import { resolvePaperId, openTarget, buildSearchTools, webToPapers, extractDoiFromUrl } from "./paperSource";
 import type { Paper } from "../types";
 
 function p(over: Partial<Paper> = {}): Paper {
@@ -135,5 +135,24 @@ describe("webToPapers", () => {
     const [p0] = webToPapers([{ rank: 1, title: "X", url: "https://example.com/p", snippet: long }]);
     expect(p0.abstract.length).toBeLessThanOrEqual(243); // 240 + ellipsis
     expect(p0.abstract.endsWith("…")).toBe(true);
+  });
+});
+
+describe("extractDoiFromUrl", () => {
+  it("extracts a lowercased DOI from a bare doi.org URL", () => {
+    expect(extractDoiFromUrl("https://doi.org/10.1109/COMST.2016.2532458")).toBe("10.1109/comst.2016.2532458");
+  });
+  it("extracts from a publisher /doi/<doi> path (ACM/IEEE/Springer)", () => {
+    expect(extractDoiFromUrl("https://dl.acm.org/doi/10.1109/COMST.2016.2532458")).toBe("10.1109/comst.2016.2532458");
+    expect(extractDoiFromUrl("https://ieeexplore.ieee.org/document/10.1109/COMST.2016.2532458")).toBeUndefined();
+  });
+  it("strips a trailing query/fragment", () => {
+    expect(extractDoiFromUrl("https://doi.org/10.1000/abc?ref=foo")).toBe("10.1000/abc");
+    expect(extractDoiFromUrl("https://doi.org/10.1000/abc#frag")).toBe("10.1000/abc");
+  });
+  it("returns undefined for non-DOI URLs (ResearchGate, blogs)", () => {
+    expect(extractDoiFromUrl("https://www.researchgate.net/publication/295243768")).toBeUndefined();
+    expect(extractDoiFromUrl("https://example.com/blog/5g")).toBeUndefined();
+    expect(extractDoiFromUrl("")).toBeUndefined();
   });
 });
