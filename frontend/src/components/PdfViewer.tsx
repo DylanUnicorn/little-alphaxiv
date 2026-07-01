@@ -13,6 +13,12 @@ import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { pdfUrl } from "../lib/api";
 import { renderTextLayer, type TextLayerRenderTask } from "../lib/textlayer";
 import * as db from "../lib/db";
+import {
+  loadPdfScroll,
+  savePdfScroll,
+  computeScrollPos,
+  computeFracDelta,
+} from "../lib/pdfScrollMemory";
 import { AnnotationToolbar } from "./AnnotationToolbar";
 import { HighlightLayer } from "./HighlightLayer";
 import { AnnotLayer } from "./AnnotLayer";
@@ -42,6 +48,10 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   const [showZotero, setShowZotero] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  // True while a saved scroll position is being restored; suppresses the
+  // scroll-save listener so the intermediate scrollIntoView/frac steps don't
+  // overwrite the saved value with a transient position.
+  const restoringRef = useRef(false);
 
   // "Create Note from Annotations": while enabled for this paper, continuously
   // push highlights + text notes to a child note in Zotero. Needs the pdf.js
@@ -98,6 +108,90 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arxivId, pdfUrlOverride]);
+
+  // --- Per-paper scroll-position memory (save) ---
+  // Debounced (rAF) save of the topmost visible page + fraction on scroll,
+  // plus a final synchronous save on unmount/paper-change so navigating away
+  // (e.g. to Settings) or a hard refresh always captures the last position.
+  // Restore lives in the effect below; restoringRef suppresses saves during
+  // the restore's intermediate scroll steps.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let raf = 0;
+    const save = () => {
+      raf = 0;
+      if (restoringRef.current) return;
+      const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
+      if (!wraps.length) return;
+      const cTop = container.getBoundingClientRect().top;
+      const rects = Array.from(wraps, (w) => {
+        const r = w.getBoundingClientRect();
+        return { top: r.top, height: r.height };
+      });
+      const pos = computeScrollPos(rects, cTop);
+      if (pos) savePdfScroll(arxivId, pos);
+    };
+    const onScroll = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(save);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+      save(); // final capture before unmount / paper switch
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arxivId]);
+
+  // --- Per-paper scroll-position memory (restore) ---
+  // Once the doc loads and page wraps mount, jump back to the saved page.
+  // scrollIntoView is robust to the lazy-render placeholder heights (every
+  // page-wrap is always mounted), then the fraction is applied as a delta
+  // AFTER the target page finishes rendering — its real height is needed and
+  // unrendered pages sit at a 1000px placeholder.
+  useEffect(() => {
+    if (!doc || numPages === 0) return;
+    const saved = loadPdfScroll(arxivId);
+    if (!saved || saved.page < 1 || saved.page > numPages) return;
+    restoringRef.current = true;
+    let cancelled = false;
+    let raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const container = containerRef.current;
+      if (!container) { restoringRef.current = false; return; }
+      const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
+      const target = wraps[saved.page - 1];
+      if (!target) { restoringRef.current = false; return; }
+      target.scrollIntoView({ block: "start" });
+      if (saved.frac <= 0) { restoringRef.current = false; return; }
+      // Poll until the target page has rendered (real height) before applying
+      // the fractional delta; bail after 1.5s and apply best-effort.
+      const startedAt = performance.now();
+      const applyFrac = () => {
+        if (cancelled) { restoringRef.current = false; return; }
+        const rendered = target.dataset.rendered === "1";
+        if (!rendered && performance.now() - startedAt < 1500) {
+          raf = requestAnimationFrame(applyFrac);
+          return;
+        }
+        const cTop = container.getBoundingClientRect().top;
+        const r = target.getBoundingClientRect();
+        const delta = computeFracDelta({ top: r.top, height: r.height }, cTop, saved.frac);
+        container.scrollTop += delta;
+        restoringRef.current = false;
+      };
+      raf = requestAnimationFrame(applyFrac);
+    });
+    return () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      restoringRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, arxivId, numPages]);
+
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(3, +(z + 0.2).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(0.4, +(z - 0.2).toFixed(2))), []);
@@ -342,6 +436,11 @@ function PdfPage({
         }
       }
       setRendered(true);
+      // Signal to the scroll-restore logic (PdfViewer) that this page has
+      // finished rendering and its wrap height is now real (not the 1000px
+      // placeholder). Restoring a saved fractional scroll position waits on
+      // this before applying its delta.
+      wrapRef.current?.setAttribute("data-rendered", "1");
       page.cleanup();
     })();
     return () => {
