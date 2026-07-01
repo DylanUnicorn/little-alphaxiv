@@ -120,8 +120,11 @@ function UploadTab({
       if (a && !next.authors) next.authors = a;
       const s = str(info.Subject);
       if (s && !next.abstract) next.abstract = s;
-      // DOI: publisher/arXiv PDFs often embed it in the Info dict (as a URL).
-      const doiRaw = str(info.DOI) || str(info.doi);
+      // DOI: publisher/arXiv PDFs embed it in the Info dict. pdf.js puts
+      // standard fields (Title/Author/Subject) at info.* but parks custom
+      // keys (DOI, arXivID, License) under info.Custom — check both.
+      const custom = (info.Custom ?? {}) as Record<string, unknown>;
+      const doiRaw = str(info.DOI) || str(info.doi) || str(custom.DOI) || str(custom.doi);
       if (doiRaw && !next.doi) {
         let d = doiRaw.trim().toLowerCase();
         for (const p of ["https://doi.org/", "http://doi.org/", "doi:"]) {
@@ -131,34 +134,36 @@ function UploadTab({
       }
       // No DOI but an arXiv id -> synthesize the arXiv DOI (10.48550/arxiv.<id>).
       if (!next.doi) {
-        const axRaw = str(info.arXivID) || str(info.arxiv_id) || str(info.arXiv);
+        const axRaw =
+          str(info.arXivID) || str(info.arxiv_id) || str(info.arXiv) ||
+          str(custom.arXivID) || str(custom.arxiv_id) || str(custom.arXiv);
         if (axRaw) {
           const m = axRaw.match(/(\d{4}\.\d{4,5})/);
           if (m) next.doi = `10.48550/arxiv.${m[1]}`;
         }
       }
-      // Page-1 text: a second pass for DOI/abstract the Info dict lacks.
-      // pdf.js already parsed the PDF here, so this is cheap and gives the user
-      // real values immediately (no LLM round-trip needed for the common case).
+      // Abstract: scan the first few pages for an "Abstract" keyword + the
+      // text up to Keywords/Introduction. arXiv PDFs often have the abstract
+      // on page 1 or 2, but figure-heavy page 1 may reorder the text run so
+      // the keyword isn't where you'd expect — hence the multi-page sweep.
+      // pdf.js already parsed the PDF here, so this is cheap.
       try {
-        const page = await doc.getPage(1);
-        const tc = await page.getTextContent();
-        const pageText = tc.items
-          .map((i) => ("str" in i ? i.str : ""))
-          .join(" ")
-          .replace(/\s+/g, " ");
-        if (!next.doi) {
-          const dm = pageText.match(/\b10\.\d{4,9}\/[^\s"<>]+/);
-          if (dm) next.doi = dm[0].replace(/[.,;)\]]+$/, "");
-        }
         if (!next.abstract) {
-          const am = pageText.match(
-            /(?:Abstract|ABSTRACT)\s*[:：]?\s*([\s\S]{40,2500}?)(?=\s*(?:Keywords|Index Terms|Introduction|1\.\s*Introduction|I\.\s*Introduction))/
-          );
-          if (am) next.abstract = am[1].trim().slice(0, 2000);
+          const n = doc.numPages;
+          for (let p = 1; p <= Math.min(n, 3) && !next.abstract; p++) {
+            const tc = await (await doc.getPage(p)).getTextContent();
+            const pageText = tc.items
+              .map((i) => ("str" in i ? i.str : ""))
+              .join(" ")
+              .replace(/\s+/g, " ");
+            const am = pageText.match(
+              /(?:Abstract|ABSTRACT)\s*[:：]?\s*([\s\S]{40,2500}?)(?=\s*(?:Keywords|Index Terms|Introduction|1\.\s|I\.\s))/
+            );
+            if (am) next.abstract = am[1].trim().slice(0, 2000);
+          }
         }
       } catch {
-        /* best-effort — page-1 text is optional */
+        /* best-effort — abstract extraction is optional */
       }
       // Filename stem is a decent last-resort title.
       if (!next.title) next.title = f.name.replace(/\.pdf$/i, "");
