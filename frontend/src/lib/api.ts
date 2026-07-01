@@ -772,6 +772,75 @@ export async function putPaper(p: StoredPaper): Promise<StoredPaper> {
   return r.json();
 }
 
+// ---- local paper uploads (user-private PDFs: uploads + Zotero imports) ----
+
+export interface UploadResult {
+  paper_id: string;
+  title: string;
+  authors: string[];
+  abstract: string;
+  doi: string | null;
+  source: string;
+  external_url: string | null;
+  full_text: string | null; // always null here — private; read via getPaper
+  fetched_at: number;
+  is_new: boolean; // False when a per-user content-hash dedup hit returned the existing row
+}
+
+/** URL for a user-uploaded / Zotero-imported PDF, served auth-gated through the
+ *  backend. The serve route uses a :path converter so DOI-keyed ids (which
+ *  contain '/') go in verbatim — no encodeURIComponent. */
+export function paperUploadUrl(paperId: string): string {
+  return `${BASE}/api/paper-upload/${paperId}`;
+}
+
+/** Upload a local PDF (with optional parsed metadata) and create a user-private
+ *  paper. Returns the paper id + the metadata the backend stored. */
+export async function uploadPaper(opts: {
+  file: File;
+  title?: string;
+  authors?: string[];
+  abstract?: string;
+  doi?: string;
+}): Promise<UploadResult> {
+  const form = new FormData();
+  form.append("file", opts.file);
+  if (opts.title) form.append("title", opts.title);
+  if (opts.authors) form.append("authors_json", JSON.stringify(opts.authors));
+  if (opts.abstract) form.append("abstract", opts.abstract);
+  if (opts.doi) form.append("doi", opts.doi);
+  const r = await jfetch("/api/paper-upload", { method: "POST", body: form });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Import a PDF from a Zotero item into the app (user-private). When
+ *  attachmentKey is omitted the backend picks the largest PDF attachment;
+ *  a 400 means the item had no PDF attachment (caller should prompt manual
+ *  upload). */
+export async function importFromZotero(
+  itemKey: string,
+  attachmentKey?: string
+): Promise<UploadResult> {
+  const r = await jfetch("/api/paper-upload/import-from-zotero", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_key: itemKey, attachment_key: attachmentKey ?? null }),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** List a Zotero item's PDF attachments (for the import picker). */
+export async function listZoteroAttachments(itemKey: string): Promise<{
+  results: Array<{ key: string; title: string; contentType: string; fileSize: number; linkMode: string }>;
+  mode: string;
+}> {
+  const r = await jfetch(`/api/zotero/items/${encodeURIComponent(itemKey)}/attachments`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
 // ---- one-time browser → server migration ----
 
 export interface MigratePayload {

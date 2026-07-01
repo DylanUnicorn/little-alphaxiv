@@ -28,7 +28,8 @@ After results return, summarize the most relevant ones in 1-2 sentences each and
 ${sourceLine}
 You also have web_search (general web search via anysearch) — use it as a FALLBACK when the paper-search tools return nothing or can't find the paper the user asked about (e.g. IEEE/ACM/Springer, paywalled, non-arXiv, or when the user only has a DOI or partial title). web_search returns titles, URLs, and snippets; non-arXiv links open externally, so cite them by URL. It also works for non-academic questions (news, blogs, people, products).
 Be concise. Prefer calling a paper-search tool over answering from memory when the user wants papers.
-Any arxiv.org links you write render as in-app preview cards the user can click to read the paper — so citing a paper by its arXiv link is fine and never opens an external site.`;
+Any arxiv.org links you write render as in-app preview cards the user can click to read the paper — so citing a paper by its arXiv link is fine and never opens an external site.
+If you surface a paper whose PDF you cannot open in-app (paywalled, non-arXiv without an open-access URL, or the download fails), say so explicitly in natural language and surface the paper anyway — its card shows Upload Local PDF / Import from Zotero / Open source page buttons the user can use to bring it in. Don't go silent. If you find no relevant paper at all, say so and tell the user they can use "+ Open Local Paper" in the sidebar to bring a PDF in.`;
 }
 
 /** Backward-compatible default (no extra sources enabled). */

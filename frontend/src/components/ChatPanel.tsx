@@ -128,6 +128,12 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
       if (target.url) window.open(target.url, "_blank", "noopener,noreferrer");
       return;
     }
+    if (target.kind === "unfetchable") {
+      // The unfetchable card's 3 action buttons drive the Open Local Paper
+      // dialog; the card body has no click handler, but guard anyway so a
+      // stray click never navigates to a paper that has no in-app PDF.
+      return;
+    }
     await db.savePaper({
       arxiv_id: target.id,
       title: paper.title,

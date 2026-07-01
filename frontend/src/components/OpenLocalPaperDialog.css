@@ -1,0 +1,167 @@
+/* Open Local Paper dialog + unfetchable PaperCard 3-button fallback.
+   Themed with CSS variables defined by the active theme (see themes/); falls
+   back to plain values when a variable is unset. */
+
+.lpd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.lpd-card {
+  background: var(--bg, #fff);
+  color: var(--fg, #111);
+  border-radius: 10px;
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+.lpd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border, #ddd);
+}
+.lpd-title { font-weight: 600; }
+.lpd-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: inherit;
+  line-height: 1;
+}
+.lpd-tabs { display: flex; gap: 4px; padding: 8px 16px 0; }
+.lpd-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #ddd);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.lpd-tab.active {
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border-color: var(--accent, #2563eb);
+}
+.lpd-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.lpd-pick {
+  padding: 10px 14px;
+  border: 1px dashed var(--border, #888);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+}
+.lpd-meta { display: flex; flex-direction: column; gap: 8px; }
+.lpd-meta label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.lpd-meta input,
+.lpd-meta textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 4px;
+  background: var(--bg, #fff);
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+}
+.lpd-meta input:disabled,
+.lpd-meta textarea:disabled { opacity: 0.6; }
+.lpd-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.lpd-btn {
+  padding: 7px 12px;
+  border: 1px solid var(--border, #ccc);
+  background: transparent;
+  color: inherit;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.lpd-btn:disabled { opacity: 0.5; cursor: default; }
+.lpd-btn.lpd-primary {
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border-color: var(--accent, #2563eb);
+}
+.lpd-hint { font-size: 12px; opacity: 0.75; }
+.lpd-error {
+  font-size: 13px;
+  color: #dc2626;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.lpd-search { display: flex; gap: 6px; }
+.lpd-search input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 5px;
+  background: var(--bg, #fff);
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+}
+.lpd-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+.lpd-result {
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lpd-result-title { font-weight: 500; }
+.lpd-result-sub { font-size: 12px; opacity: 0.7; }
+
+/* Unfetchable PaperCard: 3-button fallback (Upload / Import / Open source). */
+.paper-card-unfetchable { border: 1px dashed var(--border, #888); }
+.paper-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.paper-action {
+  padding: 5px 9px;
+  font-size: 12px;
+  border: 1px solid var(--accent, #2563eb);
+  color: var(--accent, #2563eb);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.paper-action:hover {
+  background: var(--accent, #2563eb);
+  color: #fff;
+}
+
+/* Sidebar secondary "Open Local Paper" button. */
+.new-chat-btn.secondary {
+  margin-top: 6px;
+  opacity: 0.85;
+  font-size: 13px;
+}

@@ -72,8 +72,10 @@ export interface Paper {
   abs_url: string;
   published: string;
   primary_category: string;
-  /** Which search source surfaced this paper. arXiv results omit it (legacy). */
-  source?: "arxiv" | "openalex" | "s2";
+  /** Which search source surfaced this paper. arXiv results omit it (legacy).
+   *  "upload" / "zotero" mark user-private papers brought in via the Open Local
+   *  Paper dialog (their PDF bytes live server-side, per-user). */
+  source?: "arxiv" | "openalex" | "s2" | "upload" | "zotero";
   /** DOI (lowercased, no URL wrapper) when the source provides one. */
   doi?: string;
   /** Direct open-access PDF URL for non-arXiv papers, when available. */

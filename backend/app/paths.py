@@ -94,6 +94,17 @@ def pdf_cache_dir() -> Path:
     return Path(os.environ.get("LAX_PDF_CACHE", DATA_DIR / "pdf_cache"))
 
 
+def uploads_dir() -> Path:
+    """Root dir for per-user uploaded / imported PDFs.
+
+    Lives under the PDF cache dir (so it shares the same consolidated data
+    location in local dev + Docker): ``<pdf_cache>/uploads/<user_id>/<hash>.pdf``.
+    Re-resolved on every call (reads the env var) so tests can monkeypatch
+    ``LAX_PDF_CACHE`` to a temp dir without re-importing the routers.
+    """
+    return pdf_cache_dir() / "uploads"
+
+
 def migrate_legacy_paths() -> None:
     """One-time move of pre-consolidation scattered files into the data dir.
 

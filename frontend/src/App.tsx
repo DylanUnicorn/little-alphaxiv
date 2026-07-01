@@ -8,6 +8,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./views/ChatView";
 import { PaperView } from "./views/PaperView";
 import { SettingsView } from "./views/SettingsView";
+import { OpenLocalPaperDialog } from "./components/OpenLocalPaperDialog";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
+      <OpenLocalPaperDialog />
     </div>
   );
 }

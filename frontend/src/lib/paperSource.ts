@@ -17,16 +17,22 @@ export function resolvePaperId(p: Paper): string {
 export type OpenTarget =
   | { kind: "arxiv"; id: string }
   | { kind: "oa"; id: string; url: string }
-  | { kind: "external"; url: string };
+  | { kind: "external"; url: string }
+  | { kind: "unfetchable"; id: string; externalUrl?: string };
 
 /** Decide what happens when the user clicks a paper card:
  *  - arXiv id present  -> open the existing in-app PDF preview
  *  - has an OA PDF URL -> open via the /api/pdf-url open proxy
- *  - otherwise         -> open the external landing page in a new tab */
+ *  - otherwise         -> UNFETCHABLE in-app: the card renders a 3-button
+ *    fallback (Upload Local PDF / Import from Zotero / Open source page) so
+ *    the user can bring a paywalled/off-arXiv PDF in themselves. The card
+ *    body click does nothing; the buttons drive the dialog / an external tab.
+ *    externalUrl falls back to doi.org when only a DOI is known. */
 export function openTarget(p: Paper): OpenTarget {
   if (p.arxiv_id) return { kind: "arxiv", id: p.arxiv_id };
   if (p.oa_pdf_url) return { kind: "oa", id: resolvePaperId(p), url: p.oa_pdf_url };
-  return { kind: "external", url: p.external_url || "" };
+  const externalUrl = p.external_url || (p.doi ? `https://doi.org/${p.doi}` : "");
+  return { kind: "unfetchable", id: resolvePaperId(p), externalUrl: externalUrl || undefined };
 }
 
 /** Build the LLM tool list for the current turn. arXiv is always present;

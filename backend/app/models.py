@@ -119,12 +119,45 @@ class PaperRow(SQLModel, table=True):
     abs_url: str | None = None
     published: str | None = None
     primary_category: str | None = None
-    source: str | None = None  # "arxiv" | "openalex" | "s2"
+    source: str | None = None  # "arxiv" | "openalex" | "s2" | "upload" | "zotero"
     doi: str | None = None
     oa_pdf_url: str | None = None
     external_url: str | None = None
     full_text: str | None = None  # extracted, tens of KB to low MB
     fetched_at: int
+
+
+# ---------------------------------------------------------------------------
+# Per-user uploaded papers (private PDF bytes + extracted full_text)
+# ---------------------------------------------------------------------------
+
+
+class UserPaperUpload(SQLModel, table=True):
+    """A user-private uploaded / Zotero-imported PDF.
+
+    The PDF bytes + extracted ``full_text`` live HERE, never on the global
+    PaperRow — for an uploaded paywalled paper the extracted text IS the
+    paywalled content, so it must stay user-private. Shareable metadata
+    (title/authors/abstract) is shared via the global ``PaperRow`` pointed to
+    by ``paper_id``. Deduplicated per-user by ``content_hash`` so re-uploading
+    the same bytes returns the existing row instead of re-storing.
+    """
+    __tablename__ = "user_paper_upload"
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
+    paper_id: str = Field(foreign_key="paper.arxiv_id", ondelete="CASCADE", index=True)
+    source: str  # "upload" | "zotero"
+    content_hash: str  # sha256 of PDF bytes, hex
+    stored_path: str  # relative path under the uploads dir: "<user_id>/<hash>.pdf"
+    zotero_item_key: str | None = None
+    zotero_attachment_key: str | None = None
+    full_text: str | None = None  # extracted text (private); NULL until extracted
+    byte_size: int
+    uploaded_at: int = Field(default_factory=_now)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "content_hash", name="uq_user_upload_hash"),
+    )
 
 
 # ---------------------------------------------------------------------------

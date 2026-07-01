@@ -46,6 +46,7 @@ export function Sidebar() {
   const collapsed = useUi((s) => s.sidebarCollapsed);
   const collapse = useUi((s) => s.collapseSidebar);
   const expand = useUi((s) => s.expandSidebar);
+  const openLocalPaper = useUi((s) => s.openLocalPaperDialog);
 
   async function newChat() {
     // Reuse an existing empty general chat instead of stacking empties.
@@ -93,6 +94,9 @@ export function Sidebar() {
         <Tooltip label="New chat" side="right">
           <button className="icon-btn" onClick={newChat}>+</button>
         </Tooltip>
+        <Tooltip label="Open Local Paper" side="right">
+          <button className="icon-btn" onClick={() => openLocalPaper()}>📂</button>
+        </Tooltip>
         <Tooltip label="Settings" side="right">
           <button className="icon-btn" onClick={() => navigate("/settings")}>⚙</button>
         </Tooltip>
@@ -109,6 +113,7 @@ export function Sidebar() {
         </Tooltip>
       </div>
       <button className="new-chat-btn" onClick={newChat}>+ New chat</button>
+      <button className="new-chat-btn secondary" onClick={() => openLocalPaper()}>📂 Open Local Paper</button>
 
       <div className="conv-list">
         {items.length === 0 && <div className="conv-empty">No conversations yet.</div>}

@@ -119,10 +119,10 @@ async def get_pdf_by_url(
         try:
             path.write_bytes(data)
         except OSError:
-            return _serve_bytes(data, range_header)
+            return serve_pdf_bytes(data, range_header)
     else:
         data = path.read_bytes()
-    return _serve_bytes(data, range_header)
+    return serve_pdf_bytes(data, range_header)
 
 
 @router.get("/pdf/{arxiv_id}")
@@ -138,13 +138,13 @@ async def get_pdf(
             path.write_bytes(data)
         except OSError:
             # cache write is best-effort; serve from memory if disk fails
-            return _serve_bytes(data, range_header)
+            return serve_pdf_bytes(data, range_header)
     else:
         data = path.read_bytes()
-    return _serve_bytes(data, range_header)
+    return serve_pdf_bytes(data, range_header)
 
 
-def _serve_bytes(data: bytes, range_header: str | None) -> Response:
+def serve_pdf_bytes(data: bytes, range_header: str | None) -> Response:
     total = len(data)
     headers: dict[str, str] = {
         "Accept-Ranges": "bytes",

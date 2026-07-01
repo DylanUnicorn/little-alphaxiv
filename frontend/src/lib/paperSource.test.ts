@@ -40,9 +40,23 @@ describe("openTarget", () => {
       expect(r.url).toBe("https://example.org/a.pdf");
     }
   });
-  it("routes papers with neither arXiv id nor OA to external_url", () => {
-    const r = openTarget(p({ arxiv_id: "", doi: "10.1000/xyz", external_url: "https://doi.org/10.1000/xyz", source: "s2" }));
-    expect(r).toEqual({ kind: "external", url: "https://doi.org/10.1000/xyz" });
+  it("routes papers with neither arXiv id nor OA to the unfetchable 3-button fallback, deriving a doi.org source link", () => {
+    const r = openTarget(p({ arxiv_id: "", doi: "10.1000/xyz", source: "s2" }));
+    expect(r.kind).toBe("unfetchable");
+    if (r.kind === "unfetchable") {
+      expect(r.id).toBe("doi:10.1000/xyz");
+      expect(r.externalUrl).toBe("https://doi.org/10.1000/xyz");
+    }
+  });
+  it("keeps an explicit external_url as the unfetchable source link", () => {
+    const r = openTarget(p({ arxiv_id: "", external_url: "https://pub.example/p", source: "s2" }));
+    expect(r.kind).toBe("unfetchable");
+    if (r.kind === "unfetchable") expect(r.externalUrl).toBe("https://pub.example/p");
+  });
+  it("has no externalUrl when neither DOI nor landing page is known", () => {
+    const r = openTarget(p({ arxiv_id: "", source: "s2" }));
+    expect(r.kind).toBe("unfetchable");
+    if (r.kind === "unfetchable") expect(r.externalUrl).toBeUndefined();
   });
 });
 

@@ -20,7 +20,7 @@ import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { useUi } from "../store/ui";
 import { useAnnotations } from "../store/annotations";
-import { pdfUrlForOa } from "../lib/api";
+import { pdfUrlForOa, paperUploadUrl } from "../lib/api";
 import * as db from "../lib/db";
 import { ensurePaperMeta, hasRealTitle } from "../lib/paperMeta";
 import type { StylePreset } from "../types";
@@ -51,6 +51,10 @@ export function PaperView() {
       if (cancelled) return;
       if (p?.full_text) { setFullText(p.full_text); setExtracting(false); }
       if (p?.oa_pdf_url) setPdfUrlOverride(pdfUrlForOa(p.oa_pdf_url));
+      else if (p?.source === "upload" || p?.source === "zotero")
+        // User-private PDF (uploaded or Zotero-imported): serve via the
+        // auth-gated per-user upload endpoint instead of arXiv/pdf-url.
+        setPdfUrlOverride(paperUploadUrl(arxivId));
       // Direct-URL navigation (bookmark / refresh / external link) can leave a
       // bare-id stub: title = arxivId, no authors/abstract/DOI. Fetch the real
       // arXiv metadata so the chat-title context, sidebar, and Zotero "add"

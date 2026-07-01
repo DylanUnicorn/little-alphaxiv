@@ -37,10 +37,16 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from .. import security
+from ..db import get_session
+from ..deps import current_user
+from ..models import User, UserSettings
 from .search import fetch_arxiv_by_id
 
 router = APIRouter()
@@ -1061,3 +1067,188 @@ async def save_arxiv(req: SaveArxivRequest) -> Any:
     # Web PDF attach is out of v1 scope (needs file-upload registration); metadata-only.
     return JSONResponse(content={"ok": True, "mode": "web", "key": key,
                                  "pdfAttached": False, "noteAdded": note_added})
+
+
+# --------------------------------------------------------------------------- #
+# Reverse-import: read a user's Zotero PDF attachment into the app.
+# --------------------------------------------------------------------------- #
+# Creds (userId + apiKey) live server-side, Fernet-encrypted in
+# user_settings.zotero_config (see routers/settings.py). The legacy zotero
+# endpoints still take creds per-request in the query string; these new
+# reverse-import helpers read from UserSettings so the browser never re-sends
+# the key. Web mode is REQUIRED for file download (the local desktop API
+# doesn't expose /file bytes), so local-mode users fall back to manual upload
+# — their PDFs are already on disk anyway.
+
+_IMPORT_MAX_BYTES = 50 * 1024 * 1024  # mirror the upload cap
+
+
+async def load_zotero_creds(session: AsyncSession, user: User) -> dict | None:
+    """Decrypt the user's stored Zotero config. Returns {mode, userId, apiKey}
+    or None if unconfigured. The apiKey is Fernet-decrypted here so callers
+    never handle ciphertext."""
+    row = (
+        await session.exec(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+    ).first()
+    if row is None:
+        return None
+    cfg = dict(row.zotero_config or {})
+    key = cfg.get("apiKey")
+    if key:
+        try:
+            cfg["apiKey"] = security.decrypt(key)
+        except Exception:  # noqa: BLE001 — bad ciphertext → treat as no key
+            cfg["apiKey"] = ""
+    return cfg or None
+
+
+async def list_pdf_attachments(creds: dict, item_key: str) -> tuple[list, str]:
+    """Enumerate the PDF attachment children of a Zotero item. Works in both
+    local and web modes (both support reading item children)."""
+    resolved = await _resolve_mode(
+        creds.get("mode", "auto"), creds.get("userId", ""), creds.get("apiKey", "")
+    )
+    user_seg = _user_seg(resolved, creds.get("userId", ""))
+    path = f"users/{user_seg}/items/{item_key}/children"
+    params = {"itemType": "attachment", "limit": 50}
+    if resolved == "local":
+        url = f"{_LOCAL_READ}/{path}?{urlencode(params)}"
+        headers = {"User-Agent": _UA}
+    else:
+        if not (creds.get("userId") and creds.get("apiKey")):
+            raise HTTPException(status_code=400, detail="Zotero Web mode requires userId and apiKey.")
+        url = f"{_WEB}/{path}?{urlencode(params)}"
+        headers = _headers_web(creds["apiKey"])
+    try:
+        r = await _zotero_get(
+            url, headers=headers, timeout=_TIMEOUT, trust_env=(resolved != "local")
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"zotero request error: {str(exc) or type(exc).__name__}",
+        ) from exc
+    if r.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"zotero attachments returned {r.status_code}: {r.text[:200]}",
+        )
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"zotero json error: {exc}") from exc
+    out: list[dict] = []
+    for it in data if isinstance(data, list) else []:
+        d = it.get("data") or it
+        if (d.get("contentType") or "").lower() == "application/pdf":
+            out.append(
+                {
+                    "key": it.get("key") or d.get("key") or "",
+                    "title": d.get("title") or "",
+                    "contentType": d.get("contentType") or "",
+                    "fileSize": d.get("fileSize") or 0,
+                    "linkMode": d.get("linkMode") or "",
+                }
+            )
+    return out, resolved
+
+
+async def get_zotero_item(creds: dict, item_key: str) -> dict:
+    """Fetch + normalize a single Zotero item (metadata for an import)."""
+    resolved = await _resolve_mode(
+        creds.get("mode", "auto"), creds.get("userId", ""), creds.get("apiKey", "")
+    )
+    user_seg = _user_seg(resolved, creds.get("userId", ""))
+    path = f"users/{user_seg}/items/{item_key}"
+    if resolved == "local":
+        url = f"{_LOCAL_READ}/{path}"
+        headers = {"User-Agent": _UA}
+    else:
+        if not (creds.get("userId") and creds.get("apiKey")):
+            raise HTTPException(status_code=400, detail="Zotero Web mode requires userId and apiKey.")
+        url = f"{_WEB}/{path}"
+        headers = _headers_web(creds["apiKey"])
+    try:
+        r = await _zotero_get(
+            url, headers=headers, timeout=_TIMEOUT, trust_env=(resolved != "local")
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"zotero request error: {str(exc) or type(exc).__name__}",
+        ) from exc
+    if r.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"zotero item returned {r.status_code}: {r.text[:200]}",
+        )
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"zotero json error: {exc}") from exc
+    return _normalize_item(data)
+
+
+async def download_attachment_bytes(creds: dict, attachment_key: str) -> bytes:
+    """Download a Zotero PDF attachment's bytes (Web mode only — the local
+    desktop API does not expose /file). Zotero's file API 302-redirects to S3,
+    so follow_redirects=True. Capped at _IMPORT_MAX_BYTES."""
+    resolved = await _resolve_mode(
+        creds.get("mode", "auto"), creds.get("userId", ""), creds.get("apiKey", "")
+    )
+    if resolved != "web":
+        raise HTTPException(
+            status_code=400,
+            detail="Importing a Zotero PDF requires Web API mode (the local API "
+            "doesn't expose file downloads). Switch to Web API in Settings, or "
+            "upload the PDF manually.",
+        )
+    if not (creds.get("userId") and creds.get("apiKey")):
+        raise HTTPException(status_code=400, detail="Zotero Web mode requires userId and apiKey.")
+    url = f"{_WEB}/users/{creds['userId']}/items/{attachment_key}/file"
+    headers = _headers_web(creds["apiKey"])
+    chunks: list[bytes] = []
+    total = 0
+    async with httpx.AsyncClient(
+        timeout=_PDF_TIMEOUT, follow_redirects=True, proxy=_ZOTERO_PROXY
+    ) as client:
+        try:
+            r = await client.get(url, headers=headers)
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"zotero download error: {str(exc) or type(exc).__name__}",
+            ) from exc
+        if r.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"zotero file returned {r.status_code}: {r.text[:200]}",
+            )
+        async for chunk in r.aiter_bytes():
+            total += len(chunk)
+            if total > _IMPORT_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"zotero file exceeded {_IMPORT_MAX_BYTES} bytes",
+                )
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.get("/zotero/items/{item_key}/attachments")
+async def list_item_attachments(
+    item_key: str,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """List a Zotero item's PDF attachments (for the Import-from-Zotero picker)."""
+    creds = await load_zotero_creds(session, user)
+    if not creds or not creds.get("mode"):
+        raise HTTPException(
+            status_code=400,
+            detail="Zotero not configured. Set Zotero mode/userId/apiKey in Settings first.",
+        )
+    items, resolved = await list_pdf_attachments(creds, item_key)
+    return JSONResponse(content={"results": items, "mode": resolved})
