@@ -230,6 +230,11 @@ export function SettingsView() {
               Scholar (IEEE, ACM, Springer, paywalled, or DOI-only) and for non-academic
               questions. Works anonymously (rate-limited); a key raises your limits.
             </div>
+            <div className="provider-detail">
+              Get a key at{" "}
+              <a href="https://www.anysearch.com/console/api-keys" target="_blank" rel="noopener noreferrer">anysearch.com/console/api-keys</a>
+              {" "}(anonymous works without one, just rate-limited).
+            </div>
           </div>
 
           <div className={`search-source-item ${searchSources.openalex.enabled ? "enabled" : ""}`}>
