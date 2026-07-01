@@ -53,7 +53,7 @@ function DialogBody({
     <div className="lpd-overlay" onClick={close}>
       <div className="lpd-card" onClick={(e) => e.stopPropagation()}>
         <div className="lpd-head">
-          <span className="lpd-title">Open Local Paper</span>
+          <span className="lpd-title">Open Paper</span>
           <button className="lpd-close" onClick={close}>×</button>
         </div>
         <div className="lpd-tabs">

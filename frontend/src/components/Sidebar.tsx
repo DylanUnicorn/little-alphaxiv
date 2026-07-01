@@ -94,8 +94,8 @@ export function Sidebar() {
         <Tooltip label="New chat" side="right">
           <button className="icon-btn" onClick={newChat}>+</button>
         </Tooltip>
-        <Tooltip label="Open Local Paper" side="right">
-          <button className="icon-btn" onClick={() => openLocalPaper()}>📂</button>
+        <Tooltip label="Open Paper" side="right">
+          <button className="icon-btn" onClick={() => openLocalPaper()}>📄</button>
         </Tooltip>
         <Tooltip label="Settings" side="right">
           <button className="icon-btn" onClick={() => navigate("/settings")}>⚙</button>
@@ -113,7 +113,7 @@ export function Sidebar() {
         </Tooltip>
       </div>
       <button className="new-chat-btn" onClick={newChat}>+ New chat</button>
-      <button className="new-chat-btn secondary" onClick={() => openLocalPaper()}>📂 Open Local Paper</button>
+      <button className="new-chat-btn secondary" onClick={() => openLocalPaper()}>+ Open Paper</button>
 
       <div className="conv-list">
         {items.length === 0 && <div className="conv-empty">No conversations yet.</div>}

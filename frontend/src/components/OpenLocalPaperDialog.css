@@ -1,124 +1,205 @@
-/* Open Local Paper dialog + unfetchable PaperCard 3-button fallback.
-   Themed with CSS variables defined by the active theme (see themes/); falls
-   back to plain values when a variable is unset. */
+/* Open Paper dialog + unfetchable PaperCard 3-button fallback.
+   Uses the same modal vocabulary as the Zotero panel (.zotero-panel): an
+   elevated --bg-3 surface on a --bg-4 head, --border hairlines, --shadow-md,
+   and a 0.45 backdrop at z-index 2000. All color comes from theme tokens
+   (see index.css [data-theme="<id>"]) so it holds across every theme — never
+   hardcoded, because the theme system defines --text (not --fg) and
+   --accent-contrast varies (dark on nord/gruvbox/rose-pine, light elsewhere). */
 
+/* ---------- Backdrop + card ---------- */
 .lpd-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  padding: 24px;
+  z-index: 2000; /* above tooltips (1500) so chrome behind stays behind the modal */
 }
 .lpd-card {
-  background: var(--bg, #fff);
-  color: var(--fg, #111);
-  border-radius: 10px;
+  background: var(--bg-3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   width: min(560px, 92vw);
   max-height: 88vh;
   overflow: auto;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
 }
+
+/* ---------- Head ---------- */
 .lpd-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border, #ddd);
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-4);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
-.lpd-title { font-weight: 600; }
+.lpd-title { font-weight: 600; font-size: 14px; }
 .lpd-close {
-  background: none;
-  border: none;
-  font-size: 22px;
-  cursor: pointer;
-  color: inherit;
-  line-height: 1;
-}
-.lpd-tabs { display: flex; gap: 4px; padding: 8px 16px 0; }
-.lpd-tab {
-  flex: 1;
-  padding: 8px 10px;
-  border: 1px solid var(--border, #ddd);
   background: transparent;
-  color: inherit;
-  border-radius: 6px 6px 0 0;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.lpd-close:hover { color: var(--text); background: var(--bg-3); }
+
+/* ---------- Tabs (underline style, matches .zotero-tabs) ---------- */
+.lpd-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.lpd-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  padding: 8px 12px;
+  margin-bottom: -1px; /* overlap the container's border so the active
+                          underline meets it cleanly */
   cursor: pointer;
   font-size: 13px;
+  font-family: inherit;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
-.lpd-tab.active {
-  background: var(--accent, #2563eb);
-  color: #fff;
-  border-color: var(--accent, #2563eb);
-}
+.lpd-tab:hover:not(.active) { color: var(--text); }
+.lpd-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.lpd-tab:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Body ---------- */
 .lpd-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* PDF picker — dropzone-style dashed button */
 .lpd-pick {
-  padding: 10px 14px;
-  border: 1px dashed var(--border, #888);
-  background: transparent;
-  color: inherit;
-  border-radius: 6px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-2);
+  color: var(--text-dim);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
   text-align: center;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
-.lpd-meta { display: flex; flex-direction: column; gap: 8px; }
+.lpd-pick:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.lpd-pick:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- Metadata form ---------- */
+.lpd-meta { display: flex; flex-direction: column; gap: 10px; }
 .lpd-meta label {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 13px;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
 }
 .lpd-meta input,
 .lpd-meta textarea {
-  padding: 6px 8px;
-  border: 1px solid var(--border, #ccc);
-  border-radius: 4px;
-  background: var(--bg, #fff);
-  color: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--text);
   font-family: inherit;
   font-size: 13px;
+  line-height: 1.4;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.lpd-meta input:hover:not(:disabled),
+.lpd-meta textarea:hover:not(:disabled) { border-color: var(--border-strong); }
+.lpd-meta input:focus,
+.lpd-meta textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .lpd-meta input:disabled,
-.lpd-meta textarea:disabled { opacity: 0.6; }
+.lpd-meta textarea:disabled { opacity: 0.55; cursor: default; }
+
+/* ---------- Action buttons ---------- */
 .lpd-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .lpd-btn {
   padding: 7px 12px;
-  border: 1px solid var(--border, #ccc);
-  background: transparent;
-  color: inherit;
-  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  color: var(--text);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13px;
+  font-family: inherit;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
 }
+.lpd-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-4); }
+.lpd-btn:active:not(:disabled) { transform: translateY(1px); }
 .lpd-btn:disabled { opacity: 0.5; cursor: default; }
 .lpd-btn.lpd-primary {
-  background: var(--accent, #2563eb);
-  color: #fff;
-  border-color: var(--accent, #2563eb);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: transparent;
 }
-.lpd-hint { font-size: 12px; opacity: 0.75; }
+.lpd-btn.lpd-primary:hover:not(:disabled) { background: var(--accent-2); }
+.lpd-btn.lpd-primary:active:not(:disabled) { transform: translateY(1px); }
+
+.lpd-hint { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+/* Error: tinted alert box using --danger (not a hardcoded red), so it reads
+   correctly in every theme. Houses an optional inline .lpd-btn action. */
 .lpd-error {
   font-size: 13px;
-  color: #dc2626;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
+.lpd-error .lpd-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ---------- Zotero tab ---------- */
 .lpd-search { display: flex; gap: 6px; }
 .lpd-search input {
   flex: 1;
   padding: 7px 10px;
-  border: 1px solid var(--border, #ccc);
-  border-radius: 5px;
-  background: var(--bg, #fff);
-  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--text);
   font-family: inherit;
   font-size: 13px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
+.lpd-search input:hover:not(:disabled) { border-color: var(--border-strong); }
+.lpd-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.lpd-search input:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .lpd-results {
   display: flex;
   flex-direction: column;
@@ -127,18 +208,22 @@
   overflow: auto;
 }
 .lpd-result {
-  padding: 8px 10px;
-  border: 1px solid var(--border, #e0e0e0);
-  border-radius: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-2);
   display: flex;
   flex-direction: column;
   gap: 4px;
+  transition: border-color var(--transition-fast);
 }
-.lpd-result-title { font-weight: 500; }
-.lpd-result-sub { font-size: 12px; opacity: 0.7; }
+.lpd-result:hover { border-color: var(--accent); }
+.lpd-result-title { font-weight: 500; font-size: 13px; color: var(--text); }
+.lpd-result-sub { font-size: 12px; color: var(--text-dim); }
+.lpd-result .lpd-btn.lpd-primary { align-self: flex-start; margin-top: 4px; }
 
-/* Unfetchable PaperCard: 3-button fallback (Upload / Import / Open source). */
-.paper-card-unfetchable { border: 1px dashed var(--border, #888); }
+/* ---------- Unfetchable PaperCard: 3-button fallback (Upload / Import / Open source) ---------- */
+.paper-card-unfetchable { border: 1px dashed var(--border-strong); }
 .paper-card-actions {
   display: flex;
   gap: 6px;
@@ -148,20 +233,33 @@
 .paper-action {
   padding: 5px 9px;
   font-size: 12px;
-  border: 1px solid var(--accent, #2563eb);
-  color: var(--accent, #2563eb);
+  border: 1px solid var(--accent);
+  color: var(--accent);
   background: transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  font-family: inherit;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .paper-action:hover {
-  background: var(--accent, #2563eb);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
-/* Sidebar secondary "Open Local Paper" button. */
+/* Sidebar secondary "+ Open Paper" button — a touch quieter than the primary
+   "+ New chat" so the hierarchy reads at a glance. */
 .new-chat-btn.secondary {
   margin-top: 6px;
-  opacity: 0.85;
+  background: transparent;
+  color: var(--text-dim);
   font-size: 13px;
+}
+.new-chat-btn.secondary:hover { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lpd-close, .lpd-tab, .lpd-pick, .lpd-meta input, .lpd-meta textarea,
+  .lpd-btn, .lpd-search input, .lpd-result, .paper-action,
+  .new-chat-btn.secondary {
+    transition: none;
+  }
 }
