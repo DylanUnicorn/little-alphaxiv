@@ -5,15 +5,12 @@ We speak JSON-RPC 2.0 to it directly: a stateless `tools/call` for the `search`
 tool returns markdown-formatted results, which we parse into {title,url,snippet}
 objects so the LLM gets clean structured data it can cite.
 
-Configuration (env):
-  - ANYSEARCH_API_KEY  — required to enable web search. Reuses the same env var
-    the user's Claude Code MCP config already references, so a backend started
-    from the same shell inherits it with no extra setup.
-  - LAX_ANYSEARCH_URL  — optional override of the MCP endpoint URL.
-
-Without a key the endpoint returns `configured:false` (HTTP 200) so the model
-can fall back to the academic search tools (search_arxiv / search_openalex /
-search_semantic_scholar) instead of hard-failing the tool-calling loop.
+Key model — same as OpenAlex / Semantic Scholar: each user may configure their
+own anysearch API key in Settings (Fernet-encrypted server-side at
+`search_sources.anysearch.apiKey`, passed here as the `api_key` query param).
+Precedence: per-request user key → `ANYSEARCH_API_KEY` env (operator default)
+→ anonymous. Anonymous calls work but are rate-limited; a key raises limits.
+`ANYSEARCH_API_KEY` is optional and serves only as a server-wide fallback.
 """
 from __future__ import annotations
 
@@ -37,15 +34,18 @@ _BLOCK = re.compile(r"###\s*\d+\.\s*(.*?)(?=\n###\s*\d+\.|\Z)", re.DOTALL)
 _URL_LINE = re.compile(r"\*{0,2}URL\*{0,2}\s*[:：]\s*(\S+)")
 
 
-def _get_config() -> tuple[str, str]:
-    """Return (api_key, mcp_url). api_key is "" when web search is not configured."""
-    key = os.environ.get("ANYSEARCH_API_KEY", "").strip()
-    url = (
+def _env_key() -> str:
+    """Server-wide fallback anysearch key from env (operator default). May be ""."""
+    return os.environ.get("ANYSEARCH_API_KEY", "").strip()
+
+
+def _anysearch_url() -> str:
+    """The anysearch MCP endpoint URL (overridable via env)."""
+    return (
         os.environ.get("LAX_ANYSEARCH_URL")
         or os.environ.get("ANYSEARCH_MCP_URL")
         or _DEFAULT_ANYSEARCH_URL
     ).strip()
-    return key, url
 
 
 def parse_anysearch_markdown(md: str) -> list[dict[str, Any]]:
@@ -170,26 +170,23 @@ def _fallback(message: str, q: str) -> JSONResponse:
 async def websearch(
     q: str = Query(..., description="general web search query"),
     max_results: int = Query(8, ge=1, le=10),
+    api_key: str = Query("", description="Optional per-user anysearch API key"),
 ) -> Any:
-    key, url = _get_config()
-    if not key:
-        return JSONResponse(
-            content={
-                "configured": False,
-                "message": (
-                    "web search (anysearch) is not configured on the backend — set the "
-                    "ANYSEARCH_API_KEY env var. Falling back to academic search tools."
-                ),
-                "query": q,
-                "results": [],
-            }
-        )
+    # Key precedence: per-request user key (decrypted from search_sources by the
+    # caller) → operator env default → anonymous (rate-limited but functional).
+    user_key = api_key.strip()
+    env_key = _env_key()
+    if user_key:
+        key, key_used = user_key, "user"
+    elif env_key:
+        key, key_used = env_key, "env"
+    else:
+        key, key_used = "", "anonymous"
 
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-    }
+    url = _anysearch_url()
+    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -218,6 +215,7 @@ async def websearch(
     return JSONResponse(
         content={
             "configured": True,
+            "key_used": key_used,
             "query": q,
             "results": results,
             "total": len(results),

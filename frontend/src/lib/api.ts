@@ -260,14 +260,19 @@ export async function searchSemanticScholar(
   return r.json();
 }
 
-/** General web search via anysearch MCP (backend). */
+/** General web search via anysearch MCP (backend). `apiKey` is the user's
+ *  optional anysearch key (raises rate limits); omitted → anonymous call. */
 export async function webSearch(
   query: string,
-  maxResults = 8
+  maxResults = 8,
+  apiKey?: string
 ): Promise<{ results: any[]; configured: boolean; message?: string }> {
-  const r = await fetch(
-    `${BASE}/api/websearch?q=${encodeURIComponent(query)}&max_results=${maxResults}`
-  );
+  const params = new URLSearchParams({
+    q: query,
+    max_results: String(maxResults),
+  });
+  if (apiKey) params.set("api_key", apiKey);
+  const r = await fetch(`${BASE}/api/websearch?${params.toString()}`);
   if (!r.ok) throw new Error(`websearch error ${r.status}`);
   return r.json();
 }
@@ -669,6 +674,7 @@ export async function setDefaultProvider(id: string): Promise<ProviderOut> {
 export interface SettingsOut {
   theme: string;
   searchSources: {
+    anysearch: { enabled: boolean; apiKey: string };
     openalex: { enabled: boolean; apiKey: string; email: string };
     semanticScholar: { enabled: boolean; apiKey: string };
   };

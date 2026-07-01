@@ -187,10 +187,12 @@ export function SettingsView() {
 
         <h2>Search sources</h2>
         <p className="settings-hint">
-          arXiv is always on. Optionally enable OpenAlex and Semantic Scholar
-          for broader (published, peer-reviewed) literature. Both work without a
-          key (just rate-limited); an API key raises your limits. Keys are stored
-          only in your browser.
+          arXiv is always on. Web search (anysearch) is on by default as the 2nd
+          source — it finds papers arXiv misses (IEEE/ACM/Springer, paywalled,
+          DOI-only) and answers non-academic questions. Optionally enable OpenAlex
+          and Semantic Scholar for broader published literature. All work without a
+          key (anysearch anonymous is rate-limited); an API key raises your limits.
+          Keys are stored server-side, encrypted at rest.
         </p>
         <div className="search-sources-list">
           <div className="search-source-item">
@@ -199,6 +201,35 @@ export function SettingsView() {
               <span className="badge">always on</span>
             </div>
             <div className="provider-detail">Preprints — the default source.</div>
+          </div>
+
+          <div className={`search-source-item ${searchSources.anysearch.enabled ? "enabled" : ""}`}>
+            <div className="search-source-row">
+              <strong>Web search (anysearch)</strong>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={searchSources.anysearch.enabled}
+                  onChange={(e) => setSearchSources({ anysearch: { ...searchSources.anysearch, enabled: e.target.checked } })}
+                />
+                <span>{searchSources.anysearch.enabled ? "on" : "off"}</span>
+              </label>
+            </div>
+            <div className="provider-detail">
+              API key (optional):{" "}
+              <input
+                className="search-source-key"
+                type="password"
+                placeholder="optional — anonymous works, just slower"
+                value={searchSources.anysearch.apiKey}
+                onChange={(e) => setSearchSources({ anysearch: { ...searchSources.anysearch, apiKey: e.target.value } })}
+              />
+            </div>
+            <div className="provider-detail">
+              General web search — a fallback for papers not in arXiv/OpenAlex/Semantic
+              Scholar (IEEE, ACM, Springer, paywalled, or DOI-only) and for non-academic
+              questions. Works anonymously (rate-limited); a key raises your limits.
+            </div>
           </div>
 
           <div className={`search-source-item ${searchSources.openalex.enabled ? "enabled" : ""}`}>

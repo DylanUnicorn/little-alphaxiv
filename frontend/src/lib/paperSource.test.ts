@@ -61,20 +61,24 @@ describe("openTarget", () => {
 });
 
 describe("buildSearchTools", () => {
-  it("returns only arXiv + web_search when nothing enabled", () => {
-    const names = buildSearchTools({ openalex: false, s2: false }).map((t) => t.function.name);
+  it("returns only arXiv when nothing enabled (web_search gated on anysearch)", () => {
+    const names = buildSearchTools({ openalex: false, s2: false, anysearch: false }).map((t) => t.function.name);
+    expect(names).toEqual(["search_arxiv"]);
+  });
+  it("places web_search 2nd (after arXiv) when anysearch enabled alone", () => {
+    const names = buildSearchTools({ openalex: false, s2: false, anysearch: true }).map((t) => t.function.name);
     expect(names).toEqual(["search_arxiv", "web_search"]);
   });
   it("includes search_openalex when openalex enabled", () => {
-    const names = buildSearchTools({ openalex: true, s2: false }).map((t) => t.function.name);
-    expect(names).toEqual(["search_arxiv", "search_openalex", "web_search"]);
+    const names = buildSearchTools({ openalex: true, s2: false, anysearch: false }).map((t) => t.function.name);
+    expect(names).toEqual(["search_arxiv", "search_openalex"]);
   });
   it("includes search_semantic_scholar when s2 enabled", () => {
-    const names = buildSearchTools({ openalex: false, s2: true }).map((t) => t.function.name);
-    expect(names).toEqual(["search_arxiv", "search_semantic_scholar", "web_search"]);
+    const names = buildSearchTools({ openalex: false, s2: true, anysearch: false }).map((t) => t.function.name);
+    expect(names).toEqual(["search_arxiv", "search_semantic_scholar"]);
   });
-  it("includes all three sources when both enabled", () => {
-    const names = buildSearchTools({ openalex: true, s2: true }).map((t) => t.function.name);
-    expect(names).toEqual(["search_arxiv", "search_openalex", "search_semantic_scholar", "web_search"]);
+  it("orders arXiv → web_search → openalex → s2 when all enabled", () => {
+    const names = buildSearchTools({ openalex: true, s2: true, anysearch: true }).map((t) => t.function.name);
+    expect(names).toEqual(["search_arxiv", "web_search", "search_openalex", "search_semantic_scholar"]);
   });
 });

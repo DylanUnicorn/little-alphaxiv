@@ -36,10 +36,12 @@ export function openTarget(p: Paper): OpenTarget {
 }
 
 /** Build the LLM tool list for the current turn. arXiv is always present;
- *  OpenAlex / Semantic Scholar tools appear only when the user enabled them. */
+ *  anysearch (web_search) is 2nd, on by default (anonymous works, rate-limited);
+ *  OpenAlex / Semantic Scholar appear only when the user enabled them. */
 export function buildSearchTools(sources: {
   openalex: boolean;
   s2: boolean;
+  anysearch: boolean;
 }): ToolDef[] {
   const tools: ToolDef[] = [
     {
@@ -61,6 +63,31 @@ export function buildSearchTools(sources: {
       },
     },
   ];
+
+  if (sources.anysearch) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "web_search",
+        description:
+          "General web search (via anysearch). Returns titles, URLs, and snippets. " +
+          "Use it as a FALLBACK when the academic paper-search tools (search_arxiv / " +
+          "search_openalex / search_semantic_scholar) return nothing or can't find the " +
+          "paper the user asked about — e.g. IEEE, ACM, Springer, paywalled, or other " +
+          "non-arXiv papers, or when the user only has a DOI or a partial title. " +
+          "Also use it for non-academic questions (news, blogs, people, products). " +
+          "Non-arXiv links open externally (no in-app PDF preview); cite results by URL.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Web search query — concise keywords, a DOI, or a title." },
+            max_results: { type: "number", description: "Max results to return (default 8)." },
+          },
+          required: ["query"],
+        },
+      },
+    });
+  }
 
   if (sources.openalex) {
     tools.push({
@@ -103,29 +130,6 @@ export function buildSearchTools(sources: {
       },
     });
   }
-
-  tools.push({
-    type: "function",
-    function: {
-      name: "web_search",
-      description:
-        "General web search (via anysearch). Returns titles, URLs, and snippets. " +
-        "Use it as a FALLBACK when the academic paper-search tools (search_arxiv / " +
-        "search_openalex / search_semantic_scholar) return nothing or can't find the " +
-        "paper the user asked about — e.g. IEEE, ACM, Springer, paywalled, or other " +
-        "non-arXiv papers, or when the user only has a DOI or a partial title. " +
-        "Also use it for non-academic questions (news, blogs, people, products). " +
-        "Non-arXiv links open externally (no in-app PDF preview); cite results by URL.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Web search query — concise keywords, a DOI, or a title." },
-          max_results: { type: "number", description: "Max results to return (default 8)." },
-        },
-        required: ["query"],
-      },
-    },
-  });
 
   return tools;
 }

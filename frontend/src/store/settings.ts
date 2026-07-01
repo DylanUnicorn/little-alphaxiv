@@ -13,15 +13,20 @@ import * as api from "../lib/api";
  *  can grow without churn; validity is enforced at runtime via coerceTheme. */
 export type Theme = string;
 
-/** Optional academic search sources beyond the always-on arXiv. Keys are stored
- *  server-side (encrypted at rest) per user. Both sources also work without a
- *  key (just rate-limited), so the key is an optional enhancement. */
+/** Optional search sources beyond the always-on arXiv. Keys are stored
+ *  server-side (encrypted at rest) per user. All three also work without a
+ *  key (anysearch anonymous is rate-limited; OpenAlex/S2 share a pool), so the
+ *  key is an optional enhancement. anysearch (web_search) is the 2nd source
+ *  after arXiv — on by default so non-arXiv papers (IEEE/ACM/Springer, DOI-only)
+ *  are findable out of the box. */
 export interface SearchSources {
+  anysearch: { enabled: boolean; apiKey: string };
   openalex: { enabled: boolean; apiKey: string; email: string };
   semanticScholar: { enabled: boolean; apiKey: string };
 }
 
 export const DEFAULT_SEARCH_SOURCES: SearchSources = {
+  anysearch: { enabled: true, apiKey: "" },
   openalex: { enabled: false, apiKey: "", email: "" },
   semanticScholar: { enabled: false, apiKey: "" },
 };
@@ -117,6 +122,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
     set({
       theme: coerceTheme(settings.theme),
       searchSources: {
+        anysearch: { ...DEFAULT_SEARCH_SOURCES.anysearch, ...(ss.anysearch ?? {}) },
         openalex: { ...DEFAULT_SEARCH_SOURCES.openalex, ...(ss.openalex ?? {}) },
         semanticScholar: { ...DEFAULT_SEARCH_SOURCES.semanticScholar, ...(ss.semanticScholar ?? {}) },
       },
@@ -251,6 +257,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setSearchSources: (patch) => {
     set((s) => ({
       searchSources: {
+        anysearch: { ...s.searchSources.anysearch, ...(patch.anysearch ?? {}) },
         openalex: { ...s.searchSources.openalex, ...(patch.openalex ?? {}) },
         semanticScholar: {
           ...s.searchSources.semanticScholar,

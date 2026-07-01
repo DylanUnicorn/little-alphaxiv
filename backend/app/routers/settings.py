@@ -25,13 +25,18 @@ from ..models import User, UserSettings
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 # Paths inside the JSON blobs that hold secrets (encrypted at rest).
-_SEARCH_KEY_PATHS = [("openalex", "apiKey"), ("semanticScholar", "apiKey")]
+_SEARCH_KEY_PATHS = [
+    ("openalex", "apiKey"),
+    ("semanticScholar", "apiKey"),
+    ("anysearch", "apiKey"),
+]
 _ZOTERO_KEY_PATH = ("apiKey",)
 
 
 class SearchSources(BaseModel):
     openalex: dict | None = None
     semanticScholar: dict | None = None
+    anysearch: dict | None = None
 
 
 class ZoteroConfig(BaseModel):

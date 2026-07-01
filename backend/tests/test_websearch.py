@@ -157,16 +157,56 @@ async def test_post_jsonrpc_raises_on_bad_json():
 # --------------------------------------------------------------------------- #
 # /api/websearch endpoint (monkeypatch _post_jsonrpc — no real network)
 # --------------------------------------------------------------------------- #
-async def test_endpoint_not_configured_when_no_key(client, monkeypatch):
+async def test_endpoint_anonymous_when_no_key(client, monkeypatch):
+    """No user key, no env key → anonymous call (no Authorization header)."""
     monkeypatch.delenv("ANYSEARCH_API_KEY", raising=False)
+
+    async def fake_post(url, headers, payload, transport=None):
+        # Anonymous = no Authorization header sent to anysearch.
+        assert "Authorization" not in headers
+        return _SAMPLE_RPC
+
+    monkeypatch.setattr(websearch, "_post_jsonrpc", fake_post)
+
     r = await client.get("/api/websearch", params={"q": "ieee paper", "max_results": 3})
     assert r.status_code == 200
     body = r.json()
-    assert body["configured"] is False
-    assert body["results"] == []
+    assert body["configured"] is True
+    assert body["key_used"] == "anonymous"
+    assert body["total"] == 2
     assert body["query"] == "ieee paper"
-    # The message tells the user how to enable it.
-    assert "ANYSEARCH_API_KEY" in body["message"]
+
+
+async def test_endpoint_user_key_param_preferred_over_env(client, monkeypatch):
+    """Per-request user key wins over the env fallback."""
+    monkeypatch.setenv("ANYSEARCH_API_KEY", "env-key")
+
+    async def fake_post(url, headers, payload, transport=None):
+        assert headers["Authorization"] == "Bearer user-key"  # param, not env
+        return _SAMPLE_RPC
+
+    monkeypatch.setattr(websearch, "_post_jsonrpc", fake_post)
+
+    r = await client.get("/api/websearch", params={"q": "x", "api_key": "user-key"})
+    body = r.json()
+    assert body["configured"] is True
+    assert body["key_used"] == "user"
+
+
+async def test_endpoint_env_key_fallback(client, monkeypatch):
+    """No user key param → env key is used."""
+    monkeypatch.setenv("ANYSEARCH_API_KEY", "env-key")
+
+    async def fake_post(url, headers, payload, transport=None):
+        assert headers["Authorization"] == "Bearer env-key"
+        return _SAMPLE_RPC
+
+    monkeypatch.setattr(websearch, "_post_jsonrpc", fake_post)
+
+    r = await client.get("/api/websearch", params={"q": "x"})
+    body = r.json()
+    assert body["configured"] is True
+    assert body["key_used"] == "env"
 
 
 async def test_endpoint_success_parses_results(client, monkeypatch):

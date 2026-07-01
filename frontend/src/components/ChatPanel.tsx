@@ -102,7 +102,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   // Select the stable searchSources object; derive enabled booleans locally
   // to avoid returning a fresh object from the selector (zustand footgun).
   const searchSources = useSettings((s) => s.searchSources);
-  const enabledSources = { openalex: searchSources.openalex.enabled, s2: searchSources.semanticScholar.enabled };
+  const enabledSources = { openalex: searchSources.openalex.enabled, s2: searchSources.semanticScholar.enabled, anysearch: searchSources.anysearch.enabled };
 
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -347,6 +347,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         searchSourceCreds: {
           openalex: searchSources.openalex,
           semanticScholar: searchSources.semanticScholar,
+          anysearch: searchSources.anysearch,
         },
         signal: controller.signal,
         callbacks: {

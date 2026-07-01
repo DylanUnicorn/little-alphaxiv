@@ -244,7 +244,7 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
 | `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`. Uploaded / Zotero-imported PDFs persist under `<LAX_PDF_CACHE>/uploads/<user_id>/` (auth-gated, per-user — not the global cache). |
 | `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
-| `ANYSEARCH_API_KEY` | *(unset)* | API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. Unset → `web_search` reports "not configured" and the model falls back to academic tools (no crash). Same env var your Claude Code MCP config can reference. In Docker, set it in `deploy/.env`. |
+| `ANYSEARCH_API_KEY` | *(unset)* | Operator-wide fallback API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. **Per-user keys** are configured in Settings → Search sources (Fernet-encrypted server-side) and take precedence; this env var is only the server-wide default. Anonymous works (rate-limited), so all three are optional. In Docker, set it in `deploy/.env`. |
 | `LAX_ANYSEARCH_URL` | `https://api.anysearch.com/mcp` | Override the anysearch MCP endpoint URL. |
 
 ## 🧠 How it works
@@ -338,7 +338,7 @@ little-alphaxiv/
 | PDF annotations (rect/draw/text/highlight) | ✅ verified |
 | Zotero integration (local + web) | ✅ working; per-request creds (v1) |
 | Open Local Paper (upload + Zotero reverse-import) | ✅ verified |
-| `web_search` via anysearch MCP | ✅ wired (needs `ANYSEARCH_API_KEY` env) |
+| `web_search` via anysearch MCP | ✅ per-user key (Settings) + anonymous fallback |
 
 Known follow-ups (non-blocking) live in [`CLAUDE.md`](./CLAUDE.md). Notable ones:
 a handful of Playwright drivers in `tools/` still use

@@ -31,12 +31,16 @@ export async function runConversation(opts: {
   model?: string; // per-conversation model override
   signal?: AbortSignal;
   callbacks: LoopCallbacks;
-  enabledSources?: { openalex: boolean; s2: boolean };
-  searchSourceCreds?: { openalex: { apiKey: string; email: string }; semanticScholar: { apiKey: string } };
+  enabledSources?: { openalex: boolean; s2: boolean; anysearch: boolean };
+  searchSourceCreds?: {
+    openalex: { apiKey: string; email: string };
+    semanticScholar: { apiKey: string };
+    anysearch: { apiKey: string };
+  };
 }): Promise<{ newMessages: ChatMessage[] }> {
   const { provider, messages, systemPrompt, model: modelOverride, signal, callbacks, enabledSources, searchSourceCreds } = opts;
   const effectiveModel = modelOverride || provider.model;
-  const tools = buildSearchTools(enabledSources ?? { openalex: false, s2: false });
+  const tools = buildSearchTools(enabledSources ?? { openalex: false, s2: false, anysearch: false });
 
   // Build the message array sent to the model. Prepend system prompt.
   const apiMessages: unknown[] = [];
@@ -198,20 +202,16 @@ export async function runConversation(opts: {
       } else if (tc.function.name === "web_search") {
         callbacks.onStatus?.("Web searching…");
         try {
-          const res = await webSearch(args.query ?? "", args.max_results ?? 8);
-          let content: string;
-          if (!res.configured) {
-            // Backend has no ANYSEARCH_API_KEY — tell the model to fall back to
-            // the academic tools instead of retrying web_search on every turn.
-            content =
-              "web_search is not configured on the backend (set ANYSEARCH_API_KEY). " +
-              "Use search_arxiv / search_openalex / search_semantic_scholar instead.";
-          } else {
-            // Surface a backend message (e.g. upstream anysearch failure) ahead
-            // of the (possibly empty) results so the model can explain + fall back.
-            const results = JSON.stringify(res.results);
-            content = res.message ? `${res.message}\n${results}` : results;
-          }
+          const res = await webSearch(
+            args.query ?? "",
+            args.max_results ?? 8,
+            searchSourceCreds?.anysearch?.apiKey
+          );
+          // configured is always true now (anonymous works); surface a backend
+          // message (e.g. upstream anysearch failure) ahead of the results so the
+          // model can explain + fall back to academic tools if results are empty.
+          const results = JSON.stringify(res.results);
+          const content = res.message ? `${res.message}\n${results}` : results;
           const toolMsg: ChatMessage = {
             role: "tool",
             tool_call_id: tc.id,
