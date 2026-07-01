@@ -70,7 +70,7 @@ row instead of re-storing bytes.
 
 ### 3.3 PDF byte storage
 
-Per-user subdir under the existing cache root: `deploy/data/pdf_cache/uploads/<user_id>/<content_hash>.pdf`
+Per-user subdir under the existing cache root: `deploy/data/pdf_cache/uploads/<user_id>/<content_hash>.pdf` (local dev; in Docker this is `/app/data/pdf_cache/uploads/<user_id>/` — the bind-mount `./data:/app/data` persists uploads across `docker compose down/up` and image rebuilds; the 0003 migration runs automatically on startup via the lifespan, so no extra step is needed to create the `user_paper_upload` table).
 (local dev + Docker share the dir via `run.sh`/`run.bat`). Auth-gated on read.
 
 ### 3.4 `full_text` read/write routing

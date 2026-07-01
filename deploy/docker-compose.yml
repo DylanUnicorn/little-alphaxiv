@@ -46,7 +46,8 @@ services:
       ANYSEARCH_API_KEY: "${ANYSEARCH_API_KEY:-}"
       LAX_ANYSEARCH_URL: "${LAX_ANYSEARCH_URL:-}"
     volumes:
-      # SQLite DB + PDF cache + the persisted LAX_SECRET_KEY all live here.
+      # SQLite DB + PDF cache (incl. uploaded / Zotero-imported PDFs under
+      # pdf_cache/uploads/<user_id>/) + the persisted LAX_SECRET_KEY all live here.
       - ./data:/app/data
     restart: unless-stopped
     # Tiny health probe: the backend exposes GET /api/health.

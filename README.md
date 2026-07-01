@@ -76,6 +76,12 @@ there.
   default per-conversation or globally.
 - **Zotero integration** — local + connector + web API; one-click note sync from
   annotations.
+- **Open Local Paper** — bring a paywalled / off-arXiv PDF into the app via
+  `+ Open Local Paper` in the sidebar: upload a file (pdf.js parses the embedded
+  metadata, with optional LLM enrichment) or reverse-import from your Zotero
+  library (the backend downloads the item's PDF attachment). When the assistant
+  surfaces a paper it can't open in-app, the card shows `Upload Local PDF` /
+  `Import from Zotero` / `Open source page` buttons so you're never stuck.
 - **11 themes** — dark-first, including sepia and solarized for long reading
   sessions.
 - **One-time browser → server migration** — if you used the old browser-only
@@ -236,7 +242,7 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
 | `LAX_SMTP_URL` | *(unset)* | SMTP URL for password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the logs (zero-config for localhost). |
 | `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
-| `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`. |
+| `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`. Uploaded / Zotero-imported PDFs persist under `<LAX_PDF_CACHE>/uploads/<user_id>/` (auth-gated, per-user — not the global cache). |
 | `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
 | `ANYSEARCH_API_KEY` | *(unset)* | API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. Unset → `web_search` reports "not configured" and the model falls back to academic tools (no crash). Same env var your Claude Code MCP config can reference. In Docker, set it in `deploy/.env`. |
 | `LAX_ANYSEARCH_URL` | `https://api.anysearch.com/mcp` | Override the anysearch MCP endpoint URL. |
@@ -254,6 +260,12 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
 - **Paper view:** the PDF loads via the proxy (cached to disk); pdf.js extracts
   the full text once, cached in a **global** `papers` table (same arxiv_id → same
   text, deduplicated across users); that text is injected into the chat context.
+- **Open Local Paper:** for papers the search tools can't fetch (paywalled,
+  off-arXiv), `+ Open Local Paper` lets you upload a PDF or reverse-import one
+  from Zotero. The bytes + extracted full text are stored **per-user** (private —
+  the global `papers` row keeps only shareable metadata); pdf.js then renders it
+  via an auth-gated serve endpoint, and the rest of the paper-view flow is
+  unchanged.
 - **Tools run in the browser.** The backend proxies + persists; the OpenAI-style
   tool-calling loop lives in the frontend (`src/lib/llm.ts`).
 - **One-time migration:** on first login after upgrading from the old
@@ -275,8 +287,9 @@ little-alphaxiv/
 │   │   ├── deps.py           # current_user — the per-user scoping chokepoint
 │   │   ├── email.py          # password-reset delivery (SMTP or console)
 │   │   └── routers/          # auth, providers, settings, conversations,
-│   │                         #   annotations, papers, llm, search, pdf, models,
-│   │                         #   zotero, zotero_note_sync, migrate, websearch, …
+│   │                         #   annotations, papers, paper_uploads, llm,
+│   │                         #   search, pdf, models, zotero, zotero_note_sync,
+│   │                         #   migrate, websearch, …
 │   ├── alembic/              # migrations (lifespan runs `upgrade head` on startup)
 │   ├── tests/                # pytest (conftest builds a per-test temp SQLite)
 │   ├── requirements.txt
@@ -324,6 +337,7 @@ little-alphaxiv/
 | arXiv search + tool-calling, PDF preview, paper chat | ✅ verified |
 | PDF annotations (rect/draw/text/highlight) | ✅ verified |
 | Zotero integration (local + web) | ✅ working; per-request creds (v1) |
+| Open Local Paper (upload + Zotero reverse-import) | ✅ verified |
 | `web_search` via anysearch MCP | ✅ wired (needs `ANYSEARCH_API_KEY` env) |
 
 Known follow-ups (non-blocking) live in [`CLAUDE.md`](./CLAUDE.md). Notable ones:
@@ -384,7 +398,13 @@ encrypted key + chat history on your server).
 PDF full text is extracted once and cached in a **global** `papers` table
 (deduplicated across users by arxiv_id — same paper, one copy). Your
 *conversations* and *annotations* are per-user and invisible to others. The PDF
-file cache is content-addressed and non-sensitive.
+file cache is content-addressed and non-sensitive. **Uploaded / Zotero-imported
+PDFs are the exception**: their bytes + extracted full text live in a separate
+per-user `user_paper_upload` table (and under `deploy/data/pdf_cache/uploads/<user_id>/`
+on disk), served via an auth-gated endpoint — only the owner can read them. The
+global `papers` row for an upload holds just the shareable metadata (title /
+authors / abstract), with `full_text=NULL`, so a paywalled paper's text never
+leaks across users.
 </details>
 
 <details>
