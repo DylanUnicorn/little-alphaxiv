@@ -61,7 +61,10 @@ there.
 
 - **Conversational paper discovery** — describe what you want; the assistant
   calls a `search_arxiv` tool (and optionally `web_search`) and renders results
-  as clickable paper cards.
+  as clickable paper cards. arXiv and open-access results open the in-app PDF
+  preview; paywalled / non-arXiv results (and DOI links the assistant writes as
+  text) show `Upload Local PDF` / `Import from Zotero` / `Open source page`
+  buttons so you're never stuck.
 - **Paper-aware chat** — pdf.js extracts the full text once (cached globally and
   deduplicated across users); the assistant discusses the paper's actual content.
 - **PDF annotations** — rectangle / freehand / text / highlight tools with an
@@ -256,7 +259,9 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
   in SQLite, per-user.
 - **Discovery (general chat):** you describe what you want; the assistant calls
   `search_arxiv` (and optionally `web_search`); results render as clickable paper
-  cards. Click → paper view.
+  cards. arXiv / open-access results → click opens the in-app PDF view;
+  paywalled / non-arXiv results (and DOI links written as text) → 3-button card
+  (`Upload Local PDF` / `Import from Zotero` / `Open source page`).
 - **Paper view:** the PDF loads via the proxy (cached to disk); pdf.js extracts
   the full text once, cached in a **global** `papers` table (same arxiv_id → same
   text, deduplicated across users); that text is injected into the chat context.

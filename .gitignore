@@ -67,3 +67,10 @@ Desktop.ini
 .claude/settings.local.json
 .claude/worktrees/
 .worktrees/
+
+# ---- One-off probe / debug scripts (never tracked; may carry secrets) ----
+# e.g. backend/_probe_proxy.py once leaked a Zotero API key — keep these out.
+backend/_probe*.py
+
+# ---- Demo videos (large binaries; use Git LFS if you really need them) ----
+example_demo/*.mp4

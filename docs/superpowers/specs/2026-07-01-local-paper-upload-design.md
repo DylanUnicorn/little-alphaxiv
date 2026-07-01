@@ -208,6 +208,12 @@ An unfetchable card renders three buttons instead of the "Click to preview PDF �
 
 Card body click does nothing (no PDF to navigate to) — the 3 buttons are the only actions.
 
+**Card entry points (v1 + later):** the unfetchable card is reached whenever a surfaced paper has no in-app-previewable PDF. Three paths produce such papers:
+
+1. **OpenAlex / Semantic Scholar results without `oa_pdf_url`** — the original v1 path (paywalled published papers the academic sources index but can't serve a PDF for).
+2. **`web_search` (anysearch) results** — `webToPapers()` (`paperSource.ts`) converts each `{title,url,snippet}` into a `Paper` with `source:"web"`, no `arxiv_id`, no `oa_pdf_url`. arXiv URLs found via web search are promoted to a fetchable arXiv card instead. The `web_search` tool branch in `runConversation` (`llm.ts`) calls `onPapers()` + attaches `ui:{papers}` exactly like the other three search tools, so web results render as cards rather than raw markdown links.
+3. **DOI / publisher links the model writes as plain text** — `Markdown.tsx`'s link renderer intercepts DOI-bearing URLs (`doi.org/<doi>` and publisher `/doi/<doi>` paths, e.g. ACM/IEEE/Springer) via `extractDoiFromUrl()` and renders an inline `.doi-inline-card` with the same 3 buttons. This is **UI-determined, not tool-driven**: the model often cites paywalled non-arXiv papers by writing their DOI/ACM URL as markdown text (no tool call), so the `web_search`→PaperCard pipeline never fires. The Markdown-layer card mirrors the `arxiv.org` link → inline preview-card pattern already in place. ResearchGate and other non-DOI links still render as plain external `<a>` (no DOI → can't tell which paper it is).
+
 ### 6.2 System prompt change (general chat)
 
 Add to the general-chat system prompt:
