@@ -35,11 +35,17 @@ interface Props {
   /** When set (non-arXiv OA papers), load the PDF from /api/pdf-url?url=…
    *  instead of the arxiv-id path. */
   pdfUrlOverride?: string;
+  /** The arxivId that `pdfUrlOverride` was resolved FOR (or null while PaperView
+   *  is still resolving it for the current paper). The doc-load effect refuses to
+   *  call getDocument until this equals `arxivId`, so a stale override from the
+   *  PREVIOUS paper — which lags one render behind arxivId on a switch — can
+   *  never trigger a load of the wrong PDF. Loading state shows meanwhile. */
+  pdfUrlForId?: string | null;
   onLoaded?: (numPages: number) => void;
   onTextExtracted?: (text: string) => void;
 }
 
-export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }: Props) {
+export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTextExtracted }: Props) {
   const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [error, setError] = useState("");
@@ -72,6 +78,15 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
     setError("");
     setDoc(null);
     setNumPages(0);
+    // Wait until PaperView confirms the override (or `undefined` for a plain
+    // arXiv paper) is resolved for THIS arxivId. On a paper switch the override
+    // from the previous paper is still in `pdfUrlOverride` for one render until
+    // PaperView's db.getPaper resolves; without this guard we'd fire getDocument
+    // with the stale URL and briefly render the wrong PDF — letting the user
+    // draw highlights that get saved to the new paper_id with the old paper's
+    // coordinates (ghost annotations). `loading` stays true and doc stays null
+    // (no PDF to draw on) until the resolution lands and re-triggers this effect.
+    if (pdfUrlForId !== arxivId) return;
     pdfjsLib
       .getDocument({ url: pdfUrlOverride || pdfUrl(arxivId) })
       .promise.then(async (d) => {
@@ -114,7 +129,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
       docRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arxivId, pdfUrlOverride]);
+  }, [arxivId, pdfUrlOverride, pdfUrlForId]);
 
   // --- Per-paper scroll-position memory (save) ---
   // Debounced (rAF) save of the topmost visible page + fraction on scroll.

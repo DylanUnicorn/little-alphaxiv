@@ -36,6 +36,30 @@ export function openTarget(p: Paper): OpenTarget {
   return { kind: "unfetchable", id: resolvePaperId(p), externalUrl: externalUrl || undefined };
 }
 
+/** Which PDF endpoint should PdfViewer load this paper from?
+ *  - `default` → the arXiv /api/pdf path (also the safe fallback when the
+ *                record isn't cached yet — a bare arXiv id always lands here)
+ *  - `oa`      → a non-arXiv open-access PDF via the /api/pdf-url proxy
+ *  - `upload`  → the user's uploaded / Zotero-imported PDF via /api/paper-upload
+ *
+ *  Returning `default` is load-bearing: it is what CLEARS a stale override when
+ *  switching from an uploaded/OA paper to a normal arXiv paper. PaperView maps
+ *  `default` → `undefined` (no override), so PdfViewer falls back to /api/pdf/<id>.
+ *  Without this branch the previous paper's override URL stuck around and
+ *  PdfViewer kept rendering the WRONG paper — decoupling the PDF from the chat
+ *  + annotation store and saving highlights to the wrong paper_id (ghost
+ *  annotations appearing on blank areas of the real paper). */
+export type PdfSource =
+  | { kind: "default" }
+  | { kind: "oa"; url: string }
+  | { kind: "upload" };
+
+export function resolvePdfSource(p: Paper | null | undefined): PdfSource {
+  if (p?.oa_pdf_url) return { kind: "oa", url: p.oa_pdf_url };
+  if (p?.source === "upload" || p?.source === "zotero") return { kind: "upload" };
+  return { kind: "default" };
+}
+
 /** A single web_search (anysearch) result, as returned by the backend
  *  /api/websearch endpoint (parsed from anysearch's markdown). */
 export interface WebSearchResult {
