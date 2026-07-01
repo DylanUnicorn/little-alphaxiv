@@ -115,32 +115,43 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   // (e.g. to Settings) or a hard refresh always captures the last position.
   // Restore lives in the effect below; restoringRef suppresses saves during
   // the restore's intermediate scroll steps.
+  const DBG = true; // DEBUG: remove after root-causing scroll-restore bug
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let raf = 0;
-    const save = () => {
+    const save = (why: string) => {
       raf = 0;
-      if (restoringRef.current) return;
+      if (restoringRef.current) {
+        if (DBG) console.log("[ssave] suppressed (restoring)", why, arxivId);
+        return;
+      }
       const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
-      if (!wraps.length) return;
+      if (!wraps.length) {
+        if (DBG) console.log("[ssave] no wraps", why, arxivId);
+        return;
+      }
       const cTop = container.getBoundingClientRect().top;
       const rects = Array.from(wraps, (w) => {
         const r = w.getBoundingClientRect();
         return { top: r.top, height: r.height };
       });
       const pos = computeScrollPos(rects, cTop);
+      const first = rects[0], last = rects[rects.length - 1];
+      if (DBG) console.log(`[ssave] ${why} arxiv=${arxivId} scrollTop=${container.scrollTop} scrollH=${container.scrollHeight} clientH=${container.clientHeight} cTop=${cTop.toFixed(0)} wraps=${wraps.length} firstTop=${first.top.toFixed(0)} firstH=${first.height.toFixed(0)} lastTop=${last.top.toFixed(0)} lastH=${last.height.toFixed(0)} →`, pos);
       if (pos) savePdfScroll(arxivId, pos);
     };
     const onScroll = () => {
       if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(save);
+      raf = requestAnimationFrame(() => save("scroll"));
     };
     container.addEventListener("scroll", onScroll, { passive: true });
+    if (DBG) console.log("[ssave] listener attached", arxivId);
     return () => {
       container.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
-      save(); // final capture before unmount / paper switch
+      save("unmount"); // final capture before unmount / paper switch
+      if (DBG) console.log("[ssave] listener removed (unmount)", arxivId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arxivId]);
@@ -154,6 +165,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
   useEffect(() => {
     if (!doc || numPages === 0) return;
     const saved = loadPdfScroll(arxivId);
+    if (DBG) console.log("[rstore] effect fired", arxivId, "saved=", saved, "numPages=", numPages);
     if (!saved || saved.page < 1 || saved.page > numPages) return;
     restoringRef.current = true;
     let cancelled = false;
@@ -164,7 +176,11 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
       const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
       const target = wraps[saved.page - 1];
       if (!target) { restoringRef.current = false; return; }
+      const tRect0 = target.getBoundingClientRect();
+      if (DBG) console.log(`[rstore] before scrollIntoView page=${saved.page} scrollTop=${container.scrollTop} targetTop=${tRect0.top.toFixed(0)} targetH=${tRect0.height.toFixed(0)}`);
       target.scrollIntoView({ block: "start" });
+      const tRect1 = target.getBoundingClientRect();
+      if (DBG) console.log(`[rstore] after  scrollIntoView page=${saved.page} scrollTop=${container.scrollTop} targetTop=${tRect1.top.toFixed(0)} targetH=${tRect1.height.toFixed(0)} frac=${saved.frac}`);
       if (saved.frac <= 0) { restoringRef.current = false; return; }
       // Poll until the target page has rendered (real height) before applying
       // the fractional delta; bail after 1.5s and apply best-effort.
@@ -179,7 +195,9 @@ export function PdfViewer({ arxivId, pdfUrlOverride, onLoaded, onTextExtracted }
         const cTop = container.getBoundingClientRect().top;
         const r = target.getBoundingClientRect();
         const delta = computeFracDelta({ top: r.top, height: r.height }, cTop, saved.frac);
+        const before = container.scrollTop;
         container.scrollTop += delta;
+        if (DBG) console.log(`[rstore] applyFrac rendered=${rendered} cTop=${cTop.toFixed(0)} targetTop=${r.top.toFixed(0)} targetH=${r.height.toFixed(0)} delta=${delta.toFixed(0)} scrollTop ${before.toFixed(0)}→${container.scrollTop}`);
         restoringRef.current = false;
       };
       raf = requestAnimationFrame(applyFrac);
