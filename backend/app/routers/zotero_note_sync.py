@@ -59,7 +59,7 @@ async def list_note_sync(
     return {r.arxiv_id: _to_out(r) for r in rows}
 
 
-@router.put("/{arxiv_id}", response_model=NoteSyncOut)
+@router.put("/{arxiv_id:path}", response_model=NoteSyncOut)
 async def put_note_sync(
     arxiv_id: str,
     body: NoteSyncPatch,

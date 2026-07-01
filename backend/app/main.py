@@ -29,6 +29,7 @@ from .routers import (
     migrate,
     models,
     openalex,
+    paper_uploads,
     papers,
     pdf,
     providers,
@@ -94,6 +95,7 @@ app.include_router(settings.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")
 app.include_router(papers.router, prefix="/api")
+app.include_router(paper_uploads.router, prefix="/api")
 app.include_router(migrate.router, prefix="/api")
 app.include_router(zotero_note_sync.router, prefix="/api")
 

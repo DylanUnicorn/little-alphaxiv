@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..db import get_session
 from ..deps import current_user
-from ..models import PaperRow, User
+from ..models import PaperRow, User, UserPaperUpload
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
@@ -37,7 +38,7 @@ class StoredPaper(Paper):
     fetched_at: int
 
 
-@router.get("/{arxiv_id}", response_model=StoredPaper)
+@router.get("/{arxiv_id:path}", response_model=StoredPaper)
 async def get_paper(
     arxiv_id: str,
     user: User = Depends(current_user),
@@ -46,16 +47,27 @@ async def get_paper(
     row = await session.get(PaperRow, arxiv_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "paper not cached")
+    # For a user-private upload, full_text lives on the upload row (the global
+    # row keeps full_text=NULL so the paywalled text never leaks cross-user).
+    upload = (
+        await session.exec(
+            select(UserPaperUpload).where(
+                UserPaperUpload.user_id == user.id,
+                UserPaperUpload.paper_id == arxiv_id,
+            )
+        )
+    ).first()
+    full_text = upload.full_text if upload is not None else row.full_text
     return StoredPaper(
         arxiv_id=row.arxiv_id, title=row.title, authors=row.authors or [],
         abstract=row.abstract, pdf_url=row.pdf_url, abs_url=row.abs_url,
         published=row.published, primary_category=row.primary_category,
         source=row.source, doi=row.doi, oa_pdf_url=row.oa_pdf_url,
-        external_url=row.external_url, full_text=row.full_text, fetched_at=row.fetched_at,
+        external_url=row.external_url, full_text=full_text, fetched_at=row.fetched_at,
     )
 
 
-@router.put("/{arxiv_id}", response_model=StoredPaper)
+@router.put("/{arxiv_id:path}", response_model=StoredPaper)
 async def put_paper(
     arxiv_id: str,
     body: StoredPaper,
@@ -64,6 +76,16 @@ async def put_paper(
 ) -> StoredPaper:
     if body.arxiv_id != arxiv_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "id mismatch")
+    # If this paper is a user-private upload, route full_text to the upload
+    # row (the global row keeps full_text=NULL so paywalled text never leaks).
+    upload = (
+        await session.exec(
+            select(UserPaperUpload).where(
+                UserPaperUpload.user_id == user.id,
+                UserPaperUpload.paper_id == arxiv_id,
+            )
+        )
+    ).first()
     row = await session.get(PaperRow, arxiv_id)
     if row is None:
         row = PaperRow(
@@ -71,7 +93,8 @@ async def put_paper(
             abstract=body.abstract, pdf_url=body.pdf_url, abs_url=body.abs_url,
             published=body.published, primary_category=body.primary_category,
             source=body.source, doi=body.doi, oa_pdf_url=body.oa_pdf_url,
-            external_url=body.external_url, full_text=body.full_text,
+            external_url=body.external_url,
+            full_text=None if upload is not None else body.full_text,
             fetched_at=body.fetched_at,
         )
         session.add(row)
@@ -87,17 +110,24 @@ async def put_paper(
         row.doi = body.doi
         row.oa_pdf_url = body.oa_pdf_url
         row.external_url = body.external_url
-        # Don't clobber full_text with None on a metadata-only update.
-        if body.full_text is not None:
-            row.full_text = body.full_text
+        # full_text routing: uploads write to the user-scoped row, never global.
+        if upload is not None:
+            if body.full_text is not None:
+                upload.full_text = body.full_text
+                session.add(upload)
+        else:
+            # Don't clobber full_text with None on a metadata-only update.
+            if body.full_text is not None:
+                row.full_text = body.full_text
         row.fetched_at = body.fetched_at
         session.add(row)
     await session.commit()
     await session.refresh(row)
+    full_text = upload.full_text if upload is not None else row.full_text
     return StoredPaper(
         arxiv_id=row.arxiv_id, title=row.title, authors=row.authors or [],
         abstract=row.abstract, pdf_url=row.pdf_url, abs_url=row.abs_url,
         published=row.published, primary_category=row.primary_category,
         source=row.source, doi=row.doi, oa_pdf_url=row.oa_pdf_url,
-        external_url=row.external_url, full_text=row.full_text, fetched_at=row.fetched_at,
+        external_url=row.external_url, full_text=full_text, fetched_at=row.fetched_at,
     )
