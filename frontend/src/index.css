@@ -913,6 +913,19 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .pdf-toolbar .zoom-pct { min-width: 46px; font-size: 12px; }
 .pdf-toolbar .pdf-pagecount { margin-left: auto; color: var(--text-dim); font-size: 12px; }
 .pdf-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 12px 0; min-height: 0; }
+/* The PDF pane sits on --pdf-bg, which has near-zero luminance contrast with
+   the global scrollbar thumb token (--border): in the default dark theme the
+   thumb (#2a2f3a) lands at 1.1:1 against --pdf-bg (#34363d), so the scrollbar
+   renders but is invisible — the PDF view looks like it has no scrollbar (it
+   still scrolls, which is why per-paper scroll-memory keeps working). The
+   chat/sidebar panes don't hit this because their background is the darker
+   --bg, where the same thumb is lighter-than-bg and faintly visible. Override
+   the thumb on .pdf-scroll only: --text-dim flips tonally with the theme
+   (light on dark pdf-bg, dark on light pdf-bg) so it stays visible across all
+   palettes (~4.6:1 dark, ~3.0:1 light). */
+.pdf-scroll::-webkit-scrollbar-thumb { background: var(--text-dim); }
+.pdf-scroll::-webkit-scrollbar-thumb:hover { background: var(--text); }
+.pdf-scroll { scrollbar-color: var(--text-dim) transparent; }
 .pdf-page-wrap { display: flex; justify-content: center; padding: 0 12px 12px; }
 .pdf-page-canvas-wrap { position: relative; background: var(--pdf-page-bg, #fff); box-shadow: var(--pdf-page-shadow); line-height: 0; }
 .pdf-page-canvas-wrap canvas { display: block; filter: var(--pdf-filter, none); }
