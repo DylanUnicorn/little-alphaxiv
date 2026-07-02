@@ -80,6 +80,9 @@ _ZOTERO_PROXY = os.environ.get("LAX_ZOTERO_PROXY", "").strip() or None
 # concurrently (findCurrentPaper's title search uses titleCreatorYear).
 _TIMEOUT = httpx.Timeout(connect=4.0, read=60.0, write=15.0, pool=10.0)
 _PDF_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=15.0)
+# Per-attempt hard wall-clock cap for the PDF download (see download_attachment_bytes).
+# Module-level so tests can shrink it.
+_PDF_ATTEMPT_TIMEOUT_S = 30.0
 # Short timeout for the local ping — Zotero desktop is on the loopback, so 2s
 # is plenty to tell "running" from "not running" without hanging auto mode.
 _PING_TIMEOUT = httpx.Timeout(connect=1.5, read=2.0, write=2.0, pool=2.0)
@@ -1209,32 +1212,71 @@ async def download_attachment_bytes(creds: dict, attachment_key: str) -> bytes:
         raise HTTPException(status_code=400, detail="Zotero Web mode requires userId and apiKey.")
     url = f"{_WEB}/users/{creds['userId']}/items/{attachment_key}/file"
     headers = _headers_web(creds["apiKey"])
-    chunks: list[bytes] = []
-    total = 0
-    async with httpx.AsyncClient(
-        timeout=_PDF_TIMEOUT, follow_redirects=True, proxy=_ZOTERO_PROXY
-    ) as client:
+    # Per-attempt hard wall-clock cap (_PDF_ATTEMPT_TIMEOUT_S, module-level).
+    # The S3 file endpoint 302-redirects to zoterofilestorage.s3.amazonaws.com;
+    # from a Docker container whose egress bypasses the host proxy, that S3 host
+    # is intermittently (and sometimes persistently) interfered with at the TCP
+    # layer — packets are silently dropped during the TLS handshake, BEFORE any
+    # response headers arrive. httpx's `read` timeout only starts once response
+    # headers are received, so a pre-headers stall slides past it and only ends
+    # at the OS TCP timeout (~5 min on Linux). That is the user's "stuck on
+    # Importing… forever" symptom. asyncio.wait_for caps the whole attempt so a
+    # stalled connection aborts in _PDF_ATTEMPT_TIMEOUT_S, not 5 minutes.
+    last_exc: httpx.RequestError | TimeoutError | None = None
+    for attempt in range(_RETRY_MAX_ATTEMPTS):
+        chunks: list[bytes] = []
+        total = 0
         try:
-            r = await client.get(url, headers=headers)
+            async with httpx.AsyncClient(
+                timeout=_PDF_TIMEOUT, follow_redirects=True, proxy=_ZOTERO_PROXY
+            ) as client:
+                r = await asyncio.wait_for(client.get(url, headers=headers),
+                                            timeout=_PDF_ATTEMPT_TIMEOUT_S)
+                if r.status_code != 200:
+                    # 4xx/5xx from the file endpoint are NOT retried here (a 404
+                    # means the attachment isn't synced to Zotero's cloud — a
+                    # fast, permanent failure, not a transient stall).
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"zotero file returned {r.status_code}: {r.text[:200]}",
+                    )
+                async for chunk in r.aiter_bytes():
+                    total += len(chunk)
+                    if total > _IMPORT_MAX_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"zotero file exceeded {_IMPORT_MAX_BYTES} bytes",
+                        )
+                    chunks.append(chunk)
+            return b"".join(chunks)
+        except HTTPException:
+            raise
+        except asyncio.TimeoutError as exc:
+            # Pre-headers TCP stall (the S3-blocked case). Retry once — on a
+            # good moment the retry connects fast — then surface a clear 502.
+            last_exc = exc
+            if attempt + 1 < _RETRY_MAX_ATTEMPTS:
+                await asyncio.sleep(_RETRY_BACKOFF_S)
+                continue
+            raise HTTPException(
+                status_code=502,
+                detail="zotero download timed out: the S3 file host is not "
+                "responding from this network. Try again in a moment, or "
+                "upload the PDF manually via Open Paper → Upload Local PDF.",
+            ) from exc
         except httpx.RequestError as exc:
+            last_exc = exc
+            if _is_transient(exc) and attempt + 1 < _RETRY_MAX_ATTEMPTS:
+                await asyncio.sleep(_RETRY_BACKOFF_S)
+                continue
             raise HTTPException(
                 status_code=502,
                 detail=f"zotero download error: {str(exc) or type(exc).__name__}",
             ) from exc
-        if r.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"zotero file returned {r.status_code}: {r.text[:200]}",
-            )
-        async for chunk in r.aiter_bytes():
-            total += len(chunk)
-            if total > _IMPORT_MAX_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"zotero file exceeded {_IMPORT_MAX_BYTES} bytes",
-                )
-            chunks.append(chunk)
-    return b"".join(chunks)
+    raise HTTPException(  # pragma: no cover — loop either returns or raises above
+        status_code=502,
+        detail=f"zotero download error: {str(last_exc) or type(last_exc).__name__ if last_exc else 'unreachable'}",
+    )
 
 
 @router.get("/zotero/items/{item_key}/attachments")
