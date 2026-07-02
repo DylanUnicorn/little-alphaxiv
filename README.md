@@ -350,6 +350,12 @@ a handful of Playwright drivers in `tools/` still use
 the old localStorage seed pattern; the Zotero router still takes per-request
 creds (functional, future cleanup).
 
+## 📝 Changelog
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for the full version history, or the
+[GitHub releases page](https://github.com/DylanUnicorn/little-alphaxiv/releases)
+for per-release notes.
+
 ## 🤝 Contributing
 
 Contributions are welcome! See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the
