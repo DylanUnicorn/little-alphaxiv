@@ -178,47 +178,139 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   }, [arxivId]);
 
   // --- Per-paper scroll-position memory (restore) ---
-  // Once the doc loads and page wraps mount, jump back to the saved page.
-  // scrollIntoView is robust to the lazy-render placeholder heights (every
-  // page-wrap is always mounted), then the fraction is applied as a delta
-  // AFTER the target page finishes rendering — its real height is needed and
-  // unrendered pages sit at a 1000px placeholder.
+  // Once the doc loads and page wraps mount, glide back to the saved page
+  // with a short eased animation instead of an instant jump. An instant
+  // scrollIntoView flashed page 1 → target on every restore (the container
+  // starts at scrollTop 0); gliding makes the transition feel continuous.
+  //
+  // The glide re-targets every frame by reading the target page-wrap's LIVE
+  // rect, so it's robust to the lazy-render placeholder heights shifting as
+  // pages render (every page-wrap is always mounted; unrendered ones sit at a
+  // 1000px placeholder, so the target's offset is stable mid-glide — only the
+  // viewport-adjacent pages render during a fast scroll). After landing on the
+  // target page top, the saved fraction is applied as a delta once the target
+  // has actually rendered — its real height is needed (placeholder height is
+  // bogus). Users with prefers-reduced-motion get the instant restore instead.
   useEffect(() => {
     if (!doc || numPages === 0) return;
     const saved = loadPdfScroll(arxivId);
     if (!saved || saved.page < 1 || saved.page > numPages) return;
+    const container = containerRef.current;
+    if (!container) return;
     restoringRef.current = true;
     let cancelled = false;
-    let raf = requestAnimationFrame(() => {
+    let raf = 0;
+    // Removed on cleanup / on glide completion. Hoisted to effect scope (not
+    // inside the rAF) so cleanup can detach even if the rAF never fired, and
+    // so the normal completion path can detach without leaking listeners.
+    let detachListeners: () => void = () => {};
+
+    // Start one frame later so React has committed the page-wrap divs.
+    raf = requestAnimationFrame(() => {
       if (cancelled) return;
-      const container = containerRef.current;
-      if (!container) { restoringRef.current = false; return; }
       const wraps = container.querySelectorAll<HTMLElement>(".pdf-page-wrap");
       const target = wraps[saved.page - 1];
       if (!target) { restoringRef.current = false; return; }
-      target.scrollIntoView({ block: "start" });
-      if (saved.frac <= 0) { restoringRef.current = false; return; }
-      // Poll until the target page has rendered (real height) before applying
-      // the fractional delta; bail after 1.5s and apply best-effort.
-      const startedAt = performance.now();
-      const applyFrac = () => {
-        if (cancelled) { restoringRef.current = false; return; }
-        const rendered = target.dataset.rendered === "1";
-        if (!rendered && performance.now() - startedAt < 1500) {
-          raf = requestAnimationFrame(applyFrac);
-          return;
-        }
+
+      // scrollTop that aligns the target page top with the scroll container's
+      // top edge (self-corrects for the 12px top padding + sub-pixel residual,
+      // and re-read each frame so reflow mid-glide can't derail the landing).
+      const goalScrollTop = () => {
         const cTop = container.getBoundingClientRect().top;
         const r = target.getBoundingClientRect();
-        const delta = computeFracDelta({ top: r.top, height: r.height }, cTop, saved.frac);
-        container.scrollTop += delta;
+        return container.scrollTop + (r.top - cTop);
+      };
+
+      // If the user scrolls mid-glide, don't fight them — cancel and hand
+      // control back (the scroll-save listener takes over, restoringRef clears).
+      const cancelByUser = () => {
+        if (cancelled) return;
+        cancelled = true;
+        if (raf) cancelAnimationFrame(raf);
+        detachListeners();
         restoringRef.current = false;
       };
-      raf = requestAnimationFrame(applyFrac);
+      const onKey = (e: KeyboardEvent) => {
+        const tgt = e.target as HTMLElement | null;
+        // Ignore scroll keys typed into the chat input / a text annot.
+        if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+        if (["PageUp", "PageDown", "ArrowUp", "ArrowDown", "Home", "End", " "].includes(e.key)) {
+          cancelByUser();
+        }
+      };
+      // Idempotent: removeEventListener is a no-op on a never-added/already-
+      // removed fn, so calling this on every terminal path is safe.
+      detachListeners = () => {
+        container.removeEventListener("wheel", cancelByUser);
+        container.removeEventListener("touchmove", cancelByUser);
+        window.removeEventListener("keydown", onKey);
+      };
+
+      // After the glide (or instant set) lands at the target page top, apply
+      // the fractional delta. Poll until the target has rendered its real
+      // height; bail after 1.5s and apply best-effort. No-op when frac is 0.
+      // Detaches the user-scroll listeners on completion (or on cancel, via
+      // the cancelled-flag bail) so they don't outlive the restore.
+      const finishAtTarget = () => {
+        if (cancelled) { detachListeners(); restoringRef.current = false; return; }
+        if (saved.frac <= 0) { detachListeners(); restoringRef.current = false; return; }
+        const startedAt = performance.now();
+        const poll = () => {
+          if (cancelled) return;
+          const rendered = target.dataset.rendered === "1";
+          if (!rendered && performance.now() - startedAt < 1500) {
+            raf = requestAnimationFrame(poll);
+            return;
+          }
+          const cTop = container.getBoundingClientRect().top;
+          const r = target.getBoundingClientRect();
+          const delta = computeFracDelta({ top: r.top, height: r.height }, cTop, saved.frac);
+          container.scrollTop += delta;
+          detachListeners();
+          restoringRef.current = false;
+        };
+        raf = requestAnimationFrame(poll);
+      };
+
+      const goal = goalScrollTop();
+      const startTop = container.scrollTop;
+      const distance = Math.abs(goal - startTop);
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+      // Already positioned, saved page 1 at top, or reduced-motion user → no
+      // glide; land instantly (the old scrollIntoView behavior). No listeners
+      // were attached, so finishAtTarget's detach is a no-op.
+      if (reducedMotion || distance < 2) {
+        container.scrollTop = goal;
+        finishAtTarget();
+        return;
+      }
+
+      // Ease-out glide. Duration scales with distance (short hops feel gentle,
+      // long jumps cap fast so deep positions don't drag).
+      const duration = Math.min(650, Math.max(220, distance / 5));
+      const startedAt = performance.now();
+      const tick = (now: number) => {
+        if (cancelled) return;
+        const t = Math.min(1, (now - startedAt) / duration);
+        const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+        const g = goalScrollTop(); // re-read: robust to reflow
+        container.scrollTop = startTop + (g - startTop) * eased;
+        if (t < 1) raf = requestAnimationFrame(tick);
+        else finishAtTarget();
+      };
+
+      container.addEventListener("wheel", cancelByUser, { passive: true });
+      container.addEventListener("touchmove", cancelByUser, { passive: true });
+      window.addEventListener("keydown", onKey);
+
+      raf = requestAnimationFrame(tick);
     });
+
     return () => {
       cancelled = true;
       if (raf) cancelAnimationFrame(raf);
+      detachListeners();
       restoringRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
