@@ -249,6 +249,8 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
 | `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
 | `ANYSEARCH_API_KEY` | *(unset)* | Operator-wide fallback API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. **Per-user keys** are configured in Settings → Search sources (Fernet-encrypted server-side) and take precedence; this env var is only the server-wide default. Anonymous works (rate-limited), so all three are optional. In Docker, set it in `deploy/.env`. |
 | `LAX_ANYSEARCH_URL` | `https://api.anysearch.com/mcp` | Override the anysearch MCP endpoint URL. |
+| `LAX_ZOTERO_LOCAL_BASE` | `http://127.0.0.1:23119` | **Docker only.** Base URL of the host's local Zotero API for local-first PDF import (reads PDFs off the host disk via the `file://` redirect, bypassing the flaky S3 cloud download). The container can't reach the host loopback, so set `http://host.docker.internal:23119`. Empty `""` disables local-first (falls back to the retried, capped cloud download). Native (`run.bat`) needs no config. |
+| `LAX_ZOTERO_STORAGE_DIR` | *(unset)* | **Docker only.** Host-side Zotero storage folder (e.g. `C:/Users/you/Zotero/storage`), mounted read-only at `/zotero-storage` so the local-first path can read attachment bytes. Unset → local-first disabled in Docker. Find it via Zotero → Help → Show Data Directory (the `storage` subfolder). |
 
 ## 🧠 How it works
 
