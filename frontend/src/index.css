@@ -1246,6 +1246,14 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   opacity: 0; transition: opacity 0.15s;
 }
 .code-block:hover .code-block-copy { opacity: 1; }
+/* The copy button is wrapped in <Tooltip>, whose .tooltip-host is
+   position: relative. That would make the 0-sized host (its only children
+   are out-of-flow: the button is absolute, the bubble is fixed) the button's
+   containing block and dump it at the top-left instead of the top-right.
+   Neutralize the host here so .code-block (position: relative) stays the
+   containing block. The bubble is position: fixed (viewport-relative, placed
+   via the host's getBoundingClientRect), so it is unaffected. */
+.code-block .tooltip-host { position: static; }
 .code-block pre {
   margin: 0; padding: 12px; overflow-x: auto;
   background: var(--code-bg); color: var(--code-fg);
