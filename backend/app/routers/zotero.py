@@ -1209,32 +1209,54 @@ async def download_attachment_bytes(creds: dict, attachment_key: str) -> bytes:
         raise HTTPException(status_code=400, detail="Zotero Web mode requires userId and apiKey.")
     url = f"{_WEB}/users/{creds['userId']}/items/{attachment_key}/file"
     headers = _headers_web(creds["apiKey"])
-    chunks: list[bytes] = []
-    total = 0
-    async with httpx.AsyncClient(
-        timeout=_PDF_TIMEOUT, follow_redirects=True, proxy=_ZOTERO_PROXY
-    ) as client:
+    # Retry once on transient errors (incl. ReadTimeout), matching _zotero_get.
+    # The file API 302-redirects to S3; from a Docker container whose egress
+    # bypasses the host proxy, the S3 leg is intermittently throttled (GFW) past
+    # the 90s read timeout — a single retry absorbs the transient stall the
+    # way every other Zotero read already does. The whole get+drain sequence is
+    # inside the loop so a retry re-issues the request from scratch (a partial
+    # body buffered from a stalled first attempt is discarded).
+    last_exc: httpx.RequestError | None = None
+    for attempt in range(_RETRY_MAX_ATTEMPTS):
+        chunks: list[bytes] = []
+        total = 0
         try:
-            r = await client.get(url, headers=headers)
+            async with httpx.AsyncClient(
+                timeout=_PDF_TIMEOUT, follow_redirects=True, proxy=_ZOTERO_PROXY
+            ) as client:
+                r = await client.get(url, headers=headers)
+                if r.status_code != 200:
+                    # 4xx/5xx from the file endpoint are NOT retried here (a 404
+                    # means the attachment isn't synced to Zotero's cloud — a
+                    # fast, permanent failure, not a transient stall).
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"zotero file returned {r.status_code}: {r.text[:200]}",
+                    )
+                async for chunk in r.aiter_bytes():
+                    total += len(chunk)
+                    if total > _IMPORT_MAX_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"zotero file exceeded {_IMPORT_MAX_BYTES} bytes",
+                        )
+                    chunks.append(chunk)
+            return b"".join(chunks)
+        except HTTPException:
+            raise
         except httpx.RequestError as exc:
+            last_exc = exc
+            if _is_transient(exc) and attempt + 1 < _RETRY_MAX_ATTEMPTS:
+                await asyncio.sleep(_RETRY_BACKOFF_S)
+                continue
             raise HTTPException(
                 status_code=502,
                 detail=f"zotero download error: {str(exc) or type(exc).__name__}",
             ) from exc
-        if r.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"zotero file returned {r.status_code}: {r.text[:200]}",
-            )
-        async for chunk in r.aiter_bytes():
-            total += len(chunk)
-            if total > _IMPORT_MAX_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"zotero file exceeded {_IMPORT_MAX_BYTES} bytes",
-                )
-            chunks.append(chunk)
-    return b"".join(chunks)
+    raise HTTPException(  # pragma: no cover — loop either returns or raises above
+        status_code=502,
+        detail=f"zotero download error: {str(last_exc) or type(last_exc).__name__ if last_exc else 'unreachable'}",
+    )
 
 
 @router.get("/zotero/items/{item_key}/attachments")

@@ -32,7 +32,8 @@ from app.routers import zotero
 # fakes
 # --------------------------------------------------------------------------- #
 class _FakeResp:
-    def __init__(self, status_code: int = 200, json_data=None, text: str | None = None):
+    def __init__(self, status_code: int = 200, json_data=None, text: str | None = None,
+                 body: bytes = b""):
         self.status_code = status_code
         self._json = json_data if json_data is not None else []
         # Mimic httpx: .text is the decoded body string. Default to the
@@ -40,9 +41,19 @@ class _FakeResp:
         # see a truthy body, matching a real non-empty response.
         self.text = text if text is not None else json.dumps(self._json)
         self.headers: dict[str, str] = {}
+        # For the streaming download path (download_attachment_bytes calls
+        # r.aiter_bytes()); a default-empty body is fine for the read tests
+        # which never iterate it.
+        self._body = body
 
     def json(self):
         return self._json
+
+    async def aiter_bytes(self):
+        # Yield the body in one chunk. Real httpx yields many; one is enough
+        # for the download-retry tests which assert byte-equality + call count.
+        if self._body:
+            yield self._body
 
 
 class _FakeClient:
@@ -271,4 +282,83 @@ async def test_create_collection_web_forwards_proxy(monkeypatch):
         CreateCollectionRequest(mode="web", user_id="u", api_key="k", name="X"))
     assert resp.status_code == 200
     assert _FakeClient.last_proxy == "http://host.docker.internal:7890"
+
+
+# --------------------------------------------------------------------------- #
+# download_attachment_bytes: retry policy. The PDF download is the ONLY Zotero
+# read that doesn't go through _zotero_get (it streams the S3-redirected body),
+# so its retry is implemented inline. The user's Docker symptom — stuck on
+# "Importing…" then 502 ReadTimeout — was a transient S3 stall with no retry.
+# --------------------------------------------------------------------------- #
+PDF = b"%PDF-1.4 fake zotero pdf bytes %%EOF"
+
+
+def _download_creds():
+    return {"mode": "web", "userId": "u", "apiKey": "k"}
+
+
+async def test_download_retries_timeout_then_succeeds(monkeypatch):
+    # The exact symptom: a ReadTimeout on the S3 download leg. A single retry
+    # recovers (the stall is transient), instead of the old hard 502 after 90s.
+    _script(monkeypatch, [
+        httpx.ReadTimeout("read timed out"),
+        _FakeResp(200, body=PDF),
+    ])
+    data = await zotero.download_attachment_bytes(_download_creds(), "att1")
+    assert data == PDF
+    assert _FakeClient.calls == 2  # timed out, retried, succeeded
+
+
+async def test_download_retries_connect_error_then_succeeds(monkeypatch):
+    # A mid-flight RST (terse ConnectError with empty message, per the GFW
+    # symptom recorded for this user's container) must also retry once.
+    _script(monkeypatch, [httpx.ConnectError(""), _FakeResp(200, body=PDF)])
+    data = await zotero.download_attachment_bytes(_download_creds(), "att1")
+    assert data == PDF
+    assert _FakeClient.calls == 2
+
+
+async def test_download_persistent_timeout_raises_502(monkeypatch):
+    # If BOTH attempts stall, surface a 502 with a non-blank detail (the
+    # user's old "zotero download error: ReadTimeout" must stay non-blank).
+    # str(ReadTimeout("read timed out")) is "read timed out" (non-empty), so
+    # the detail carries the message verbatim — the type-name fallback only
+    # kicks in for the blank-message variant (asserted in the connect-error
+    # test below).
+    _script(monkeypatch, [
+        httpx.ReadTimeout("read timed out"),
+        httpx.ReadTimeout("read timed out"),
+    ])
+    with pytest.raises(HTTPException) as ei:
+        await zotero.download_attachment_bytes(_download_creds(), "att1")
+    assert ei.value.status_code == 502
+    assert isinstance(ei.value.detail, str) and ei.value.detail.strip()  # never blank
+    assert "read timed out" in ei.value.detail  # message verbatim
+    assert _FakeClient.calls == 2  # tried, retried once, gave up
+
+
+async def test_download_persistent_blip_detail_nonblank(monkeypatch):
+    # The blank-message ConnectError ("") that produced the user's empty
+    # "zotero download error: " (trailing blank) must surface the type name so
+    # the error is never blank, even when both attempts carry an empty str().
+    _script(monkeypatch, [httpx.ConnectError(""), httpx.ConnectError("")])
+    with pytest.raises(HTTPException) as ei:
+        await zotero.download_attachment_bytes(_download_creds(), "att1")
+    assert ei.value.status_code == 502
+    assert isinstance(ei.value.detail, str) and ei.value.detail.strip()  # never blank
+    assert "ConnectError" in ei.value.detail  # type-name fallback filled the empty str()
+    assert _FakeClient.calls == 2
+
+
+async def test_download_404_not_retried(monkeypatch):
+    # A 404 from the file endpoint is a PERMANENT failure (the attachment isn't
+    # synced to Zotero's cloud — fileSize=0 imported_file, observed for many of
+    # this user's recent items). It must surface fast, NOT burn a retry attempt.
+    _script(monkeypatch, [_FakeResp(404, text="Not found")])
+    with pytest.raises(HTTPException) as ei:
+        await zotero.download_attachment_bytes(_download_creds(), "att1")
+    assert ei.value.status_code == 502
+    assert "404" in ei.value.detail
+    assert _FakeClient.calls == 1  # no retry on a permanent 4xx
+
 
