@@ -273,6 +273,34 @@ For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
   the global `papers` row keeps only shareable metadata); pdf.js then renders it
   via an auth-gated serve endpoint, and the rest of the paper-view flow is
   unchanged.
+
+#### <a id="zotero-local-first-import"></a>Zotero local-first PDF import
+
+Importing a Zotero PDF reads it **straight off your local disk** (via the local
+Zotero API's `file://` redirect), falling back to the cloud download only if
+local is unavailable. This is fast, proxy-free, and immune to Zotero
+cloud-storage quota limits — a file that never synced to zotero.org is still
+on local disk and imports fine. The cloud path is retried + 30s-capped so even
+on a bad network it fails fast with a clear message instead of hanging.
+
+- **Native (`run.bat` / `run.sh`):** works with **no config** — just have the
+  Zotero desktop app running with "Allow other applications to communicate with
+  Zotero" enabled.
+- **Docker:** set two env vars in `deploy/.env` (the container can't reach the
+  host loopback or read host files otherwise):
+  ```env
+  LAX_ZOTERO_LOCAL_BASE=http://host.docker.internal:23119
+  LAX_ZOTERO_STORAGE_DIR=C:/Users/you/Zotero/storage   # your Zotero storage folder
+  ```
+  `docker-compose.yml` already mounts `$LAX_ZOTERO_STORAGE_DIR` read-only at
+  `/zotero-storage`. Find your storage folder via Zotero → Help → Show Data
+  Directory (the `storage` subfolder), or run on the host:
+  `curl -sI http://127.0.0.1:23119/api/users/0/items/<any-key>/file` and read
+  the `file://` path prefix.
+
+Settings → Zotero shows the local-first status (✓ active, or ⚠ with the env
+vars to fix it); the Import dialog shows a hint + link when it falls back to
+the slower cloud path.
 - **Tools run in the browser.** The backend proxies + persists; the OpenAI-style
   tool-calling loop lives in the frontend (`src/lib/llm.ts`).
 - **One-time migration:** on first login after upgrading from the old

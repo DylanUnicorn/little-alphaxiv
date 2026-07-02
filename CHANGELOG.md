@@ -9,6 +9,55 @@ Release notes are also published on the
 
 ## [Unreleased]
 
+## [v0.1.2] - 2026-07-03
+
+A Zotero-focused release. Importing a PDF from your Zotero library could hang
+indefinitely on "Importing…" then fail — and the cloud path was the only path.
+This release **fixes the hang** and adds a **local-first** import that reads
+PDFs straight off your local Zotero storage (fast, offline, quota-immune),
+with a status hint so Docker users see how to enable it.
+
+### Fixed
+
+- **Zotero PDF import hanging on "Importing…"** — importing a Zotero PDF
+  downloaded it from the Zotero web API's S3 file host, which from a Docker
+  container's raw NIC is intermittently (and sometimes persistently) interfered
+  with at the TCP layer: packets are silently dropped during the TLS handshake,
+  *before* any response headers arrive. httpx's `read` timeout only starts
+  once headers arrive, so the stall slid past the 90s read timeout and only
+  ended at the OS TCP timeout (~5 min) — the "stuck on Importing… forever"
+  symptom, followed by a blank `502: zotero download error: ReadTimeout`.
+  Two fixes: (1) the PDF download now **retries once** on transient errors
+  (it was the only Zotero read without a retry); (2) each attempt is wrapped
+  in a **30s wall-clock cap** (`asyncio.wait_for`) so a stalled connection
+  aborts in 30s, not 5 min. On a persistent stall both attempts end in ~60s
+  with a clear message ("…upload the PDF manually via Open Paper → Upload
+  Local PDF") instead of hanging.
+  ([eb754e2](https://github.com/DylanUnicorn/little-alphaxiv/commit/eb754e2),
+  [01cfce6](https://github.com/DylanUnicorn/little-alphaxiv/commit/01cfce6))
+
+### Added
+
+- **Local-first Zotero PDF import** — the PDF is also sitting on your local
+  disk under the Zotero storage folder, so imports now read it **straight off
+  local disk** via the local Zotero API's `file://` redirect, falling back to
+  the (now retried + capped) cloud download only when local is unavailable.
+  This dodges both the S3 throttle AND the cloud-storage-quota gap: a file
+  that never synced to zotero.org (the cloud path returns 404) is still on
+  local disk and imports fine. Native (`run.bat`/`run.sh`) needs **no config**;
+  Docker sets `LAX_ZOTERO_LOCAL_BASE` + `LAX_ZOTERO_STORAGE_DIR` (see
+  `deploy/.env.docker.example`). Measured: a 39.6 MB attachment that hung ~5
+  min then failed now imports in **0.3 s** off the local disk.
+  ([7a25eac](https://github.com/DylanUnicorn/little-alphaxiv/commit/7a25eac))
+- **Local-first status + UI hints** — a new `GET /api/zotero/local-first-status`
+  endpoint reports whether local-first is usable, with an actionable hint when
+  it isn't (e.g. Docker deployed without the storage mount). Settings → Zotero
+  shows a status line (✓ active, or ⚠ with the env vars to fix it + a docs
+  link); the Import dialog shows a compact hint with a jump link to
+  `/settings#zotero` when imports fall back to the slower cloud path — so
+  users no longer wonder *why* an import is slow.
+  ([e2a7870](https://github.com/DylanUnicorn/little-alphaxiv/commit/e2a7870))
+
 ## [v0.1.1] - 2026-07-02
 
 A polish release fixing the three papercuts reported shortly after v0.1.0:
