@@ -1319,7 +1319,6 @@ async def download_attachment_bytes(creds: dict, attachment_key: str) -> bytes:
     the local disk path first via download_local_attachment_bytes; this runs only
     when local is unavailable (no Zotero desktop, storage not mounted, file
     missing). Has retry + per-attempt cap to bound the S3 stall on bad networks."""
-    so follow_redirects=True. Capped at _IMPORT_MAX_BYTES."""
     resolved = await _resolve_mode(
         creds.get("mode", "auto"), creds.get("userId", ""), creds.get("apiKey", "")
     )

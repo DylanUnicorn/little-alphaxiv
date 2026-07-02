@@ -406,3 +406,124 @@ async def test_download_persistent_stall_surfaces_clear_error(monkeypatch):
     assert _FakeClient.calls == 2  # tried, retried once, gave up fast
 
 
+# --------------------------------------------------------------------------- #
+# Local-first PDF import: download_local_attachment_bytes + fetch_attachment_bytes
+# (local disk via the local API's file:// redirect, cloud fallback). The user's
+# S3 cloud download is flaky from Docker; the PDF is also on local disk under
+# their Zotero storage dir, so we read it straight off disk and only fall back
+# to the cloud download (download_attachment_bytes) when local is unavailable.
+# --------------------------------------------------------------------------- #
+import pathlib as _pathlib
+
+
+def _file_resp(file_url: str) -> _FakeResp:
+    r = _FakeResp(status_code=302)
+    r.headers = {"location": file_url}
+    return r
+
+
+def test_resolve_local_path_native_reads_host_path_directly(monkeypatch):
+    # Native (LAX_ZOTERO_STORAGE_DIR unset): the file:// host path is returned
+    # verbatim so the OS reads C:/Users/.../Zotero/storage/KEY/file.pdf directly.
+    monkeypatch.setattr(zotero, "_STORAGE_MAP_HOST", "")
+    p = zotero._resolve_local_path("file:///C:/Users/me/Zotero/storage/KEY/paper.pdf")
+    assert p == "C:/Users/me/Zotero/storage/KEY/paper.pdf"
+
+
+def test_resolve_local_path_docker_rewrites_to_mount(monkeypatch):
+    # Docker (LAX_ZOTERO_STORAGE_DIR set): the host prefix is rewritten to the
+    # /zotero-storage mount so the container reads the mounted file.
+    monkeypatch.setattr(zotero, "_STORAGE_MAP_HOST", "C:/Users/me/Zotero/storage")
+    p = zotero._resolve_local_path("file:///C:/Users/me/Zotero/storage/KEY/paper.pdf")
+    assert p == "/zotero-storage/KEY/paper.pdf"
+
+
+def test_resolve_local_path_rejects_outside_storage(monkeypatch):
+    # A file:// pointing outside the mounted storage dir is NOT read (guards a
+    # crafted key from reading arbitrary host files via the local API).
+    monkeypatch.setattr(zotero, "_STORAGE_MAP_HOST", "C:/Users/me/Zotero/storage")
+    assert zotero._resolve_local_path("file:///C:/Users/me/secrets.txt") is None
+
+
+def test_resolve_local_path_rejects_traversal(monkeypatch):
+    # No ".." components may survive in the resolved path.
+    monkeypatch.setattr(zotero, "_STORAGE_MAP_HOST", "")
+    assert zotero._resolve_local_path("file:///C:/x/../etc/passwd") is None
+
+
+async def test_download_local_reads_file_from_disk(tmp_path, monkeypatch):
+    # The happy path: local API returns 302 -> file://, the storage is mounted
+    # (tmp_path stands in), and the bytes are read straight off disk — no S3,
+    # no proxy, no quota. The fastest, most reliable import path.
+    monkeypatch.setattr(zotero, "_LOCAL_BASE", "http://local.test:23119")
+    # Map a fake host prefix to tmp_path so the file:// resolves into tmp_path.
+    monkeypatch.setattr(zotero, "_STORAGE_MAP_HOST", "C:/ZOTERO")
+    monkeypatch.setattr(zotero, "_STORAGE_CONTAINER_PREFIX", str(tmp_path).replace("\\", "/"))
+    pdf = b"%PDF-1.4 local-file bytes %%EOF"
+    (tmp_path / "KEY").mkdir()
+    (tmp_path / "KEY" / "paper.pdf").write_bytes(pdf)
+    _script(monkeypatch, [_file_resp("file:///C:/ZOTERO/KEY/paper.pdf")])
+    data = await zotero.download_local_attachment_bytes("KEY")
+    assert data == pdf
+    assert _FakeClient.calls == 1  # one local API call, no cloud
+
+
+async def test_download_local_disabled_when_base_empty(monkeypatch):
+    # LAX_ZOTERO_LOCAL_BASE="" -> _LOCAL_BASE None -> local-first disabled, so
+    # download_local_attachment_bytes raises _LocalUnavailable without any call.
+    monkeypatch.setattr(zotero, "_LOCAL_BASE", None)
+    _script(monkeypatch, [_file_resp("file:///x")])
+    with pytest.raises(zotero._LocalUnavailable):
+        await zotero.download_local_attachment_bytes("KEY")
+    assert _FakeClient.calls == 0
+
+
+async def test_download_local_unreachable_raises_local_unavailable(monkeypatch):
+    # No local Zotero running (connect error) -> _LocalUnavailable, NOT a 502.
+    # The caller must treat this as a silent "fall back to cloud" signal.
+    monkeypatch.setattr(zotero, "_LOCAL_BASE", "http://local.test:23119")
+    _script(monkeypatch, [httpx.ConnectError("no local Zotero")])
+    with pytest.raises(zotero._LocalUnavailable):
+        await zotero.download_local_attachment_bytes("KEY")
+
+
+async def test_download_local_non_302_raises_local_unavailable(monkeypatch):
+    # Local API up but the item has no local file (404) -> _LocalUnavailable
+    # (fall back to cloud), NOT a surfaced 502.
+    monkeypatch.setattr(zotero, "_LOCAL_BASE", "http://local.test:23119")
+    _script(monkeypatch, [_FakeResp(404, text="no file")])
+    with pytest.raises(zotero._LocalUnavailable):
+        await zotero.download_local_attachment_bytes("KEY")
+
+
+async def test_fetch_attachment_bytes_falls_back_to_cloud(tmp_path, monkeypatch):
+    # THE core contract: local unavailable -> silent fallback to the cloud
+    # download (download_attachment_bytes). fetch_attachment_bytes is what
+    # import_from_zotero calls; it must never expose _LocalUnavailable.
+    monkeypatch.setattr(zotero, "_LOCAL_BASE", "http://local.test:23119")
+    _script(monkeypatch, [
+        httpx.ConnectError("no local Zotero"),   # local attempt
+        _FakeResp(200, body=b"%PDF cloud %%EOF"),  # cloud fallback succeeds
+    ])
+    data = await zotero.fetch_attachment_bytes(_download_creds(), "KEY")
+    assert data == b"%PDF cloud %%EOF"
+    assert _FakeClient.calls == 2  # local failed, cloud succeeded
+
+
+async def test_fetch_attachment_bytes_prefers_local(tmp_path, monkeypatch):
+    # When local succeeds, the cloud download is NOT touched at all — the whole
+    # point: skip the flaky S3 path entirely when the file is on local disk.
+    monkeypatch.setattr(zotero, "_LOCAL_BASE", "http://local.test:23119")
+    monkeypatch.setattr(zotero, "_STORAGE_MAP_HOST", "C:/ZOTERO")
+    monkeypatch.setattr(zotero, "_STORAGE_CONTAINER_PREFIX", str(tmp_path).replace("\\", "/"))
+    (tmp_path / "KEY").mkdir()
+    (tmp_path / "KEY" / "p.pdf").write_bytes(b"%PDF local %%EOF")
+    _script(monkeypatch, [
+        _file_resp("file:///C:/ZOTERO/KEY/p.pdf"),  # local 302
+        _FakeResp(200, body=b"SHOULD NOT BE USED"),  # cloud — must not be reached
+    ])
+    data = await zotero.fetch_attachment_bytes(_download_creds(), "KEY")
+    assert data == b"%PDF local %%EOF"
+    assert _FakeClient.calls == 1  # only the local call; cloud untouched
+
+

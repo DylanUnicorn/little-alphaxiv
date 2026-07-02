@@ -45,10 +45,29 @@ services:
       # returns configured:false and the LLM falls back to academic search tools.
       ANYSEARCH_API_KEY: "${ANYSEARCH_API_KEY:-}"
       LAX_ANYSEARCH_URL: "${LAX_ANYSEARCH_URL:-}"
+      # --- Local-first Zotero PDF import (bypasses the flaky S3 cloud download) ---
+      # The Zotero WEB file download 302-redirects to zoterofilestorage.s3...,
+      # which is intermittently throttled from a container's raw NIC (hangs to
+      # the OS TCP timeout ~5min). The PDF is ALSO on the host disk under the
+      # Zotero storage dir, so we read it directly off the local Zotero API's
+      # file:// redirect. Native (run.bat) needs no config; Docker needs:
+      #   LAX_ZOTERO_LOCAL_BASE -> the host's local API (host.docker.internal).
+      #   LAX_ZOTERO_STORAGE_DIR + the read-only mount below -> make the host
+      #     storage dir readable inside the container at /zotero-storage.
+      # Unset -> local-first disabled, falls back to the (retried, capped) cloud
+      # download. See docs/superpowers/specs/2026-07-02-zotero-local-first-import-design.md.
+      LAX_ZOTERO_LOCAL_BASE: "${LAX_ZOTERO_LOCAL_BASE:-http://127.0.0.1:23119}"
+      LAX_ZOTERO_STORAGE_DIR: "${LAX_ZOTERO_STORAGE_DIR:-}"
     volumes:
       # SQLite DB + PDF cache (incl. uploaded / Zotero-imported PDFs under
       # pdf_cache/uploads/<user_id>/) + the persisted LAX_SECRET_KEY all live here.
       - ./data:/app/data
+      # Optional: mount the host Zotero storage dir read-only so the local-first
+      # import path can read PDF bytes straight off disk (no S3, no proxy). Set
+      # LAX_ZOTERO_STORAGE_DIR in .env to your Zotero storage folder (e.g.
+      # C:/Users/you/Zotero/storage). Unset -> an empty dir is mounted (local-first
+      # falls back to cloud). The container reads /zotero-storage/<key>/<file>.pdf.
+      - ${LAX_ZOTERO_STORAGE_DIR:-./data/zotero-storage-empty}:/zotero-storage:ro
     restart: unless-stopped
     # Tiny health probe: the backend exposes GET /api/health.
     healthcheck:
