@@ -322,6 +322,11 @@ little-alphaxiv/
 已知待办（非阻塞）见 [`CLAUDE.md`](./CLAUDE.md)。主要几项：`tools/` 里若干 Playwright 驱动仍用旧的 localStorage seed 模式；
 Zotero 路由仍按请求传凭据（功能正常，未来清理）。
 
+## 📝 更新日志
+
+完整版本历史见 [`CHANGELOG.md`](./CHANGELOG.md)，各版本发版说明见
+[GitHub releases](https://github.com/DylanUnicorn/little-alphaxiv/releases)。
+
 ## 🤝 贡献
 
 欢迎贡献！完整指南见 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。简版：
