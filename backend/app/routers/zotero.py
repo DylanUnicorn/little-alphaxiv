@@ -30,11 +30,12 @@ import asyncio
 import html
 import json
 import os
+import pathlib
 import re
 import uuid
 from datetime import date
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, unquote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -83,6 +84,38 @@ _PDF_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=90.0, pool=15.0)
 # Short timeout for the local ping — Zotero desktop is on the loopback, so 2s
 # is plenty to tell "running" from "not running" without hanging auto mode.
 _PING_TIMEOUT = httpx.Timeout(connect=1.5, read=2.0, write=2.0, pool=2.0)
+
+# --- Local-first PDF import (cloud fallback) -------------------------------
+# The Zotero WEB file download 302-redirects to zoterofilestorage.s3..., which
+# is intermittently (and sometimes persistently) interfered with from a Docker
+# container's raw NIC — hanging up to the OS TCP timeout (~5 min). But the PDF
+# is ALSO sitting on the user's local disk under their Zotero storage dir. The
+# local Zotero API (127.0.0.1:23119) exposes GET /api/users/0/items/<key>/file
+# which returns a 302 -> file:///<storage>/<key>/<filename>.pdf pointing at that
+# local file. So we try local FIRST (read the file straight off disk), and only
+# fall back to the flaky S3 cloud download if local is unavailable.
+#
+# Native (run.bat): _LOCAL_BASE defaults to 127.0.0.1:23119 and the file:// path
+#   is read directly by the OS — zero config.
+# Docker: the container can't reach 127.0.0.1:23119 (that's the container's own
+#   loopback) and can't read C:/Users/... So set LAX_ZOTERO_LOCAL_BASE to point
+#   at the host (http://host.docker.internal:23119) + mount the host Zotero
+#   storage dir read-only at /zotero-storage + set LAX_ZOTERO_STORAGE_DIR to the
+#   host path so the file:// path can be rewritten to the mount. See
+#   docs/superpowers/specs/2026-07-02-zotero-local-first-import-design.md.
+#
+# Zotero's local HTTP server rejects requests whose Host header isn't localhost
+# (anti-CSRF). Connecting to host.docker.internal would set Host=host.docker.internal
+# and get a 400 — so we always send Host: 127.0.0.1:23119 (harmless in native where
+# it's already the natural value). Verified against Zotero 7.
+_lb_raw = os.environ.get("LAX_ZOTERO_LOCAL_BASE", "http://127.0.0.1:23119").strip()
+_LOCAL_BASE: str | None = _lb_raw or None  # "" (explicit) -> disabled -> cloud only
+_LOCAL_HOST_HEADER = "127.0.0.1:23119"
+# Host-side Zotero storage dir (set in Docker; empty in native where file:// is
+# read directly). When set, a file:// path whose host-prefix matches is rewritten
+# to /zotero-storage/<rest> (the container mount).
+_STORAGE_MAP_HOST = os.environ.get("LAX_ZOTERO_STORAGE_DIR", "").strip().replace("\\", "/")
+_STORAGE_CONTAINER_PREFIX = "/zotero-storage"
 
 _ARXIV_RE = re.compile(r"(?:arxiv[:\s/]*|arxiv\.org/(?:abs|pdf)/)([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)", re.IGNORECASE)
 _UA = "little-alphaxiv/0.1 (zotero-integration)"
@@ -1191,9 +1224,98 @@ async def get_zotero_item(creds: dict, item_key: str) -> dict:
     return _normalize_item(data)
 
 
+class _LocalUnavailable(Exception):
+    """Raised by download_local_attachment_bytes when the local Zotero file
+    can't be fetched (no local Zotero running, attachment not on disk, storage
+    dir not mounted, path outside the allowed base, IO error, etc.). The caller
+    (fetch_attachment_bytes) treats this as a silent signal to fall back to the
+    cloud download — it is NOT surfaced to the user."""
+
+
+def _resolve_local_path(file_url: str) -> str | None:
+    """Translate a local-API `file://` redirect into a path this process can
+    read. Returns None if the URL isn't a file URL or resolves outside the
+    allowed storage base (path-traversal guard).
+
+    Native (LAX_ZOTERO_STORAGE_DIR unset): the file:// path is a real host path
+    the OS reads directly (e.g. C:/Users/.../Zotero/storage/KEY/file.pdf).
+    Docker (LAX_ZOTERO_STORAGE_DIR set): the host prefix is rewritten to the
+    /zotero-storage mount point so the container can read the mounted file."""
+    if not file_url.startswith("file:"):
+        return None
+    host_path = unquote(urlparse(file_url).path).lstrip("/").replace("\\", "/")
+    if not host_path:
+        return None
+    if _STORAGE_MAP_HOST:
+        if not host_path.lower().startswith(_STORAGE_MAP_HOST.lower()):
+            return None  # file lives outside the mounted storage dir — don't read it
+        rel = host_path[len(_STORAGE_MAP_HOST):].lstrip("/")
+        resolved = f"{_STORAGE_CONTAINER_PREFIX}/{rel}"
+    else:
+        resolved = host_path
+    # Path-traversal guard: no ".." components may remain in the resolved path.
+    if any(part == ".." for part in pathlib.PurePosixPath(resolved).parts):
+        return None
+    return resolved
+
+
+async def download_local_attachment_bytes(attachment_key: str) -> bytes:
+    """Read a Zotero PDF attachment's bytes straight off the local disk, via the
+    local Zotero API's `file://` redirect. Raises _LocalUnavailable on ANY local
+    failure so the caller can fall back to the cloud download silently.
+
+    The local API needs no creds (it addresses the logged-in user as "0") and
+    works regardless of the user's configured mode — even a Web-mode user whose
+    cloud download is flaky gets the file from local disk if Zotero desktop is
+    running. This is the fast, proxy-free, quota-immune path."""
+    if not _LOCAL_BASE:
+        raise _LocalUnavailable("local-first disabled (LAX_ZOTERO_LOCAL_BASE empty)")
+    url = f"{_LOCAL_BASE}/api/users/0/items/{attachment_key}/file"
+    # Host: 127.0.0.1:23119 — Zotero's anti-CSRF rejects non-localhost Host
+    # headers, so a Docker container hitting host.docker.internal must spoof it.
+    headers = {"User-Agent": _UA, "Host": _LOCAL_HOST_HEADER}
+    try:
+        async with httpx.AsyncClient(
+            timeout=_PING_TIMEOUT, trust_env=False, follow_redirects=False
+        ) as client:
+            r = await client.get(url, headers=headers)
+    except httpx.RequestError:
+        raise _LocalUnavailable("local API unreachable")
+    if r.status_code != 302:
+        raise _LocalUnavailable(f"local /file returned {r.status_code} (no local file)")
+    resolved = _resolve_local_path(r.headers.get("location", ""))
+    if not resolved:
+        raise _LocalUnavailable("local file path unresolved/unsafe")
+    try:
+        data = await asyncio.to_thread(pathlib.Path(resolved).read_bytes)
+    except OSError:
+        raise _LocalUnavailable(f"local file unreadable: {resolved}")
+    if len(data) > _IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"zotero file exceeded {_IMPORT_MAX_BYTES} bytes",
+        )
+    return data
+
+
+async def fetch_attachment_bytes(creds: dict, attachment_key: str) -> bytes:
+    """Fetch a Zotero PDF attachment's bytes, preferring local disk and falling
+    back to the (flaky, proxy-needing) cloud download only if local is
+    unavailable. Local-first dodges both the S3 throttling AND the cloud-storage-
+    quota-exhaustion case (a file not synced to zotero.org is still on disk)."""
+    try:
+        return await download_local_attachment_bytes(attachment_key)
+    except _LocalUnavailable:
+        return await download_attachment_bytes(creds, attachment_key)
+
+
 async def download_attachment_bytes(creds: dict, attachment_key: str) -> bytes:
-    """Download a Zotero PDF attachment's bytes (Web mode only — the local
-    desktop API does not expose /file). Zotero's file API 302-redirects to S3,
+    """Download a Zotero PDF attachment's bytes from the cloud (Web mode only).
+    Zotero's web file API 302-redirects to S3, so follow_redirects=True. Capped at
+    _IMPORT_MAX_BYTES. This is the CLOUD FALLBACK — fetch_attachment_bytes tries
+    the local disk path first via download_local_attachment_bytes; this runs only
+    when local is unavailable (no Zotero desktop, storage not mounted, file
+    missing). Has retry + per-attempt cap to bound the S3 stall on bad networks."""
     so follow_redirects=True. Capped at _IMPORT_MAX_BYTES."""
     resolved = await _resolve_mode(
         creds.get("mode", "auto"), creds.get("userId", ""), creds.get("apiKey", "")

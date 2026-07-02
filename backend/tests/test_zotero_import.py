@@ -67,7 +67,7 @@ async def _configure_zotero(client):
 async def test_import_from_zotero_happy_path(client, tmp_path, monkeypatch):
     monkeypatch.setenv("LAX_PDF_CACHE", str(tmp_path / "pdf_cache"))
     monkeypatch.setattr("app.routers.paper_uploads.list_pdf_attachments", _mock_list)
-    monkeypatch.setattr("app.routers.paper_uploads.download_attachment_bytes", _mock_download)
+    monkeypatch.setattr("app.routers.paper_uploads.fetch_attachment_bytes", _mock_download)
     monkeypatch.setattr("app.routers.paper_uploads.get_zotero_item", _mock_get_item)
     await _register(client)
     await _configure_zotero(client)
@@ -102,7 +102,7 @@ async def test_import_from_zotero_happy_path(client, tmp_path, monkeypatch):
 async def test_import_dedup_by_hash(client, tmp_path, monkeypatch):
     monkeypatch.setenv("LAX_PDF_CACHE", str(tmp_path / "pdf_cache"))
     monkeypatch.setattr("app.routers.paper_uploads.list_pdf_attachments", _mock_list)
-    monkeypatch.setattr("app.routers.paper_uploads.download_attachment_bytes", _mock_download)
+    monkeypatch.setattr("app.routers.paper_uploads.fetch_attachment_bytes", _mock_download)
     monkeypatch.setattr("app.routers.paper_uploads.get_zotero_item", _mock_get_item)
     await _register(client)
     await _configure_zotero(client)
@@ -119,7 +119,7 @@ async def test_import_dedup_by_hash(client, tmp_path, monkeypatch):
 async def test_import_no_attachment_returns_400(client, tmp_path, monkeypatch):
     monkeypatch.setenv("LAX_PDF_CACHE", str(tmp_path / "pdf_cache"))
     monkeypatch.setattr("app.routers.paper_uploads.list_pdf_attachments", _mock_list_empty)
-    monkeypatch.setattr("app.routers.paper_uploads.download_attachment_bytes", _mock_download)
+    monkeypatch.setattr("app.routers.paper_uploads.fetch_attachment_bytes", _mock_download)
     monkeypatch.setattr("app.routers.paper_uploads.get_zotero_item", _mock_get_item)
     await _register(client)
     await _configure_zotero(client)
@@ -143,7 +143,7 @@ async def test_import_zotero_not_configured(client, tmp_path, monkeypatch):
 async def test_import_explicit_attachment_key(client, tmp_path, monkeypatch):
     monkeypatch.setenv("LAX_PDF_CACHE", str(tmp_path / "pdf_cache"))
     monkeypatch.setattr("app.routers.paper_uploads.list_pdf_attachments", _mock_list)
-    monkeypatch.setattr("app.routers.paper_uploads.download_attachment_bytes", _mock_download)
+    monkeypatch.setattr("app.routers.paper_uploads.fetch_attachment_bytes", _mock_download)
     monkeypatch.setattr("app.routers.paper_uploads.get_zotero_item", _mock_get_item)
     await _register(client)
     await _configure_zotero(client)

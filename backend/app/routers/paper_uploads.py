@@ -37,7 +37,7 @@ from ..deps import current_user
 from ..models import PaperRow, User, UserPaperUpload
 from .pdf import serve_pdf_bytes
 from .zotero import (
-    download_attachment_bytes,
+    fetch_attachment_bytes,
     get_zotero_item,
     list_pdf_attachments,
     load_zotero_creds,
@@ -227,7 +227,7 @@ async def import_from_zotero(
             )
         att_key = max(attachments, key=lambda a: a.get("fileSize", 0))["key"]
 
-    data = await download_attachment_bytes(creds, att_key)
+    data = await fetch_attachment_bytes(creds, att_key)
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
             status.HTTP_413_CONTENT_TOO_LARGE,
