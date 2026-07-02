@@ -131,11 +131,18 @@ export const useConversations = create<ConvState>((set, get) => ({
           (opts.type !== "paper" || c.paper_id === opts.paperId)
       );
       if (existing) {
+        // Refresh updated_at so the reused empty chat sorts to the top of the
+        // sidebar and lands in the "Today" date group. Without this, a long-
+        // lived session reusing an empty chat created days ago would file that
+        // just-clicked "+ New chat" (or just-opened paper) under a stale
+        // recency header. created_at stays put (true creation moment). Not
+        // persisted: empty conversations remain in-memory until first message.
+        const refreshed: Conversation = { ...existing, updated_at: Date.now() };
         set((s) => ({
-          conversations: [existing, ...s.conversations.filter((c) => c.id !== existing.id)],
-          activeId: existing.id,
+          conversations: [refreshed, ...s.conversations.filter((c) => c.id !== refreshed.id)],
+          activeId: refreshed.id,
         }));
-        return existing;
+        return refreshed;
       }
     }
 
