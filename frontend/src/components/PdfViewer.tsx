@@ -246,9 +246,16 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
         window.removeEventListener("keydown", onKey);
       };
 
-      // After the glide (or instant set) lands at the target page top, apply
-      // the fractional delta. Poll until the target has rendered its real
-      // height; bail after 1.5s and apply best-effort. No-op when frac is 0.
+      // After the glide (or instant set) lands at the target page top, settle
+      // into the saved fractional position WITHIN that page. Poll until the
+      // target has rendered its real height (placeholder 1000px is bogus for
+      // the fractional offset); bail after 1.5s and settle best-effort. No-op
+      // when frac is 0. The settle is EASED (a short easeOutCubic matching the
+      // main glide) rather than an instant scrollTop += delta — that instant
+      // jump was the "snaps to the page-middle at the end of the glide"
+      // regression (case B): delta can be up to a full page height (~1.1kpx),
+      // so an instant apply read as a hard cut after the smooth glide. Easing
+      // it turns the tail into a continuous deceleration into the reading spot.
       // Detaches the user-scroll listeners on completion (or on cancel, via
       // the cancelled-flag bail) so they don't outlive the restore.
       const finishAtTarget = () => {
@@ -265,9 +272,34 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
           const cTop = container.getBoundingClientRect().top;
           const r = target.getBoundingClientRect();
           const delta = computeFracDelta({ top: r.top, height: r.height }, cTop, saved.frac);
-          container.scrollTop += delta;
-          detachListeners();
-          restoringRef.current = false;
+          // Tiny delta (already at the saved spot, or target never rendered a
+          // usable height) → nothing worth animating; just snap the sub-px
+          // residual and finish.
+          if (Math.abs(delta) < 1) {
+            container.scrollTop += delta;
+            detachListeners();
+            restoringRef.current = false;
+            return;
+          }
+          // Ease from the current position by `delta` over a short duration
+          // scaled to the distance: a small frac settles gently (feels like the
+          // glide's natural tail), a large frac gets a brisk but eased finish
+          // (never an instant cut). `settleStart + delta` is the fixed landing
+          // target — computing delta once from the live geometry (then easing
+          // toward a fixed scrollTop) avoids per-frame circularity; the ~250ms
+          // settle is too short for layout shifts to matter.
+          const settleStart = container.scrollTop;
+          const settleDur = Math.min(320, Math.max(140, Math.abs(delta) / 5));
+          const settleStartedAt = performance.now();
+          const settle = (now: number) => {
+            if (cancelled) return;
+            const t = Math.min(1, (now - settleStartedAt) / settleDur);
+            const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic — matches the main glide
+            container.scrollTop = settleStart + delta * eased;
+            if (t < 1) raf = requestAnimationFrame(settle);
+            else { detachListeners(); restoringRef.current = false; }
+          };
+          raf = requestAnimationFrame(settle);
         };
         raf = requestAnimationFrame(poll);
       };
