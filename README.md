@@ -230,10 +230,17 @@ afterward the UI only shows a masked preview.
 
 ## ⚙️ Configuration (env vars)
 
-All optional — defaults work for localhost. In Docker, set these in a `.env`
-next to `deploy/docker-compose.yml` (copy from `deploy/.env.docker.example`).
-For native dev, `run.sh`/`run.bat` set the data-dir vars for you; copy
-`backend/.env.example` → `backend/.env` only to override other vars.
+All optional. The table below lists each variable's **default**: rows with a
+default value work out of the box — **you don't need to set them** unless you
+want a different value. Rows marked *(unset)* / *(auto-generated)* are only
+filled in when you need that specific feature (e.g. SMTP for password-recovery
+emails, the Zotero storage mount for local-first imports). **Setting a variable
+always overrides the default**, so you can freely customize any of them.
+
+In Docker, set these in a `.env` next to `deploy/docker-compose.yml` (copy from
+`deploy/.env.docker.example`). For native dev, `run.sh`/`run.bat` set the
+data-dir vars for you; copy `backend/.env.example` → `backend/.env` only to
+override other vars.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
