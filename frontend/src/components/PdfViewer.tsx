@@ -3,6 +3,7 @@
 //   - Continuous vertical scroll (all pages stacked, NO pagination)
 //   - Selectable text (pdf.js TextLayer overlay)
 //   - Zoom in / out / fit-width
+//   - Drag-to-pan when zoomed in
 //   - Fills the panel (canvas sized to container width, minimal margin)
 //
 // Pages render lazily via IntersectionObserver as they scroll into view.
@@ -52,8 +53,17 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1); // 1 = fit width
   const [showZotero, setShowZotero] = useState(false);
+  const [panning, setPanning] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  const panRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const horizontalCenterRef = useRef(0.5);
   // True while a saved scroll position is being restored; suppresses the
   // scroll-save listener so the intermediate scrollIntoView/frac steps don't
   // overwrite the saved value with a transient position.
@@ -349,9 +359,120 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   }, [doc, arxivId, numPages]);
 
 
-  const zoomIn = useCallback(() => setZoom((z) => Math.min(3, +(z + 0.2).toFixed(2))), []);
-  const zoomOut = useCallback(() => setZoom((z) => Math.max(0.4, +(z - 0.2).toFixed(2))), []);
-  const fitWidth = useCallback(() => setZoom(1), []);
+  const captureHorizontalCenter = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth) {
+      horizontalCenterRef.current = 0.5;
+      return;
+    }
+    horizontalCenterRef.current = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
+  }, []);
+
+  const restoreHorizontalCenter = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const maxScrollLeft = container.scrollWidth - container.clientWidth;
+    if (maxScrollLeft <= 0) {
+      container.scrollLeft = 0;
+      return;
+    }
+    const next = horizontalCenterRef.current * container.scrollWidth - container.clientWidth / 2;
+    container.scrollLeft = Math.min(maxScrollLeft, Math.max(0, next));
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    captureHorizontalCenter();
+    setZoom((z) => Math.min(3, +(z + 0.2).toFixed(2)));
+  }, [captureHorizontalCenter]);
+  const zoomOut = useCallback(() => {
+    captureHorizontalCenter();
+    setZoom((z) => Math.max(0.4, +(z - 0.2).toFixed(2)));
+  }, [captureHorizontalCenter]);
+  const fitWidth = useCallback(() => {
+    horizontalCenterRef.current = 0.5;
+    setZoom(1);
+  }, []);
+
+  // Canvas sizes update after pdf.js re-renders at the new zoom. Apply the
+  // saved horizontal center a few times across that short reflow window so
+  // zooming in does not strand the user on the left edge of an oversized page.
+  useEffect(() => {
+    let cancelled = false;
+    const timers: number[] = [];
+    const schedule = (delay: number) => {
+      const id = window.setTimeout(() => {
+        if (!cancelled) restoreHorizontalCenter();
+      }, delay);
+      timers.push(id);
+    };
+    schedule(0);
+    schedule(80);
+    schedule(180);
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [zoom, restoreHorizontalCenter]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const finishPan = () => {
+      const active = panRef.current;
+      if (active) {
+        try {
+          container.releasePointerCapture(active.pointerId);
+        } catch {
+          /* pointer capture may already be gone */
+        }
+      }
+      panRef.current = null;
+      setPanning(false);
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0 || zoom <= 1) return;
+      const annot = useAnnotations.getState();
+      if (annot.tool !== "none" || annot.highlightOn) return;
+      if (container.scrollWidth <= container.clientWidth + 1 && container.scrollHeight <= container.clientHeight + 1) return;
+      const target = e.target as Element | null;
+      if (shouldKeepPdfPointerInteraction(target)) return;
+      e.preventDefault();
+      panRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        scrollLeft: container.scrollLeft,
+        scrollTop: container.scrollTop,
+      };
+      container.setPointerCapture(e.pointerId);
+      setPanning(true);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const active = panRef.current;
+      if (!active || active.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      container.scrollLeft = active.scrollLeft - (e.clientX - active.startX);
+      container.scrollTop = active.scrollTop - (e.clientY - active.startY);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (panRef.current?.pointerId === e.pointerId) finishPan();
+    };
+
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [zoom]);
 
   // Annotation keyboard shortcuts: undo / redo / delete / esc.
   useEffect(() => {
@@ -440,7 +561,10 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
         </Tooltip>
         <span className="pdf-pagecount">{numPages ? `${numPages} pages` : "…"}</span>
       </div>
-      <div className="pdf-scroll" ref={containerRef}>
+      <div
+        className={`pdf-scroll ${zoom > 1 ? "pannable" : ""} ${panning ? "panning" : ""}`}
+        ref={containerRef}
+      >
         {loading && <div className="pdf-loading">Loading PDF…</div>}
         {error && <div className="pdf-error">Failed to load PDF: {error}</div>}
         {doc &&
@@ -469,6 +593,23 @@ async function extractText(doc: pdfjsLib.PDFDocumentProxy): Promise<string> {
     page.cleanup();
   }
   return pages.join("\n\n");
+}
+
+function shouldKeepPdfPointerInteraction(target: Element | null): boolean {
+  if (!target) return false;
+  const el = target as HTMLElement;
+  if (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.isContentEditable
+  ) {
+    return true;
+  }
+  // Keep normal text selection when the press starts on actual pdf.js text.
+  if (target.closest(".pdf-textlayer span")) return true;
+  // Annotation handles/text/rects own their pointer gestures.
+  if (target.closest(".annot-svg, .annot-text, .annot-text-input")) return true;
+  return false;
 }
 
 interface TextItemLike {

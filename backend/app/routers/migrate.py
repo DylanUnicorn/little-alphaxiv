@@ -91,6 +91,7 @@ class MigrateSettings(BaseModel):
     searchSources: dict | None = None
     zotero: dict | None = None
     providerModels: dict | None = None
+    aiOutputFormat: dict | None = None
 
 
 class MigrateNoteSync(BaseModel):
@@ -241,7 +242,8 @@ async def import_local_data(
 
     # Settings (non-provider slice; encrypt keys)
     if body.settings and (body.settings.theme or body.settings.searchSources
-                          or body.settings.zotero or body.settings.providerModels):
+                          or body.settings.zotero or body.settings.providerModels
+                          or body.settings.aiOutputFormat):
         from sqlmodel import select
         row = (await session.exec(
             select(UserSettings).where(UserSettings.user_id == user.id)
@@ -257,6 +259,8 @@ async def import_local_data(
             row.zotero_config = _encrypt_zotero_key(body.settings.zotero)
         if body.settings.providerModels is not None:
             row.provider_models = body.settings.providerModels
+        if body.settings.aiOutputFormat is not None:
+            row.ai_output_format = body.settings.aiOutputFormat
         counts["settings"] += 1
 
     # Zotero note-sync map (per paper)

@@ -92,6 +92,7 @@ export function readLegacySettings(): {
   searchSources: any;
   zotero: any;
   providerModels: Record<string, any[]>;
+  aiOutputFormat?: any;
 } | null {
   try {
     const raw = localStorage.getItem("little-alphaxiv-settings");
@@ -104,6 +105,7 @@ export function readLegacySettings(): {
       searchSources: s.state?.searchSources ?? s.searchSources ?? null,
       zotero: s.state?.zotero ?? s.zotero ?? null,
       providerModels: s.state?.providerModels ?? s.providerModels ?? {},
+      aiOutputFormat: s.state?.aiOutputFormat ?? s.aiOutputFormat ?? null,
     };
   } catch {
     return null;

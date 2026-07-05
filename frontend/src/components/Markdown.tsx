@@ -12,26 +12,34 @@
 //     rather than relying on the model surfacing a structured Paper object.
 //   - anything else -> plain external <a target="_blank">
 
-import type { ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import type { PluggableList } from "unified";
 import { useNavigate } from "react-router-dom";
 import { extractArxivId } from "../lib/arxiv";
 import { extractDoiFromUrl } from "../lib/paperSource";
 import { markdownCodeComponents } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { rehypeCjkEmphasis } from "../lib/remark-cjk-emphasis";
+import { normalizeLatexMathDelimiters } from "../lib/mathMarkdown";
 import { useUi } from "../store/ui";
+import { useSettings } from "../store/settings";
 
-const REMARK_PLUGINS = [remarkGfm, remarkMath];
-const REHYPE_PLUGINS = [rehypeKatex, rehypeCjkEmphasis];
+const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS: PluggableList = [
+  [rehypeKatex, { throwOnError: false, strict: "ignore" }],
+  rehypeCjkEmphasis,
+];
 
 export function Markdown({ children }: { children: string }) {
   const navigate = useNavigate();
+  const enableMathType = useSettings((s) => s.aiOutputFormat.enableMathType);
+  const segments = enableMathType ? splitMathMlSegments(children) : [{ type: "markdown" as const, text: children }];
 
-  return (
+  const renderMarkdown = (text: string) => (
     <ReactMarkdown
       remarkPlugins={REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
@@ -70,9 +78,179 @@ export function Markdown({ children }: { children: string }) {
         },
       }}
     >
-      {children}
+      {normalizeLatexMathDelimiters(text)}
     </ReactMarkdown>
   );
+
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.type === "mathml" ? (
+          <MathMl key={index} source={segment.source} display={segment.display} />
+        ) : segment.text ? (
+          <div key={index} className="markdown-segment">
+            {renderMarkdown(segment.text)}
+          </div>
+        ) : null
+      )}
+    </>
+  );
+}
+
+type MarkdownSegment =
+  | { type: "markdown"; text: string }
+  | { type: "mathml"; source: string; display: boolean };
+
+const MATHML_RE = /<math\b[\s\S]*?<\/math>/gi;
+
+function splitMathMlSegments(input: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  let lastIndex = 0;
+  for (const match of input.matchAll(MATHML_RE)) {
+    const source = match[0];
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      segments.push({ type: "markdown", text: input.slice(lastIndex, index) });
+    }
+    segments.push({
+      type: "mathml",
+      source,
+      display: /\bdisplay\s*=\s*["']block["']/i.test(source) || isOwnLine(input, index, index + source.length),
+    });
+    lastIndex = index + source.length;
+  }
+  if (lastIndex < input.length) {
+    segments.push({ type: "markdown", text: input.slice(lastIndex) });
+  }
+  return segments.length > 0 ? segments : [{ type: "markdown", text: input }];
+}
+
+function isOwnLine(input: string, start: number, end: number): boolean {
+  const before = input.slice(Math.max(0, start - 2), start);
+  const after = input.slice(end, end + 2);
+  return /(^|\n)\s*$/.test(before) && /^\s*(\n|$)/.test(after);
+}
+
+const MATHML_TAGS = new Set([
+  "math",
+  "mrow",
+  "mi",
+  "mn",
+  "mo",
+  "ms",
+  "mtext",
+  "mspace",
+  "mfrac",
+  "msqrt",
+  "mroot",
+  "msup",
+  "msub",
+  "msubsup",
+  "munder",
+  "mover",
+  "munderover",
+  "mmultiscripts",
+  "mprescripts",
+  "none",
+  "mtable",
+  "mtr",
+  "mtd",
+  "maligngroup",
+  "malignmark",
+  "menclose",
+  "mstyle",
+  "mpadded",
+  "mphantom",
+  "mfenced",
+  "semantics",
+]);
+
+const MATHML_ATTRS = new Set([
+  "xmlns",
+  "display",
+  "dir",
+  "mathvariant",
+  "mathsize",
+  "mathcolor",
+  "mathbackground",
+  "form",
+  "fence",
+  "separator",
+  "stretchy",
+  "symmetric",
+  "maxsize",
+  "minsize",
+  "largeop",
+  "movablelimits",
+  "accent",
+  "accentunder",
+  "linethickness",
+  "bevelled",
+  "notation",
+  "columnalign",
+  "rowalign",
+  "columnspacing",
+  "rowspacing",
+  "columnspan",
+  "rowspan",
+  "scriptlevel",
+  "displaystyle",
+  "depth",
+  "height",
+  "width",
+  "lspace",
+  "rspace",
+  "voffset",
+]);
+
+function MathMl({ source, display }: { source: string; display: boolean }) {
+  const rendered = renderMathMl(source);
+  if (!rendered) {
+    return <code className="mathml-fallback">{source}</code>;
+  }
+  return (
+    <span className={display ? "mathml-block" : "mathml-inline"}>
+      {rendered}
+    </span>
+  );
+}
+
+function renderMathMl(source: string): ReactNode | null {
+  if (typeof DOMParser === "undefined") return null;
+  const doc = new DOMParser().parseFromString(source, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return null;
+  const root = doc.documentElement;
+  if (!root || root.localName.toLowerCase() !== "math") return null;
+  return mathElementToReact(root, 0);
+}
+
+function mathElementToReact(node: ChildNode, key: number): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const el = node as Element;
+  const tag = el.localName.toLowerCase();
+  if (tag === "annotation" || tag === "annotation-xml" || !MATHML_TAGS.has(tag)) {
+    return null;
+  }
+  const attrs: Record<string, string | number> = {};
+  for (const attr of Array.from(el.attributes)) {
+    const name = attr.name.toLowerCase();
+    if (
+      name.startsWith("on") ||
+      name.includes(":") ||
+      name === "href" ||
+      name === "src" ||
+      name === "style" ||
+      !MATHML_ATTRS.has(name)
+    ) {
+      continue;
+    }
+    attrs[name] = attr.value;
+  }
+  const children = Array.from(el.childNodes)
+    .map((child, childIndex) => mathElementToReact(child, childIndex))
+    .filter((child) => child !== null);
+  return createElement(tag, { ...attrs, key }, children);
 }
 
 /** Inline 3-button card for a DOI/publisher link the model wrote as text.
