@@ -1,17 +1,31 @@
-# Linux App
+# Linux Release Packaging
 
-Linux users receive a single `.run` file from the release page:
+This folder is for maintainers building the Linux `.run` release artifact.
 
-```text
-LittleAlphaxiv-<version>-x86_64.run
-```
-
-Run it directly:
+Run from the repository root:
 
 ```bash
-chmod +x LittleAlphaxiv-<version>-x86_64.run
-./LittleAlphaxiv-<version>-x86_64.run
+packaging/linux/build-linux-run.sh
 ```
 
-The app opens Little Alphaxiv in the browser and stores user data under
-`$XDG_DATA_HOME/little-alphaxiv` or `~/.local/share/little-alphaxiv`.
+The script creates `app/` at the repository root. That directory is ignored by
+Git and contains:
+
+- `LittleAlphaxiv-<version>-x86_64.run` — the single executable file to upload
+  to GitHub Releases.
+- `.build/` — temporary packaging files, including the assembled app payload.
+
+To set an explicit release version:
+
+```bash
+LAX_APP_VERSION=v0.1.0 packaging/linux/build-linux-run.sh
+```
+
+After the build, publish only:
+
+```text
+app/LittleAlphaxiv-<version>-x86_64.run
+```
+
+Users download that `.run` file from the release page, grant execute permission,
+and run it directly.
