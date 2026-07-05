@@ -20,6 +20,7 @@ export interface ThemeMeta {
 export const THEMES: ThemeMeta[] = [
   { id: "dark", label: "Default Dark", mode: "dark", swatch: ["#0f1115", "#1d212c", "#7c8cff", "#e6e8ee"] },
   { id: "light", label: "Light", mode: "light", swatch: ["#f6f7f9", "#eceef2", "#4f5dff", "#1a1d24"] },
+  { id: "alphaxiv", label: "Alphaxiv", mode: "light", swatch: ["#f7f5f4", "#ffffff", "#a6223d", "#252223"] },
   { id: "nord", label: "Nord", mode: "dark", swatch: ["#2e3440", "#434c5e", "#88c0d0", "#eceff4"] },
   { id: "tokyo-night", label: "Tokyo Night", mode: "dark", swatch: ["#1a1b26", "#292a3a", "#7aa2f7", "#c0caf5"] },
   { id: "gruvbox-dark", label: "Gruvbox Dark", mode: "dark", swatch: ["#282828", "#504945", "#fabd2f", "#ebdbb2"] },

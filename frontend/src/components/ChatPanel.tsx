@@ -522,7 +522,13 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
         onAttach={() => fileInputRef.current?.click()}
         onDropFiles={handleDropFiles}
         busy={busy}
-        placeholder={busy ? "…" : "Message…  (Enter to send, Shift+Enter newline, Ctrl+V to paste images)"}
+        placeholder={
+          busy
+            ? "…"
+            : conv.type === "paper"
+              ? "Ask anything about this paper or highlight text..."
+              : "Ask about papers, topics, or sources..."
+        }
         attachments={attachments}
         onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
         models={availableModels}

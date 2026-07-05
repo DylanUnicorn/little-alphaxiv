@@ -61,28 +61,35 @@ export function ChatToolbar({
   return (
     <div className="chat-toolbar">
       <div className="chat-toolbar-left">
-        <Tooltip label="Conversation history" side="bottom">
-          <button
-            className={`toolbar-btn ${showHistory ? "active" : ""}`}
-            onClick={onToggleHistory}
-          >
-            ☰ <span className="conv-count">{paperConvs.length}</span>
-          </button>
-        </Tooltip>
         <span className="toolbar-conv-title">{threadTitle}</span>
       </div>
 
       <div className="chat-toolbar-right">
         <Tooltip label="New conversation" side="bottom">
-          <button className="toolbar-btn" onClick={onNewConversation}>✚</button>
+          <button className="toolbar-action-btn" onClick={onNewConversation}>
+            <span className="toolbar-action-icon" aria-hidden>⊕</span>
+            <span>New Chat</span>
+          </button>
+        </Tooltip>
+
+        <Tooltip label="Conversation history" side="bottom">
+          <button
+            className={`toolbar-action-btn ${showHistory ? "active" : ""}`}
+            onClick={onToggleHistory}
+          >
+            <span className="toolbar-action-icon" aria-hidden>↶</span>
+            <span>History</span>
+            <span className="conv-count">{paperConvs.length}</span>
+          </button>
         </Tooltip>
 
         <div className="toolbar-dropdown" ref={settingsRef}>
           <Tooltip label="Chat settings" side="bottom">
             <button
-              className={`toolbar-btn ${showSettings ? "active" : ""}`}
+              className={`toolbar-icon-btn ${showSettings ? "active" : ""}`}
               onClick={() => setShowSettings((v) => !v)}
-            >⚙</button>
+              aria-label="Chat settings"
+            >⋮</button>
           </Tooltip>
           {showSettings && (
             <div className="dropdown-menu settings-menu">
