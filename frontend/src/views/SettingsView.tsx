@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { useSettings } from "../store/settings";
+import { DEFAULT_AI_OUTPUT_FORMAT, useSettings } from "../store/settings";
 import { THEMES } from "../themes";
 import type { Provider, ModelInfo } from "../types";
 import * as api from "../lib/api";
@@ -30,6 +30,8 @@ export function SettingsView() {
   const setSearchSources = useSettings((s) => s.setSearchSources);
   const zotero = useSettings((s) => s.zotero);
   const setZotero = useSettings((s) => s.setZotero);
+  const aiOutputFormat = useSettings((s) => s.aiOutputFormat);
+  const setAiOutputFormat = useSettings((s) => s.setAiOutputFormat);
   const [zoteroTesting, setZoteroTesting] = useState(false);
   const [zoteroTestResult, setZoteroTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [localFirst, setLocalFirst] = useState<api.LocalFirstStatus | null>(null);
@@ -194,6 +196,76 @@ export function SettingsView() {
               </div>
             </button>
           ))}
+        </div>
+
+        <h3>AI output</h3>
+        <div className="output-format-controls">
+          <label className="output-format-row">
+            <span>Font size</span>
+            <input
+              type="range"
+              min="12"
+              max="18"
+              step="1"
+              value={aiOutputFormat.fontSize}
+              onChange={(e) => setAiOutputFormat({ fontSize: Number(e.target.value) })}
+            />
+            <strong>{aiOutputFormat.fontSize}px</strong>
+          </label>
+          <label className="output-format-row">
+            <span>Line height</span>
+            <input
+              type="range"
+              min="1.2"
+              max="1.8"
+              step="0.05"
+              value={aiOutputFormat.lineHeight}
+              onChange={(e) => setAiOutputFormat({ lineHeight: Number(e.target.value) })}
+            />
+            <strong>{aiOutputFormat.lineHeight.toFixed(2)}</strong>
+          </label>
+          <label className="output-format-row">
+            <span>Paragraph gap</span>
+            <input
+              type="range"
+              min="0"
+              max="14"
+              step="1"
+              value={aiOutputFormat.paragraphSpacing}
+              onChange={(e) => setAiOutputFormat({ paragraphSpacing: Number(e.target.value) })}
+            />
+            <strong>{aiOutputFormat.paragraphSpacing}px</strong>
+          </label>
+          <label className="output-format-row">
+            <span>Formula scale</span>
+            <input
+              type="range"
+              min="0.85"
+              max="1.35"
+              step="0.05"
+              value={aiOutputFormat.mathScale}
+              onChange={(e) => setAiOutputFormat({ mathScale: Number(e.target.value) })}
+            />
+            <strong>{aiOutputFormat.mathScale.toFixed(2)}x</strong>
+          </label>
+          <div className="output-format-row output-format-toggle">
+            <span>MathType / MathML</span>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={aiOutputFormat.enableMathType}
+                onChange={(e) => setAiOutputFormat({ enableMathType: e.target.checked })}
+              />
+              <span>{aiOutputFormat.enableMathType ? "on" : "off"}</span>
+            </label>
+          </div>
+          <button
+            type="button"
+            className="link-btn output-format-reset"
+            onClick={() => setAiOutputFormat(DEFAULT_AI_OUTPUT_FORMAT)}
+          >
+            Reset output format
+          </button>
         </div>
 
         <h2>Search sources</h2>

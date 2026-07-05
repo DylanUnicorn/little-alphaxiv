@@ -46,6 +46,7 @@ export async function importLocalData(): Promise<{ imported: Record<string, numb
       searchSources: settings.searchSources,
       zotero: settings.zotero,
       providerModels: settings.providerModels,
+      aiOutputFormat: settings.aiOutputFormat ?? null,
     } : null,
     zoteroNoteSync: zoteroNoteSync
       ? Object.fromEntries(

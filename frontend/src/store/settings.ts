@@ -50,6 +50,22 @@ export const DEFAULT_ZOTERO: ZoteroConfig = {
   apiKey: "",
 };
 
+export interface AiOutputFormat {
+  fontSize: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  mathScale: number;
+  enableMathType: boolean;
+}
+
+export const DEFAULT_AI_OUTPUT_FORMAT: AiOutputFormat = {
+  fontSize: 14,
+  lineHeight: 1.42,
+  paragraphSpacing: 6,
+  mathScale: 1,
+  enableMathType: true,
+};
+
 interface SettingsState {
   providers: Provider[];
   defaultProviderId: string | null;
@@ -78,10 +94,31 @@ interface SettingsState {
   setSearchSources: (patch: Partial<SearchSources>) => void;
   zotero: ZoteroConfig;
   setZotero: (patch: Partial<ZoteroConfig>) => void;
+  aiOutputFormat: AiOutputFormat;
+  setAiOutputFormat: (patch: Partial<AiOutputFormat>) => void;
 }
 
 function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function coerceAiOutputFormat(value: unknown): AiOutputFormat {
+  const obj = value && typeof value === "object" ? value as Partial<AiOutputFormat> : {};
+  return {
+    fontSize: clampNumber(obj.fontSize, DEFAULT_AI_OUTPUT_FORMAT.fontSize, 12, 18),
+    lineHeight: clampNumber(obj.lineHeight, DEFAULT_AI_OUTPUT_FORMAT.lineHeight, 1.2, 1.8),
+    paragraphSpacing: clampNumber(obj.paragraphSpacing, DEFAULT_AI_OUTPUT_FORMAT.paragraphSpacing, 0, 14),
+    mathScale: clampNumber(obj.mathScale, DEFAULT_AI_OUTPUT_FORMAT.mathScale, 0.85, 1.35),
+    enableMathType: typeof obj.enableMathType === "boolean"
+      ? obj.enableMathType
+      : DEFAULT_AI_OUTPUT_FORMAT.enableMathType,
+  };
 }
 
 // Debounced settings PATCH (theme/searchSources/zotero/providerModels) so rapid
@@ -96,6 +133,7 @@ function scheduleSettingsPatch(getState: () => SettingsState): void {
       searchSources: s.searchSources,
       zotero: s.zotero,
       providerModels: s.providerModels,
+      aiOutputFormat: s.aiOutputFormat,
     }).catch(() => { /* non-fatal */ });
   }, 400);
 }
@@ -106,6 +144,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   theme: DEFAULT_THEME,
   searchSources: DEFAULT_SEARCH_SOURCES,
   zotero: DEFAULT_ZOTERO,
+  aiOutputFormat: DEFAULT_AI_OUTPUT_FORMAT,
   providerModels: {},
   loaded: false,
 
@@ -127,6 +166,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
         semanticScholar: { ...DEFAULT_SEARCH_SOURCES.semanticScholar, ...(ss.semanticScholar ?? {}) },
       },
       zotero: { ...DEFAULT_ZOTERO, ...zt },
+      aiOutputFormat: coerceAiOutputFormat(settings.aiOutputFormat),
       providerModels: settings.providerModels ?? {},
       providers: providers.map((p) => ({
         id: p.id,
@@ -151,6 +191,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       theme: DEFAULT_THEME,
       searchSources: DEFAULT_SEARCH_SOURCES,
       zotero: DEFAULT_ZOTERO,
+      aiOutputFormat: DEFAULT_AI_OUTPUT_FORMAT,
       providerModels: {},
       loaded: false,
     }),
@@ -270,6 +311,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
 
   setZotero: (patch) => {
     set((s) => ({ zotero: { ...s.zotero, ...patch } }));
+    scheduleSettingsPatch(() => get() as SettingsState);
+  },
+
+  setAiOutputFormat: (patch) => {
+    set((s) => ({ aiOutputFormat: coerceAiOutputFormat({ ...s.aiOutputFormat, ...patch }) }));
     scheduleSettingsPatch(() => get() as SettingsState);
   },
 }));

@@ -204,6 +204,7 @@ class UserSettings(SQLModel, table=True):
     search_sources: dict = Field(default_factory=dict, sa_column=Column(JSON))
     zotero_config: dict = Field(default_factory=dict, sa_column=Column(JSON))
     provider_models: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    ai_output_format: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@
 //   - Per-conversation model override, style preset, context window
 //   - GLM reasoning_content display as "thinking" block
 
-import { memo, useEffect, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider, ModelInfo, TokenUsage } from "../types";
 import { STYLE_PRESETS } from "../types";
@@ -103,6 +103,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   // to avoid returning a fresh object from the selector (zustand footgun).
   const searchSources = useSettings((s) => s.searchSources);
   const enabledSources = { openalex: searchSources.openalex.enabled, s2: searchSources.semanticScholar.enabled, anysearch: searchSources.anysearch.enabled };
+  const aiOutputFormat = useSettings((s) => s.aiOutputFormat);
 
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -239,6 +240,12 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   if (!conv) return <div className="chat-panel"><p>No conversation.</p></div>;
 
   const c = conv;
+  const outputFormatStyle = {
+    "--ai-output-font-size": `${aiOutputFormat.fontSize}px`,
+    "--ai-output-line-height": String(aiOutputFormat.lineHeight),
+    "--ai-output-paragraph-spacing": `${aiOutputFormat.paragraphSpacing}px`,
+    "--ai-output-math-size": `${aiOutputFormat.mathScale}em`,
+  } as CSSProperties;
 
   // Model selector derived values (need `c` which is assigned above)
   const currentModel = c.model || provider?.model || "";
@@ -466,7 +473,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
   return (
     <div className="chat-panel">
       <ChatErrorBoundary>
-        <div className="chat-messages" ref={scrollRef}>
+        <div className="chat-messages" ref={scrollRef} style={outputFormatStyle}>
           {conv.messages.length === 0 && !streaming && (
             <div className="chat-empty">
               <div className="empty-title">{conv.type === "paper" ? "Discuss this paper" : "Find papers with AI"}</div>

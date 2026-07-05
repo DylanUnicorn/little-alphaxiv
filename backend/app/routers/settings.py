@@ -50,6 +50,7 @@ class SettingsOut(BaseModel):
     searchSources: dict
     zotero: dict
     providerModels: dict
+    aiOutputFormat: dict
 
 
 class SettingsPatch(BaseModel):
@@ -57,6 +58,7 @@ class SettingsPatch(BaseModel):
     searchSources: dict | None = None
     zotero: dict | None = None
     providerModels: dict | None = None
+    aiOutputFormat: dict | None = None
 
 
 def _encrypt_search_keys(obj: dict) -> dict:
@@ -122,6 +124,7 @@ async def get_settings(
         searchSources=_decrypt_search_keys(row.search_sources or {}),
         zotero=_decrypt_zotero_key(row.zotero_config or {}),
         providerModels=row.provider_models or {},
+        aiOutputFormat=row.ai_output_format or {},
     )
 
 
@@ -140,6 +143,8 @@ async def patch_settings(
         row.zotero_config = _encrypt_zotero_key(body.zotero)
     if body.providerModels is not None:
         row.provider_models = body.providerModels
+    if body.aiOutputFormat is not None:
+        row.ai_output_format = body.aiOutputFormat
     await session.commit()
     await session.refresh(row)
     return SettingsOut(
@@ -147,4 +152,5 @@ async def patch_settings(
         searchSources=_decrypt_search_keys(row.search_sources or {}),
         zotero=_decrypt_zotero_key(row.zotero_config or {}),
         providerModels=row.provider_models or {},
+        aiOutputFormat=row.ai_output_format or {},
     )

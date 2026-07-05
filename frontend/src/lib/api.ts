@@ -680,6 +680,13 @@ export interface SettingsOut {
   };
   zotero: { mode: "auto" | "local" | "web"; userId: string; apiKey: string };
   providerModels: Record<string, ModelInfo[]>;
+  aiOutputFormat: {
+    fontSize: number;
+    lineHeight: number;
+    paragraphSpacing: number;
+    mathScale: number;
+    enableMathType: boolean;
+  };
 }
 
 export async function getSettings(): Promise<SettingsOut> {
@@ -877,6 +884,7 @@ export interface MigratePayload {
     searchSources: SettingsOut["searchSources"] | null;
     zotero: SettingsOut["zotero"] | null;
     providerModels: Record<string, ModelInfo[]> | null;
+    aiOutputFormat: SettingsOut["aiOutputFormat"] | null;
   } | null;
   zoteroNoteSync: Record<string, {
     enabled: boolean; note_key: string | null; parent_key: string | null;

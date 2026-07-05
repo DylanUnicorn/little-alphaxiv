@@ -21,6 +21,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { rehypeCjkEmphasis } from "./remark-cjk-emphasis";
+import { normalizeLatexMathDelimiters } from "./mathMarkdown";
 
 /** Render markdown through the production plugin chain → static HTML. */
 function render(md: string): string {
@@ -59,5 +60,11 @@ describe("rehypeCjkEmphasis (production plugin chain)", () => {
     expect(html).toContain("normal");
     expect(html).toContain("<strong>bold</strong>");
     expect(html).toContain("text");
+  });
+
+  it("renders LaTeX display delimiters that models commonly emit", () => {
+    const html = render(normalizeLatexMathDelimiters("\\[\nt_i^I\n\\]"));
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("\\[");
   });
 });
