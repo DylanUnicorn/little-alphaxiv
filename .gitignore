@@ -10,6 +10,9 @@ dist-ssr/
 .vite/
 *.local
 
+# packaged Linux app artifacts
+/app/
+
 # logs
 npm-debug.log*
 yarn-debug.log*

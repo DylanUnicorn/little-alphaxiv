@@ -212,6 +212,34 @@ provider, and chat. Everyone's data is independent and invisible to others.
 > internet (the DB holds everyone's encrypted API keys + chat history). For
 > internet exposure, put it behind TLS and set `LAX_SECURE_COOKIES=true`.
 
+### D. Portable Linux app (no Docker)
+
+For Linux users who do not want Docker, each release provides a single `.run`
+app file (architecture auto-matches the build host: `x86_64` or `aarch64`) on the
+[GitHub releases page](https://github.com/DylanUnicorn/little-alphaxiv/releases):
+
+```text
+LittleAlphaxiv-<version>-<arch>.run
+```
+
+Download it, grant execute permission, and run it directly:
+
+```bash
+chmod +x LittleAlphaxiv-<version>-<arch>.run
+./LittleAlphaxiv-<version>-<arch>.run
+```
+
+On first launch it opens Little Alphaxiv in your browser. The app keeps its
+program files under `~/.cache/little-alphaxiv/`, and stores your database, PDF
+cache, and settings under `$XDG_DATA_HOME/little-alphaxiv` or
+`~/.local/share/little-alphaxiv`.
+
+To use a different port:
+
+```bash
+LAX_PORT=8080 ./LittleAlphaxiv-<version>-<arch>.run
+```
+
 ## 🔑 Configure a provider
 
 Click ⚙ **Settings → Providers** → add an OpenAI-compatible provider:
@@ -252,8 +280,9 @@ override other vars.
 | `LAX_SMTP_URL` | *(unset)* | SMTP URL for password-reset emails, e.g. `smtps://user:pass@smtp.gmail.com:465`. Unset → reset links are printed to the logs (zero-config for localhost). |
 | `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
-| `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`. Uploaded / Zotero-imported PDFs persist under `<LAX_PDF_CACHE>/uploads/<user_id>/` (auth-gated, per-user — not the global cache). |
-| `LAX_PORT` | `8000` | *(Docker only)* Host port to expose. |
+| `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`; the portable Linux app uses `<data-dir>/pdf_cache`. Uploaded / Zotero-imported PDFs persist under `<LAX_PDF_CACHE>/uploads/<user_id>/` (auth-gated, per-user — not the global cache). |
+| `LAX_DATA_DIR` | *(unset)* | **Portable Linux app only.** Overrides where the `.run` app stores the SQLite DB, PDF cache, secret key, and reset log. Unset → `$XDG_DATA_HOME/little-alphaxiv` or `~/.local/share/little-alphaxiv`. |
+| `LAX_PORT` | `8000` | Host port for Docker and the portable Linux app. In the portable app, when unset and `8000` is busy, it tries `8001`-`8020`. |
 | `ANYSEARCH_API_KEY` | *(unset)* | Operator-wide fallback API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. **Per-user keys** are configured in Settings → Search sources (Fernet-encrypted server-side) and take precedence; this env var is only the server-wide default. Anonymous works (rate-limited), so all three are optional. In Docker, set it in `deploy/.env`. |
 | `LAX_ANYSEARCH_URL` | `https://api.anysearch.com/mcp` | Override the anysearch MCP endpoint URL. |
 | `LAX_ZOTERO_LOCAL_BASE` | `http://127.0.0.1:23119` | **Docker only.** Base URL of the host's local Zotero API for local-first PDF import (reads PDFs off the host disk via the `file://` redirect, bypassing the flaky S3 cloud download). The container can't reach the host loopback, so set `http://host.docker.internal:23119`. Empty `""` disables local-first (falls back to the retried, capped cloud download). Native (`run.bat`) needs no config. |
@@ -345,6 +374,7 @@ little-alphaxiv/
 │   └── package.json
 ├── tools/                    # Playwright E2E drivers + mock LLM + admin CLIs
 ├── docs/designs/             # validated design docs
+├── packaging/linux/          # portable Linux .run app packaging
 ├── deploy/                   # all Docker files (build + run + data volume)
 │   ├── Dockerfile            # multi-stage: build frontend → run backend + serve dist
 │   ├── docker-compose.yml    # one-command self-hosted run (build context = repo root)
