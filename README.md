@@ -214,46 +214,29 @@ provider, and chat. Everyone's data is independent and invisible to others.
 
 ### D. Portable Linux app (no Docker)
 
-Build a one-click Linux bundle when you want to hand someone an app without
-asking them to install Docker. The build script compiles the Vite frontend,
-copies the backend + Alembic migrations, bundles a Python runtime, and writes
-an `AppRun` launcher:
-
-```bash
-packaging/linux/build-linux-app.sh
-```
-
-Output:
+For Linux users who do not want Docker, we provide a single `.run` app file:
 
 ```text
-dist/linux/LittleAlphaxiv/
-dist/linux/LittleAlphaxiv-<version>-linux-x86_64.tar.gz
+app/LittleAlphaxiv-<version>-x86_64.run
 ```
 
-Run the unpacked app:
+Run it directly:
 
 ```bash
-cd dist/linux/LittleAlphaxiv
-./AppRun
+chmod +x app/LittleAlphaxiv-<version>-x86_64.run
+./app/LittleAlphaxiv-<version>-x86_64.run
 ```
 
-`AppRun` starts the backend on `127.0.0.1:8000`, opens the browser, and stores
-runtime data in `data/` next to the app when writable. If port `8000` is busy it
-tries `8001`-`8020`; set `LAX_PORT=8080` to force a port, or
-`LAX_DATA_DIR=/path/to/data` to keep the DB/cache elsewhere. Optional desktop
-integration is available with `./install-desktop-entry.sh` from inside the
-unpacked app.
+On first launch it opens Little Alphaxiv in your browser. The app keeps its
+program files under `~/.cache/little-alphaxiv/`, and stores your database, PDF
+cache, and settings under `$XDG_DATA_HOME/little-alphaxiv` or
+`~/.local/share/little-alphaxiv`.
 
-For a single executable file, build a self-extracting runner:
+To use a different port:
 
 ```bash
-packaging/linux/build-linux-run.sh
+LAX_PORT=8080 ./app/LittleAlphaxiv-<version>-x86_64.run
 ```
-
-This produces `dist/linux/LittleAlphaxiv-<version>-x86_64.run`, which is the
-file to distribute when you want a real one-file Linux app. It extracts the app
-to `~/.cache/little-alphaxiv/` on first launch and stores runtime data in
-`$XDG_DATA_HOME/little-alphaxiv` or `~/.local/share/little-alphaxiv`.
 
 ## 🔑 Configure a provider
 
@@ -296,8 +279,8 @@ override other vars.
 | `LAX_SMTP_FROM` | *(SMTP user)* | `From:` address for reset emails. |
 | `LAX_PASSWORD_RESET_TTL_MIN` | `30` | Reset-link lifetime in minutes. |
 | `LAX_PDF_CACHE` | `deploy/data/pdf_cache` | PDF disk-cache dir (content-addressed, global, non-sensitive). `run.sh`/`run.bat` point here; Docker uses `/app/data/pdf_cache`; the portable Linux app uses `<data-dir>/pdf_cache`. Uploaded / Zotero-imported PDFs persist under `<LAX_PDF_CACHE>/uploads/<user_id>/` (auth-gated, per-user — not the global cache). |
-| `LAX_DATA_DIR` | *(unset)* | **Portable Linux app only.** Overrides where `AppRun` stores the SQLite DB, PDF cache, secret key, and reset log. Unset → `data/` next to `AppRun` when writable, else `$XDG_DATA_HOME/little-alphaxiv` or `~/.local/share/little-alphaxiv`. |
-| `LAX_PORT` | `8000` | Host port for Docker and the portable Linux app. In the portable app, when unset and `8000` is busy, `AppRun` tries `8001`-`8020`. |
+| `LAX_DATA_DIR` | *(unset)* | **Portable Linux app only.** Overrides where the `.run` app stores the SQLite DB, PDF cache, secret key, and reset log. Unset → `$XDG_DATA_HOME/little-alphaxiv` or `~/.local/share/little-alphaxiv`. |
+| `LAX_PORT` | `8000` | Host port for Docker and the portable Linux app. In the portable app, when unset and `8000` is busy, it tries `8001`-`8020`. |
 | `ANYSEARCH_API_KEY` | *(unset)* | Operator-wide fallback API key for the `web_search` tool, which calls the [anysearch](https://anysearch.com) MCP server over HTTP so the assistant can find papers arXiv/OpenAlex/Semantic Scholar miss (IEEE/ACM/Springer, paywalled, DOI-only) and answer non-academic questions. **Per-user keys** are configured in Settings → Search sources (Fernet-encrypted server-side) and take precedence; this env var is only the server-wide default. Anonymous works (rate-limited), so all three are optional. In Docker, set it in `deploy/.env`. |
 | `LAX_ANYSEARCH_URL` | `https://api.anysearch.com/mcp` | Override the anysearch MCP endpoint URL. |
 | `LAX_ZOTERO_LOCAL_BASE` | `http://127.0.0.1:23119` | **Docker only.** Base URL of the host's local Zotero API for local-first PDF import (reads PDFs off the host disk via the `file://` redirect, bypassing the flaky S3 cloud download). The container can't reach the host loopback, so set `http://host.docker.internal:23119`. Empty `""` disables local-first (falls back to the retried, capped cloud download). Native (`run.bat`) needs no config. |
@@ -389,7 +372,7 @@ little-alphaxiv/
 │   └── package.json
 ├── tools/                    # Playwright E2E drivers + mock LLM + admin CLIs
 ├── docs/designs/             # validated design docs
-├── packaging/linux/          # portable Linux tarball builder + AppRun launcher
+├── packaging/linux/          # portable Linux .run app packaging
 ├── deploy/                   # all Docker files (build + run + data volume)
 │   ├── Dockerfile            # multi-stage: build frontend → run backend + serve dist
 │   ├── docker-compose.yml    # one-command self-hosted run (build context = repo root)
