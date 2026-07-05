@@ -214,10 +214,10 @@ provider, and chat. Everyone's data is independent and invisible to others.
 
 ### D. Portable Linux app (no Docker)
 
-Build a one-click Linux bundle when you want to hand someone a tarball instead
-of asking them to install Docker. The build script compiles the Vite frontend,
-copies the backend + Alembic migrations, creates a bundled Python venv, and
-writes an `AppRun` launcher:
+Build a one-click Linux bundle when you want to hand someone an app without
+asking them to install Docker. The build script compiles the Vite frontend,
+copies the backend + Alembic migrations, bundles a Python runtime, and writes
+an `AppRun` launcher:
 
 ```bash
 packaging/linux/build-linux-app.sh
@@ -243,6 +243,17 @@ tries `8001`-`8020`; set `LAX_PORT=8080` to force a port, or
 `LAX_DATA_DIR=/path/to/data` to keep the DB/cache elsewhere. Optional desktop
 integration is available with `./install-desktop-entry.sh` from inside the
 unpacked app.
+
+For a single executable file, build a self-extracting runner:
+
+```bash
+packaging/linux/build-linux-run.sh
+```
+
+This produces `dist/linux/LittleAlphaxiv-<version>-x86_64.run`, which is the
+file to distribute when you want a real one-file Linux app. It extracts the app
+to `~/.cache/little-alphaxiv/` on first launch and stores runtime data in
+`$XDG_DATA_HOME/little-alphaxiv` or `~/.local/share/little-alphaxiv`.
 
 ## 🔑 Configure a provider
 

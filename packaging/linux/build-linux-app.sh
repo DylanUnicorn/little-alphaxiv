@@ -50,6 +50,25 @@ if sys.version_info < (3, 10):
     raise SystemExit("Python 3.10+ is required")
 PY
 
+PY_MM="$("$PYTHON_BIN" - <<'PY'
+import sys
+
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+)"
+PY_EXE="$("$PYTHON_BIN" - <<'PY'
+import sys
+
+print(sys.executable)
+PY
+)"
+PY_STDLIB="$("$PYTHON_BIN" - <<'PY'
+import sysconfig
+
+print(sysconfig.get_path("stdlib"))
+PY
+)"
+
 echo "[build-linux-app] Building frontend"
 (
   cd "$ROOT/frontend"
@@ -59,7 +78,7 @@ echo "[build-linux-app] Building frontend"
 
 echo "[build-linux-app] Creating bundle at $APP_DIR"
 rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/backend" "$APP_DIR/frontend" "$APP_DIR/data" "$OUT_ROOT"
+mkdir -p "$APP_DIR/backend" "$APP_DIR/frontend" "$APP_DIR/data" "$APP_DIR/python/bin" "$APP_DIR/python/lib" "$OUT_ROOT"
 
 cp -a "$ROOT/backend/app" "$APP_DIR/backend/app"
 cp -a "$ROOT/backend/alembic" "$APP_DIR/backend/alembic"
@@ -72,6 +91,19 @@ cp "$ROOT/README.zh-CN.md" "$APP_DIR/README.zh-CN.md"
 cp "$ROOT/frontend/public/favicon.svg" "$APP_DIR/little-alphaxiv.svg"
 cp "$SCRIPT_DIR/AppRun" "$APP_DIR/AppRun"
 chmod +x "$APP_DIR/AppRun"
+
+cat > "$APP_DIR/little-alphaxiv.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Little Alphaxiv
+Comment=Self-hosted arXiv paper reading workspace
+Exec=AppRun
+Icon=little-alphaxiv
+Terminal=true
+Categories=Office;Education;Science;
+StartupNotify=false
+DESKTOP
+ln -sf little-alphaxiv.svg "$APP_DIR/.DirIcon"
 
 cat > "$APP_DIR/install-desktop-entry.sh" <<'SH'
 #!/usr/bin/env bash
@@ -132,10 +164,22 @@ Optional desktop integration:
 ```
 MD
 
-echo "[build-linux-app] Installing Python dependencies into bundled venv"
-"$PYTHON_BIN" -m venv "$APP_DIR/.venv"
-"$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
-"$APP_DIR/.venv/bin/pip" install -r "$ROOT/backend/requirements.txt"
+echo "[build-linux-app] Bundling Python $PY_MM runtime"
+cp "$PY_EXE" "$APP_DIR/python/bin/python$PY_MM"
+ln -sf "python$PY_MM" "$APP_DIR/python/bin/python3"
+ln -sf "python$PY_MM" "$APP_DIR/python/bin/python"
+cp -a "$PY_STDLIB" "$APP_DIR/python/lib/python$PY_MM"
+mkdir -p "$APP_DIR/python/lib/python$PY_MM/site-packages"
+find "$APP_DIR/python/lib/python$PY_MM" -type d -name '__pycache__' -prune -exec rm -rf {} +
+rm -rf \
+  "$APP_DIR/python/lib/python$PY_MM/test" \
+  "$APP_DIR/python/lib/python$PY_MM/idlelib" \
+  "$APP_DIR/python/lib/python$PY_MM/tkinter" \
+  "$APP_DIR/python/lib/python$PY_MM/turtledemo" \
+  "$APP_DIR/python/lib/python$PY_MM/ensurepip"
+
+echo "[build-linux-app] Installing Python dependencies into bundled runtime"
+"$PYTHON_BIN" -m pip install --upgrade --target "$APP_DIR/python/lib/python$PY_MM/site-packages" -r "$ROOT/backend/requirements.txt"
 
 echo "[build-linux-app] Creating archive $ARCHIVE"
 rm -f "$ARCHIVE"

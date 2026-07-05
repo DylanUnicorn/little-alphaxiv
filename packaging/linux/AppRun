@@ -3,12 +3,36 @@
 set -euo pipefail
 
 APPDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_BIN="$APPDIR/.venv/bin/python"
+PYTHON_BIN=""
+PYTHONHOME_DIR=""
 
-if [ ! -x "$PYTHON_BIN" ]; then
-  echo "[Little Alphaxiv] Missing bundled Python environment: $PYTHON_BIN" >&2
+if [ -d "$APPDIR/python/bin" ]; then
+  for candidate in "$APPDIR"/python/bin/python3.* "$APPDIR"/python/bin/python3 "$APPDIR"/python/bin/python; do
+    if [ -x "$candidate" ]; then
+      PYTHON_BIN="$candidate"
+      PYTHONHOME_DIR="$APPDIR/python"
+      break
+    fi
+  done
+fi
+
+if [ -z "$PYTHON_BIN" ] && [ -x "$APPDIR/.venv/bin/python" ]; then
+  PYTHON_BIN="$APPDIR/.venv/bin/python"
+fi
+
+if [ -z "$PYTHON_BIN" ]; then
+  echo "[Little Alphaxiv] Missing bundled Python runtime." >&2
   echo "[Little Alphaxiv] Rebuild the Linux package with packaging/linux/build-linux-app.sh." >&2
   exit 1
+fi
+
+if [ -n "$PYTHONHOME_DIR" ]; then
+  export PYTHONHOME="$PYTHONHOME_DIR"
+  for site_packages in "$PYTHONHOME_DIR"/lib/python*/site-packages; do
+    if [ -d "$site_packages" ]; then
+      export PYTHONPATH="${site_packages}${PYTHONPATH:+:$PYTHONPATH}"
+    fi
+  done
 fi
 
 choose_data_dir() {
