@@ -214,17 +214,19 @@ provider, and chat. Everyone's data is independent and invisible to others.
 
 ### D. Portable Linux app (no Docker)
 
-For Linux users who do not want Docker, we provide a single `.run` app file:
+For Linux users who do not want Docker, each release provides a single `.run`
+app file on the
+[GitHub releases page](https://github.com/DylanUnicorn/little-alphaxiv/releases):
 
 ```text
-app/LittleAlphaxiv-<version>-x86_64.run
+LittleAlphaxiv-<version>-x86_64.run
 ```
 
-Run it directly:
+Download it, grant execute permission, and run it directly:
 
 ```bash
-chmod +x app/LittleAlphaxiv-<version>-x86_64.run
-./app/LittleAlphaxiv-<version>-x86_64.run
+chmod +x LittleAlphaxiv-<version>-x86_64.run
+./LittleAlphaxiv-<version>-x86_64.run
 ```
 
 On first launch it opens Little Alphaxiv in your browser. The app keeps its
@@ -235,7 +237,7 @@ cache, and settings under `$XDG_DATA_HOME/little-alphaxiv` or
 To use a different port:
 
 ```bash
-LAX_PORT=8080 ./app/LittleAlphaxiv-<version>-x86_64.run
+LAX_PORT=8080 ./LittleAlphaxiv-<version>-x86_64.run
 ```
 
 ## 🔑 Configure a provider

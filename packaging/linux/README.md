@@ -1,16 +1,16 @@
 # Linux App
 
-Linux users receive a single `.run` file:
+Linux users receive a single `.run` file from the release page:
 
 ```text
-app/LittleAlphaxiv-<version>-x86_64.run
+LittleAlphaxiv-<version>-x86_64.run
 ```
 
 Run it directly:
 
 ```bash
-chmod +x app/LittleAlphaxiv-<version>-x86_64.run
-./app/LittleAlphaxiv-<version>-x86_64.run
+chmod +x LittleAlphaxiv-<version>-x86_64.run
+./LittleAlphaxiv-<version>-x86_64.run
 ```
 
 The app opens Little Alphaxiv in the browser and stores user data under
