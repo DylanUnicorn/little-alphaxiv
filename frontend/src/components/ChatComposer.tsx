@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useEffect, useCallback, useState } from "react";
 import type { Attachment } from "../types";
 import { computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
+import { useSettings } from "../store/settings";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
 import { Tooltip } from "./Tooltip";
@@ -56,6 +57,8 @@ export function ChatComposer({
   systemPrompt,
 }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const anysearch = useSettings((s) => s.searchSources.anysearch);
+  const setSearchSources = useSettings((s) => s.setSearchSources);
 
   // Drag-and-drop state. dragCounter ref solves the nested-element flicker:
   // dragenter on a child fires before dragleave on the parent, so counting
@@ -216,6 +219,24 @@ export function ChatComposer({
 
       <div className="chat-composer-bar">
         <div className="chat-composer-bar-left">
+          <ModelSelectPill
+            models={models}
+            value={currentModel}
+            onChange={onModelChange}
+            disabled={busy}
+          />
+          <Tooltip label={anysearch.enabled ? "Disable web search" : "Enable web search"} side="top">
+            <button
+              type="button"
+              className={`composer-search-pill${anysearch.enabled ? " active" : ""}`}
+              onClick={() => setSearchSources({ anysearch: { ...anysearch, enabled: !anysearch.enabled } })}
+              aria-pressed={anysearch.enabled}
+              disabled={busy}
+            >
+              <span className="composer-search-icon" aria-hidden>◎</span>
+              <span>Search</span>
+            </button>
+          </Tooltip>
           <Tooltip label="Attach image" side="top">
             <button
               type="button"
@@ -223,16 +244,9 @@ export function ChatComposer({
               onClick={onAttach}
               disabled={busy}
             >
-              {/* circle wrapping a logo */}
               <span className="composer-attach-glyph" aria-hidden>＋</span>
             </button>
           </Tooltip>
-          <ModelSelectPill
-            models={models}
-            value={currentModel}
-            onChange={onModelChange}
-            disabled={busy}
-          />
         </div>
         <div className="chat-composer-bar-right">
           <ContextRing conversationId={conversationId} systemPrompt={systemPrompt} />
@@ -243,8 +257,7 @@ export function ChatComposer({
               onClick={busy ? (onStop ?? (() => {})) : onSend}
               disabled={busy ? false : !canSend}
             >
-              {/* arrow = send, square = stop (visible while assistant is replying) */}
-              <span className="composer-send-glyph" aria-hidden>{busy ? "■" : "➤"}</span>
+              <span className="composer-send-glyph" aria-hidden>{busy ? "■" : "↑"}</span>
             </button>
           </Tooltip>
         </div>

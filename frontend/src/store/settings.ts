@@ -59,6 +59,14 @@ export interface AiOutputFormat {
 }
 
 export const DEFAULT_AI_OUTPUT_FORMAT: AiOutputFormat = {
+  fontSize: 15,
+  lineHeight: 1.54,
+  paragraphSpacing: 10,
+  mathScale: 1.08,
+  enableMathType: true,
+};
+
+const LEGACY_DEFAULT_AI_OUTPUT_FORMAT: AiOutputFormat = {
   fontSize: 14,
   lineHeight: 1.42,
   paragraphSpacing: 6,
@@ -110,7 +118,7 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function coerceAiOutputFormat(value: unknown): AiOutputFormat {
   const obj = value && typeof value === "object" ? value as Partial<AiOutputFormat> : {};
-  return {
+  const next = {
     fontSize: clampNumber(obj.fontSize, DEFAULT_AI_OUTPUT_FORMAT.fontSize, 12, 18),
     lineHeight: clampNumber(obj.lineHeight, DEFAULT_AI_OUTPUT_FORMAT.lineHeight, 1.2, 1.8),
     paragraphSpacing: clampNumber(obj.paragraphSpacing, DEFAULT_AI_OUTPUT_FORMAT.paragraphSpacing, 0, 14),
@@ -119,6 +127,15 @@ function coerceAiOutputFormat(value: unknown): AiOutputFormat {
       ? obj.enableMathType
       : DEFAULT_AI_OUTPUT_FORMAT.enableMathType,
   };
+
+  const isLegacyDefault =
+    next.fontSize === LEGACY_DEFAULT_AI_OUTPUT_FORMAT.fontSize &&
+    next.lineHeight === LEGACY_DEFAULT_AI_OUTPUT_FORMAT.lineHeight &&
+    next.paragraphSpacing === LEGACY_DEFAULT_AI_OUTPUT_FORMAT.paragraphSpacing &&
+    next.mathScale === LEGACY_DEFAULT_AI_OUTPUT_FORMAT.mathScale &&
+    next.enableMathType === LEGACY_DEFAULT_AI_OUTPUT_FORMAT.enableMathType;
+
+  return isLegacyDefault ? DEFAULT_AI_OUTPUT_FORMAT : next;
 }
 
 // Debounced settings PATCH (theme/searchSources/zotero/providerModels) so rapid
