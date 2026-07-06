@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!-- Test-only page (NOT in the production build — vite only builds
+     index.html). Mounts ChatComposer in isolation so
+     tools/drive_attachment_remove.py can regress the attachment-remove ×
+     button without the full app rig (no backend/auth/LLM). Open at
+     /attachment-test.html on the dev server. -->
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Attachment remove test</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React, { useState } from "react";
+      import { createRoot } from "react-dom/client";
+      import { ChatComposer } from "/src/components/ChatComposer.tsx";
+
+      // Tiny inline SVG data URL so the test needs no network assets.
+      const SAMPLE_IMG =
+        "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='56'><rect width='56' height='56' fill='%234488cc'/><text x='6' y='34' font-size='20' fill='white'>A</text></svg>";
+
+      function App() {
+        const [atts, setAtts] = useState([
+          { type: "image", data_url: SAMPLE_IMG, name: "test.png" },
+        ]);
+        return React.createElement(ChatComposer, {
+          value: "",
+          onValueChange: () => {},
+          onSend: () => {},
+          onKeyDown: () => {},
+          onPaste: () => {},
+          onAttach: () => {},
+          onDropFiles: () => {},
+          busy: false,
+          placeholder: "test",
+          attachments: atts,
+          onRemoveAttachment: (i) =>
+            setAtts((prev) => prev.filter((_, j) => j !== i)),
+          models: [{ id: "m1" }],
+          currentModel: "m1",
+          onModelChange: () => {},
+          conversationId: "test-conv",
+          systemPrompt: "",
+        });
+      }
+
+      createRoot(document.getElementById("root")).render(
+        React.createElement(App)
+      );
+    </script>
+  </body>
+</html>

@@ -204,14 +204,14 @@ export function ChatComposer({
           {attachments.map((att, i) => (
             <div key={i} className="composer-attachment">
               <img src={att.data_url} alt={att.name || "attachment"} />
-              <Tooltip label="Remove attachment" side="top">
-                <button
-                  className="composer-attachment-remove"
-                  onClick={() => onRemoveAttachment(i)}
-                >
-                  ×
-                </button>
-              </Tooltip>
+              <button
+                className="composer-attachment-remove"
+                onClick={() => onRemoveAttachment(i)}
+                aria-label="Remove attachment"
+                title="Remove attachment"
+              >
+                ×
+              </button>
             </div>
           ))}
         </div>

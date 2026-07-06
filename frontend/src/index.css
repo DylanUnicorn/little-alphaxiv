@@ -539,6 +539,18 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   border-radius: 50%; border: none; background: rgba(0,0,0,0.7); color: white;
   cursor: pointer; font-size: 12px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
+  opacity: 0; z-index: 2;
+  transition: opacity var(--transition-fast);
+}
+/* Show the remove × on hover/focus so the thumbnail stays clean until the
+   user moves to it. The button is a direct child of .composer-attachment
+   (NOT wrapped in Tooltip) so its absolute positioning anchors to the
+   56×56 .composer-attachment box instead of a 0×0 tooltip-host span that
+   overflow:hidden would clip off-screen. */
+.composer-attachment:hover .composer-attachment-remove,
+.composer-attachment-remove:focus-visible,
+.composer-attachment-remove:hover {
+  opacity: 1;
 }
 
 /* Fixed bottom bar — no divider above it. */
