@@ -17,6 +17,7 @@ import { runConversation, generateConversationTitle } from "../lib/llm";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
 import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
+import { consumePendingPrompt } from "../lib/selectedTextAskAi";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
 import { PaperCard } from "./PaperCard";
@@ -40,6 +41,8 @@ interface Props {
   conversationId: string;
   systemPrompt?: string;
   showPaperLinks?: boolean;
+  pendingPrompt?: string | null;
+  onPendingPromptConsumed?: () => void;
 }
 
 /** After the first turn of a conversation, ask the configured model to summarize
@@ -92,7 +95,13 @@ async function maybeSummarizeTitle(args: {
   }
 }
 
-export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true }: Props) {
+export function ChatPanel({
+  conversationId,
+  systemPrompt,
+  showPaperLinks = true,
+  pendingPrompt,
+  onPendingPromptConsumed,
+}: Props) {
   const navigate = useNavigate();
   const conv = useConversations((s) => s.conversations.find((c) => c.id === conversationId));
   const appendMessages = useConversations((s) => s.appendMessages);
@@ -288,9 +297,10 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     abortRef.current?.abort();
   }
 
-  async function send(override?: string) {
+  async function send(override?: string, includeAttachments = true) {
     const text = (override ?? input).trim();
-    if ((!text && attachments.length === 0) || busy) return;
+    const sentAttachments = includeAttachments ? attachments : [];
+    if ((!text && sentAttachments.length === 0) || busy) return;
     if (!provider) {
       setStatus("No provider configured. Add one in Settings.");
       return;
@@ -299,11 +309,13 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     const userMsg: ChatMessage = {
       role: "user",
       content: text || null,
-      ...(attachments.length > 0 ? { attachments: [...attachments] } : {}),
+      ...(sentAttachments.length > 0 ? { attachments: [...sentAttachments] } : {}),
     };
     await appendMessages(c.id, [userMsg]);
-    setInput("");
-    setAttachments([]);
+    if (includeAttachments) {
+      setInput("");
+      setAttachments([]);
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
@@ -314,7 +326,7 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
     // assistant replies (see maybeSummarizeTitle below).
     const wasFirstTurn = c.messages.length === 0;
     if (wasFirstTurn) {
-      rename(c.id, text.slice(0, 48) || (attachments.length > 0 ? "Image chat" : "New chat"));
+      rename(c.id, text.slice(0, 48) || (sentAttachments.length > 0 ? "Image chat" : "New chat"));
     }
 
     let buf = "";
@@ -462,6 +474,13 @@ export function ChatPanel({ conversationId, systemPrompt, showPaperLinks = true 
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    const next = consumePendingPrompt(pendingPrompt, busy);
+    if (!next.consumed || !next.prompt) return;
+    onPendingPromptConsumed?.();
+    void send(next.prompt, false);
+  }, [pendingPrompt, busy]); // send is recreated per render but reads current conversation state.
 
   function onKey(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {

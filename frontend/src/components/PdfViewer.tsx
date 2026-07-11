@@ -27,6 +27,7 @@ import { ZoteroPanel } from "./ZoteroPanel";
 import { useZoteroNoteSync } from "../hooks/useZoteroNoteSync";
 import { Tooltip } from "./Tooltip";
 import { useAnnotations } from "../store/annotations";
+import { SelectedTextAskAi } from "./SelectedTextAskAi";
 import type { PageSize } from "../types";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
@@ -44,9 +45,10 @@ interface Props {
   pdfUrlForId?: string | null;
   onLoaded?: (numPages: number) => void;
   onTextExtracted?: (text: string) => void;
+  onAskSelectedText?: (prompt: string) => void;
 }
 
-export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTextExtracted }: Props) {
+export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTextExtracted, onAskSelectedText }: Props) {
   const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [error, setError] = useState("");
@@ -64,6 +66,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   const [zoom, setZoom] = useState(1); // 1 = fit width
   const [showZotero, setShowZotero] = useState(false);
   const [panning, setPanning] = useState(false);
+  const highlightOn = useAnnotations((s) => s.highlightOn);
   const containerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
   const panRef = useRef<{
@@ -626,6 +629,10 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
               onRendered={i === 0 ? markFirstPageRendered : undefined}
             />
           ))}
+        <SelectedTextAskAi
+          disabled={!onAskSelectedText || highlightOn}
+          onAsk={(prompt) => onAskSelectedText?.(prompt)}
+        />
       </div>
       {showZotero && <ZoteroPanel arxivId={arxivId} onClose={() => setShowZotero(false)} />}
     </div>
@@ -818,7 +825,7 @@ function PdfPage({
   }, [doc, pageNumber, visible, zoom, containerWidth]);
 
   return (
-    <div className="pdf-page-wrap" ref={wrapRef}>
+    <div className="pdf-page-wrap" ref={wrapRef} data-page-number={pageNumber}>
       <div className="pdf-page-canvas-wrap" style={{ minHeight: rendered ? undefined : 1000 }}>
         <canvas ref={canvasRef} />
         <HighlightLayer pageNumber={pageNumber} pageSize={pageSize} />

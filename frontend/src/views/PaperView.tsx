@@ -24,6 +24,7 @@ import { pdfUrlForOa, paperUploadUrl } from "../lib/api";
 import * as db from "../lib/db";
 import { ensurePaperMeta, hasRealTitle, paperThreadTitle } from "../lib/paperMeta";
 import { resolvePdfSource } from "../lib/paperSource";
+import { pendingPromptForConversation, type PendingSelectedTextPrompt } from "../lib/selectedTextAskAi";
 import type { StylePreset } from "../types";
 
 export function PaperView() {
@@ -44,6 +45,7 @@ export function PaperView() {
   const [convIdState, setConvId] = useState<string | null>(convId ?? null);
   const [fullText, setFullText] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(true);
+  const [pendingSelectedTextPrompt, setPendingSelectedTextPrompt] = useState<PendingSelectedTextPrompt | null>(null);
   // pdfUrlOverride + pdfUrlForId are a pair: the override is the URL to load
   // (when the paper isn't a plain arXiv paper), and pdfUrlForId is the arxivId
   // that override was resolved FOR. PdfViewer refuses to call getDocument until
@@ -60,6 +62,7 @@ export function PaperView() {
 
   useEffect(() => {
     if (!arxivId) return;
+    setPendingSelectedTextPrompt(null);
     let cancelled = false;
     db.getPaper(arxivId).then(async (p) => {
       if (cancelled) return;
@@ -200,7 +203,15 @@ export function PaperView() {
   return (
     <main className="main-pane paper-view">
       <ResizablePanels
-        left={<PdfViewer arxivId={arxivId} pdfUrlOverride={pdfUrlOverride} pdfUrlForId={pdfUrlForId} onTextExtracted={onTextExtracted} />}
+        left={<PdfViewer
+          arxivId={arxivId}
+          pdfUrlOverride={pdfUrlOverride}
+          pdfUrlForId={pdfUrlForId}
+          onTextExtracted={onTextExtracted}
+          onAskSelectedText={(prompt) => {
+            if (convIdState) setPendingSelectedTextPrompt({ conversationId: convIdState, prompt });
+          }}
+        />}
         right={
           <div className="chat-col-inner">
             {convIdState && (
@@ -225,7 +236,13 @@ export function PaperView() {
               <>
                 {extracting && <div className="paper-status">Reading paper for context...</div>}
                 {convIdState ? (
-                  <ChatPanel conversationId={convIdState} systemPrompt={systemPrompt} showPaperLinks={false} />
+                  <ChatPanel
+                    conversationId={convIdState}
+                    systemPrompt={systemPrompt}
+                    showPaperLinks={false}
+                    pendingPrompt={pendingPromptForConversation(pendingSelectedTextPrompt, convIdState)}
+                    onPendingPromptConsumed={() => setPendingSelectedTextPrompt(null)}
+                  />
                 ) : (
                   <div className="chat-shell"><div className="chat-empty">Starting discussion...</div></div>
                 )}
