@@ -29,3 +29,9 @@ export function selectedPdfTextPayload(
   if (!normalized || !startPage || startPage !== endPage) return null;
   return { text: normalized, pageNumber: startPage };
 }
+
+export function consumePendingPrompt(prompt: string | null | undefined, busy: boolean) {
+  const text = prompt?.trim();
+  if (busy || !text) return { prompt: null, consumed: false };
+  return { prompt: text, consumed: true };
+}

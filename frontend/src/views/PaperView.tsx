@@ -44,6 +44,7 @@ export function PaperView() {
   const [convIdState, setConvId] = useState<string | null>(convId ?? null);
   const [fullText, setFullText] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(true);
+  const [pendingSelectedTextPrompt, setPendingSelectedTextPrompt] = useState<string | null>(null);
   // pdfUrlOverride + pdfUrlForId are a pair: the override is the URL to load
   // (when the paper isn't a plain arXiv paper), and pdfUrlForId is the arxivId
   // that override was resolved FOR. PdfViewer refuses to call getDocument until
@@ -60,6 +61,7 @@ export function PaperView() {
 
   useEffect(() => {
     if (!arxivId) return;
+    setPendingSelectedTextPrompt(null);
     let cancelled = false;
     db.getPaper(arxivId).then(async (p) => {
       if (cancelled) return;
@@ -200,7 +202,13 @@ export function PaperView() {
   return (
     <main className="main-pane paper-view">
       <ResizablePanels
-        left={<PdfViewer arxivId={arxivId} pdfUrlOverride={pdfUrlOverride} pdfUrlForId={pdfUrlForId} onTextExtracted={onTextExtracted} />}
+        left={<PdfViewer
+          arxivId={arxivId}
+          pdfUrlOverride={pdfUrlOverride}
+          pdfUrlForId={pdfUrlForId}
+          onTextExtracted={onTextExtracted}
+          onAskSelectedText={setPendingSelectedTextPrompt}
+        />}
         right={
           <div className="chat-col-inner">
             {convIdState && (
@@ -225,7 +233,13 @@ export function PaperView() {
               <>
                 {extracting && <div className="paper-status">Reading paper for context...</div>}
                 {convIdState ? (
-                  <ChatPanel conversationId={convIdState} systemPrompt={systemPrompt} showPaperLinks={false} />
+                  <ChatPanel
+                    conversationId={convIdState}
+                    systemPrompt={systemPrompt}
+                    showPaperLinks={false}
+                    pendingPrompt={pendingSelectedTextPrompt}
+                    onPendingPromptConsumed={() => setPendingSelectedTextPrompt(null)}
+                  />
                 ) : (
                   <div className="chat-shell"><div className="chat-empty">Starting discussion...</div></div>
                 )}
