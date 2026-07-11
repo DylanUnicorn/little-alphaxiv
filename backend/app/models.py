@@ -68,6 +68,7 @@ class ProviderRow(SQLModel, table=True):
     base_url: str
     api_key_enc: str  # Fernet ciphertext — never plaintext
     model: str
+    api_format: str = "chat_completions"
     vision_model: str | None = None
     is_default: bool = False
     created_at: int = Field(default_factory=_now)
