@@ -6,10 +6,22 @@ permissive CORS + the right content-type / range support.
 
 Basic single-range support is included so pdf.js can request byte ranges
 (needed for lazy loading of large PDFs).
+
+Cold-open streaming: on a cache miss the arXiv download is streamed through
+to the client chunk-by-chunk (instead of buffering the whole file in memory
+before responding) so pdf.js's onProgress fires and the user sees a real
+download % rather than a frozen "Loading PDF…" spinner. The stream is teed
+to a .part file that is atomically renamed to the cache on completion, so the
+next open is a warm disk hit (served with range support). Accept-Ranges is
+NOT advertised on the streaming 200 — pdf.js then uses progressive full-body
+loading for that request; range seeking kicks in on the next (cache-hit)
+request via serve_pdf_bytes.
 """
 from __future__ import annotations
 
 import hashlib
+import os
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -40,24 +52,6 @@ def _cache_path(arxiv_id: str) -> Path:
     if not safe:
         raise HTTPException(status_code=400, detail="invalid arxiv id")
     return _CACHE_DIR / f"{safe}.pdf"
-
-
-async def _fetch_from_arxiv(arxiv_id: str) -> bytes:
-    base_id = arxiv_id.split("v")[0]
-    url = f"https://arxiv.org/pdf/{base_id}.pdf"
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-        try:
-            resp = await client.get(
-                url, headers={"User-Agent": "little-alphaxiv/0.1"}
-            )
-        except httpx.RequestError as exc:
-            raise HTTPException(status_code=502, detail=f"arxiv pdf error: {exc}") from exc
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"arxiv pdf returned {resp.status_code} for {url}",
-        )
-    return resp.content
 
 
 def _cache_path_for_url(url: str) -> Path:
@@ -132,16 +126,101 @@ async def get_pdf(
     range_header: str | None = Header(default=None, alias="Range"),
 ) -> Any:
     path = _cache_path(arxiv_id)
-    if not path.exists():
-        data = await _fetch_from_arxiv(arxiv_id)
+    if path.exists():
+        # Warm: serve from disk with range support so pdf.js can seek fast.
+        return serve_pdf_bytes(path.read_bytes(), range_header)
+    # Cold: stream the arXiv download through to the client (tee to cache) so
+    # pdf.js gets bytes progressively + onProgress fires (real download %).
+    return await _stream_arxiv_pdf(arxiv_id, path)
+
+
+def _commit_part(part: Path, cache_path: Path, expected: int | None) -> None:
+    """Promote a .part download to the cache atomically, iff its size matches
+    the declared Content-Length (or the length is unknown). A mismatched/partial
+    .part is dropped so the next open retries instead of caching a truncated
+    PDF. Best-effort: any OSError (stat/rename/unlink) drops the .part — the
+    client already received the bytes either way; the cache is just a bonus.
+    """
+    try:
+        if expected is not None and part.stat().st_size != expected:
+            part.unlink(missing_ok=True)
+            return
+        os.replace(part, cache_path)
+    except OSError:
+        part.unlink(missing_ok=True)
+
+
+async def _stream_arxiv_pdf(arxiv_id: str, cache_path: Path) -> StreamingResponse:
+    """Stream an arXiv PDF to the client while teeing it into the disk cache.
+
+    On a cache miss we forward arXiv's bytes chunk-by-chunk so pdf.js receives
+    them progressively and its onProgress fires (real download %). The same
+    bytes are written to a unique .part file and atomically renamed to
+    cache_path on completion — the next open hits the warm disk cache (range
+    served via serve_pdf_bytes). No Accept-Ranges is advertised on this 200 so
+    pdf.js uses progressive full-body loading for this request.
+    """
+    base_id = arxiv_id.split("v")[0]
+    url = f"https://arxiv.org/pdf/{base_id}.pdf"
+    client = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+    try:
+        resp = await client.send(
+            client.build_request("GET", url, headers={"User-Agent": "little-alphaxiv/0.1"}),
+            stream=True,
+        )
+    except httpx.RequestError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"arxiv pdf error: {exc}") from exc
+    if resp.status_code != 200:
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(
+            status_code=502,
+            detail=f"arxiv pdf returned {resp.status_code} for {url}",
+        )
+
+    headers: dict[str, str] = {"Cache-Control": "public, max-age=86400"}
+    cl = resp.headers.get("content-length")
+    if cl and cl.isdigit():
+        headers["Content-Length"] = cl  # lets pdf.js show a % (absent → bytes only)
+
+    # Unique .part per stream: two concurrent cold opens of the same paper would
+    # otherwise truncate each other's write. Both pull identical bytes from
+    # arXiv, so last-writer-wins on the atomic rename is safe.
+    part = cache_path.with_name(f"{cache_path.name}.{secrets.token_hex(4)}.part")
+
+    async def gen():
+        expected = int(cl) if (cl and cl.isdigit()) else None
+        committed = False
         try:
-            path.write_bytes(data)
-        except OSError:
-            # cache write is best-effort; serve from memory if disk fails
-            return serve_pdf_bytes(data, range_header)
-    else:
-        data = path.read_bytes()
-    return serve_pdf_bytes(data, range_header)
+            # `with` keeps the file open across yields (the client may read
+            # slowly) and closes it on normal exit OR on cancellation
+            # (GeneratorExit propagates through __exit__ → file closed before
+            # we rename/unlink — required on Windows where an open file can't
+            # be renamed or deleted).
+            with open(part, "wb") as f:
+                async for chunk in resp.aiter_bytes():
+                    f.write(chunk)
+                    yield chunk
+            # Loop completed normally → commit (size-checked).
+            _commit_part(part, cache_path, expected)
+            committed = cache_path.exists()
+        finally:
+            # A cancellation or a post-download protocol error (real uvicorn +
+            # `connection: close` surfaces one after the last chunk) can land
+            # between the final yield and the commit above — observed in the
+            # real-arXiv smoke: 2.2MB streamed to the client but the cache
+            # stayed empty. If the .part is complete (size matches the declared
+            # length) and we haven't committed, commit it here so a fully-
+            # downloaded file still populates the cache. A partial .part
+            # (mid-download cancellation) is dropped so the next open retries
+            # instead of caching a truncated PDF.
+            if not committed and part.exists() and not cache_path.exists():
+                _commit_part(part, cache_path, expected)
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(gen(), media_type="application/pdf", headers=headers)
 
 
 def serve_pdf_bytes(data: bytes, range_header: str | None) -> Response:
