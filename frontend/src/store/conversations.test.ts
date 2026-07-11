@@ -45,6 +45,31 @@ describe("create({ reuseEmpty: true })", () => {
     expect(useConversations.getState().conversations).toHaveLength(1);
   });
 
+  it("adopts the current default provider when reusing an empty paper conversation", async () => {
+    const emptyPaper: Conversation = {
+      id: "paper-empty-provider",
+      title: "Paper discussion",
+      type: "paper",
+      paper_id: "2401.00001",
+      provider_id: "provider-a",
+      messages: [],
+      created_at: STALE_TS,
+      updated_at: STALE_TS,
+    };
+    useConversations.setState({ conversations: [emptyPaper] });
+
+    const reused = await useConversations.getState().create({
+      type: "paper",
+      paperId: "2401.00001",
+      providerId: "provider-b",
+      reuseEmpty: true,
+    });
+
+    expect(reused.id).toBe("paper-empty-provider");
+    expect(reused.provider_id).toBe("provider-b");
+    expect(useConversations.getState().conversations[0].provider_id).toBe("provider-b");
+  });
+
   it("refreshes updated_at on reuse so the row lands in Today, not a stale bucket", async () => {
     const stale = emptyGeneral("stale-2");
     useConversations.setState({ conversations: [stale] });

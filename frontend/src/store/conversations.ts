@@ -137,7 +137,15 @@ export const useConversations = create<ConvState>((set, get) => ({
         // just-clicked "+ New chat" (or just-opened paper) under a stale
         // recency header. created_at stays put (true creation moment). Not
         // persisted: empty conversations remain in-memory until first message.
-        const refreshed: Conversation = { ...existing, updated_at: Date.now() };
+        const refreshed: Conversation = {
+          ...existing,
+          // Empty threads have not started a provider-bound exchange yet. When
+          // Settings changes the default, reusing one must pick up that new
+          // default instead of retaining the provider selected at its original
+          // creation time. Persisted/non-empty threads stay pinned as-is.
+          provider_id: opts.providerId,
+          updated_at: Date.now(),
+        };
         set((s) => ({
           conversations: [refreshed, ...s.conversations.filter((c) => c.id !== refreshed.id)],
           activeId: refreshed.id,
