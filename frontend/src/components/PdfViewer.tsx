@@ -51,6 +51,16 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   const [numPages, setNumPages] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // Download progress from pdf.js's loading-task onProgress ({loaded,total}).
+  // total is undefined when the server streams without Content-Length → we show
+  // MB-loaded instead of a %. null until the first byte arrives.
+  const [progress, setProgress] = useState<{ loaded: number; total?: number } | null>(null);
+  // Flips true once page 1 finishes its first canvas+textlayer render. The
+  // full-text extraction effect waits on this so it never contends with the
+  // first-page paint on the pdf.js worker — the user sees page 1 immediately,
+  // then we mine text for the chat context in the background.
+  const [firstPageRendered, setFirstPageRendered] = useState(false);
+  const markFirstPageRendered = useCallback(() => setFirstPageRendered(true), []);
   const [zoom, setZoom] = useState(1); // 1 = fit width
   const [showZotero, setShowZotero] = useState(false);
   const [panning, setPanning] = useState(false);
@@ -85,6 +95,8 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setProgress(null);
+    setFirstPageRendered(false);
     setError("");
     setDoc(null);
     setNumPages(0);
@@ -97,9 +109,16 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
     // coordinates (ghost annotations). `loading` stays true and doc stays null
     // (no PDF to draw on) until the resolution lands and re-triggers this effect.
     if (pdfUrlForId !== arxivId) return;
-    pdfjsLib
-      .getDocument({ url: pdfUrlOverride || pdfUrl(arxivId) })
-      .promise.then(async (d) => {
+    const task = pdfjsLib.getDocument({ url: pdfUrlOverride || pdfUrl(arxivId) });
+    // Real download progress: the backend streams the arXiv PDF on a cache miss
+    // (Content-Length forwarded), so this fires chunk-by-chunk and the spinner
+    // shows "Loading PDF… 42%" instead of a frozen string. On a warm (cached)
+    // load it fires once or not at all — the spinner clears at getDocument resolve.
+    task.onProgress = ({ loaded, total }: { loaded: number; total: number }) => {
+      if (!cancelled) setProgress({ loaded, total: total || undefined });
+    };
+    task.promise
+      .then((d) => {
         if (cancelled) {
           d.destroy();
           return;
@@ -108,28 +127,12 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
         setDoc(d);
         setNumPages(d.numPages);
         onLoaded?.(d.numPages);
-        // The PDF is ready to render NOW. Clear the spinner BEFORE the (slow)
-        // full-text extraction so the user sees the first page immediately
-        // instead of staring at "Loading PDF…" while we mine text for the
-        // chat context. Extraction below is best-effort and must not block
-        // the loading indicator or the first-page render.
+        // The PDF is ready to render NOW. Clear the spinner so the user sees
+        // the first page immediately. Full-text extraction (for the chat
+        // context) runs in a SEPARATE effect, deferred until page 1 has
+        // actually rendered, so it never contends with the first-page paint
+        // on the pdf.js worker.
         setLoading(false);
-
-        try {
-          // Repeat visit? The full text is already cached in IndexedDB (saved
-          // by PaperView's onTextExtracted last time). Re-extracting would
-          // re-walk every page on the worker for nothing — skip it.
-          const cached = await db.getPaper(arxivId);
-          if (cancelled) return;
-          if (cached?.full_text) {
-            onTextExtracted?.(cached.full_text);
-            return;
-          }
-          const text = await extractText(d);
-          if (!cancelled) onTextExtracted?.(text);
-        } catch {
-          /* extraction is best-effort */
-        }
       })
       .catch((e) => !cancelled && setError(String(e?.message || e)))
       .finally(() => !cancelled && setLoading(false));
@@ -140,6 +143,42 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arxivId, pdfUrlOverride, pdfUrlForId]);
+
+  // Full-text extraction for the chat context. Deferred until page 1 has
+  // rendered (so it never competes with the first-page paint on the pdf.js
+  // worker) with a 3s fallback so it always eventually runs. Cancelable
+  // between pages + yields each page so scrolling stays smooth mid-extraction.
+  // Best-effort: never blocks the loading indicator or the render.
+  useEffect(() => {
+    if (!doc || !arxivId) return;
+    if (!firstPageRendered) {
+      // Page 1 hasn't painted yet — wait for the signal (or the fallback) so
+      // extraction doesn't flood the worker queue behind the first-page render.
+      // The fallback covers PDFs whose page 1 never becomes visible (e.g. the
+      // panel is collapsed) so the chat context still gets populated.
+      const fallback = window.setTimeout(() => setFirstPageRendered(true), 3000);
+      return () => window.clearTimeout(fallback);
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Repeat visit? The full text is already cached (saved last time).
+        // Re-extracting would re-walk every page on the worker for nothing.
+        const cached = await db.getPaper(arxivId);
+        if (cancelled) return;
+        if (cached?.full_text) {
+          onTextExtracted?.(cached.full_text);
+          return;
+        }
+        const text = await extractText(doc, () => cancelled);
+        if (text && !cancelled) onTextExtracted?.(text);
+      } catch {
+        /* extraction is best-effort */
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, arxivId, firstPageRendered]);
 
   // --- Per-paper scroll-position memory (save) ---
   // Debounced (rAF) save of the topmost visible page + fraction on scroll.
@@ -565,7 +604,16 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
         className={`pdf-scroll ${zoom > 1 ? "pannable" : ""} ${panning ? "panning" : ""}`}
         ref={containerRef}
       >
-        {loading && <div className="pdf-loading">Loading PDF…</div>}
+        {loading && (
+          <div className="pdf-loading">
+            Loading PDF…
+            {progress
+              ? progress.total
+                ? ` ${Math.round((progress.loaded / progress.total) * 100)}%`
+                : ` ${(progress.loaded / 1048576).toFixed(1)} MB`
+              : ""}
+          </div>
+        )}
         {error && <div className="pdf-error">Failed to load PDF: {error}</div>}
         {doc &&
           Array.from({ length: numPages }, (_, i) => (
@@ -575,6 +623,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
               pageNumber={i + 1}
               zoom={zoom}
               containerWidth={containerRef.current?.clientWidth ?? 800}
+              onRendered={i === 0 ? markFirstPageRendered : undefined}
             />
           ))}
       </div>
@@ -583,14 +632,25 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   );
 }
 
-async function extractText(doc: pdfjsLib.PDFDocumentProxy): Promise<string> {
+async function extractText(
+  doc: pdfjsLib.PDFDocumentProxy,
+  isCancelled: () => boolean,
+): Promise<string | null> {
   const pages: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
+    if (isCancelled()) return null;
     const page = await doc.getPage(i);
+    if (isCancelled()) { page.cleanup(); return null; }
     const content = await page.getTextContent();
+    if (isCancelled()) { page.cleanup(); return null; }
     const lines = groupIntoLines(content.items);
     pages.push(`--- Page ${i} ---\n${lines.join("\n")}`);
     page.cleanup();
+    // Yield to the event loop so the pdf.js worker can service page renders /
+    // scroll-driven text layers between extraction pages. Without this, mining
+    // a 30-page paper's text floods the worker queue and a just-scrolled-into-
+    // view page paints behind a wall of getTextContent round-trips.
+    await new Promise((r) => setTimeout(r, 0));
   }
   return pages.join("\n\n");
 }
@@ -646,11 +706,13 @@ function PdfPage({
   pageNumber,
   zoom,
   containerWidth,
+  onRendered,
 }: {
   doc: pdfjsLib.PDFDocumentProxy;
   pageNumber: number;
   zoom: number;
   containerWidth: number;
+  onRendered?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -658,6 +720,11 @@ function PdfPage({
   const [visible, setVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
   const [pageSize, setPageSize] = useState<PageSize>({ w: 0, h: 0 });
+  // Fires onRendered once, after the FIRST canvas+textlayer paint. Zoom changes
+  // re-run the render effect but don't re-fire (renderedOnceRef guards it) —
+  // PdfViewer uses the page-1 signal to start background text extraction only
+  // after the user can actually see the PDF.
+  const renderedOnceRef = useRef(false);
 
   // Lazy-mount: only render when the page scrolls near the viewport.
   useEffect(() => {
@@ -738,6 +805,10 @@ function PdfPage({
       // placeholder). Restoring a saved fractional scroll position waits on
       // this before applying its delta.
       wrapRef.current?.setAttribute("data-rendered", "1");
+      if (!renderedOnceRef.current) {
+        renderedOnceRef.current = true;
+        onRendered?.();
+      }
       page.cleanup();
     })();
     return () => {
