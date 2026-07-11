@@ -46,7 +46,7 @@ def new_page(pw, headless=True):
     return page
 
 
-E2E_USER = "e2e_drive"
+E2E_USER = "e2e_drive_v2"
 E2E_PASS = "testtest123"
 BACK = "http://127.0.0.1:8000"
 
@@ -60,23 +60,29 @@ def seed_provider(page):
     """
     import json
     # Register (idempotent: ignore 409 if the user already exists).
-    page.request.post(
+    register = page.request.post(
         f"{BACK}/api/auth/register",
-        data=json.dumps({"username": E2E_USER, "password": E2E_PASS}),
+        data=json.dumps({"username": E2E_USER, "email": "e2e_drive_v2@example.com", "password": E2E_PASS}),
         headers={"Content-Type": "application/json"},
     )
     # Login to set the cookie in the browser context.
-    page.request.post(
+    login = page.request.post(
         f"{BACK}/api/auth/login",
         data=json.dumps({"username": E2E_USER, "password": E2E_PASS}),
         headers={"Content-Type": "application/json"},
     )
     # Add the mock provider (idempotent via fixed id 'mock-prov').
-    page.request.post(
+    provider = page.request.post(
         f"{BACK}/api/providers",
         data=json.dumps({"id": "mock-prov", **MOCK_PROVIDER, "is_default": True}),
         headers={"Content-Type": "application/json"},
     )
+    if not register.ok and register.status != 409:
+        raise RuntimeError(f"E2E registration failed: {register.status} {register.text()}")
+    if not login.ok:
+        raise RuntimeError(f"E2E login failed: {login.status} {login.text()}")
+    if not provider.ok and provider.status != 409:
+        raise RuntimeError(f"E2E provider setup failed: {provider.status} {provider.text()}")
 
 
 def run_chat(page):
