@@ -133,3 +133,45 @@ describe("create({ reuseEmpty: true })", () => {
     expect(useConversations.getState().conversations).toHaveLength(2);
   });
 });
+
+describe("syncEmptyProvider", () => {
+  beforeEach(() => {
+    useConversations.setState({ conversations: [], activeId: null });
+  });
+
+  it("updates an already-open empty paper conversation to the current default provider", () => {
+    const emptyPaper: Conversation = {
+      id: "active-empty-paper",
+      title: "Paper discussion",
+      type: "paper",
+      paper_id: "2401.00001",
+      provider_id: "provider-a",
+      messages: [],
+      created_at: STALE_TS,
+      updated_at: STALE_TS,
+    };
+    useConversations.setState({ conversations: [emptyPaper], activeId: emptyPaper.id });
+
+    useConversations.getState().syncEmptyProvider(emptyPaper.id, "provider-b");
+
+    expect(useConversations.getState().conversations[0].provider_id).toBe("provider-b");
+  });
+
+  it("does not change a conversation after its first message", () => {
+    const startedPaper: Conversation = {
+      id: "started-paper",
+      title: "Paper discussion",
+      type: "paper",
+      paper_id: "2401.00001",
+      provider_id: "provider-a",
+      messages: [{ role: "user", content: "Summarize this" }],
+      created_at: STALE_TS,
+      updated_at: STALE_TS,
+    };
+    useConversations.setState({ conversations: [startedPaper], activeId: startedPaper.id });
+
+    useConversations.getState().syncEmptyProvider(startedPaper.id, "provider-b");
+
+    expect(useConversations.getState().conversations[0].provider_id).toBe("provider-a");
+  });
+});
