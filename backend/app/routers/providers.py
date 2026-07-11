@@ -7,6 +7,7 @@ plaintext key; it sends provider_id to /api/llm, which decrypts server-side.
 from __future__ import annotations
 
 import secrets
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -27,6 +28,7 @@ class ProviderOut(BaseModel):
     base_url: str
     api_key: str  # MASKED — first4…last4, never the plaintext
     model: str
+    api_format: Literal["chat_completions", "responses"] = "chat_completions"
     vision_model: str | None = None
     is_default: bool = False
 
@@ -37,6 +39,7 @@ class ProviderCreate(BaseModel):
     base_url: str
     api_key: str  # plaintext from the authenticated user; encrypted on store
     model: str
+    api_format: Literal["chat_completions", "responses"] = "chat_completions"
     vision_model: str | None = None
     is_default: bool = False
 
@@ -46,6 +49,7 @@ class ProviderPatch(BaseModel):
     base_url: str | None = None
     api_key: str | None = None  # if provided, re-encrypt
     model: str | None = None
+    api_format: Literal["chat_completions", "responses"] | None = None
     vision_model: str | None = None
     is_default: bool | None = None
 
@@ -58,6 +62,7 @@ def _to_out(row: ProviderRow) -> ProviderOut:
         base_url=row.base_url,
         api_key=security.mask_key(plain),
         model=row.model,
+        api_format=row.api_format,
         vision_model=row.vision_model,
         is_default=row.is_default,
     )
@@ -101,6 +106,7 @@ async def create_provider(
         base_url=body.base_url,
         api_key_enc=security.encrypt(body.api_key),
         model=body.model,
+        api_format=body.api_format,
         vision_model=body.vision_model,
         is_default=body.is_default,
     )
@@ -128,6 +134,8 @@ async def update_provider(
         row.api_key_enc = security.encrypt(body.api_key)
     if body.model is not None:
         row.model = body.model
+    if body.api_format is not None:
+        row.api_format = body.api_format
     if body.vision_model is not None:
         row.vision_model = body.vision_model
     if body.is_default is True:

@@ -1,12 +1,16 @@
 // Shared types for Little Alphaxiv frontend.
 
-/** A configured LLM provider (OpenAI-compatible). Stored in localStorage. */
+export type ProviderApiFormat = "chat_completions" | "responses";
+
+/** A configured LLM provider (OpenAI-compatible). Stored server-side. */
 export interface Provider {
   id: string;
   name: string;
   base_url: string; // e.g. https://api.openai.com/v1
   api_key: string;
   model: string; // e.g. gpt-4o-mini
+  /** Upstream endpoint dialect; Chat Completions remains the compatible default. */
+  api_format: ProviderApiFormat;
   is_default?: boolean;
   /** Optional vision-capable model id on the SAME provider (same base_url +
    *  api_key). When set, the chat panel auto-routes any turn whose context

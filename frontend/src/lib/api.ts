@@ -2,7 +2,7 @@
 // proxies to the FastAPI backend in dev. Keys live in the browser; the proxy
 // is stateless.
 
-import type { Paper, Provider, ModelInfo, TokenUsage, Conversation, Annotation } from "../types";
+import type { Paper, Provider, ProviderApiFormat, ModelInfo, TokenUsage, Conversation, Annotation } from "../types";
 
 const BASE = ""; // same-origin in dev via Vite proxy
 
@@ -621,6 +621,7 @@ export interface ProviderOut {
   base_url: string;
   api_key: string; // MASKED (first4…last4) — never the plaintext
   model: string;
+  api_format: ProviderApiFormat;
   vision_model?: string | null;
   is_default: boolean;
 }
@@ -633,7 +634,7 @@ export async function listProviders(): Promise<ProviderOut[]> {
 
 export async function addProvider(body: {
   id?: string; // frontend-generated; server uses it as the PK
-  name: string; base_url: string; api_key: string; model: string;
+  name: string; base_url: string; api_key: string; model: string; api_format: ProviderApiFormat;
   vision_model?: string | null; is_default?: boolean;
 }): Promise<ProviderOut> {
   const r = await jfetch("/api/providers", {
@@ -646,7 +647,7 @@ export async function addProvider(body: {
 }
 
 export async function updateProvider(id: string, body: Partial<{
-  name: string; base_url: string; api_key: string; model: string;
+  name: string; base_url: string; api_key: string; model: string; api_format: ProviderApiFormat;
   vision_model: string | null; is_default: boolean;
 }>): Promise<ProviderOut> {
   const r = await jfetch(`/api/providers/${encodeURIComponent(id)}`, {

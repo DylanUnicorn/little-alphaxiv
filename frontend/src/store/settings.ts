@@ -191,6 +191,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
         base_url: p.base_url,
         api_key: p.api_key, // MASKED — never the plaintext
         model: p.model,
+        api_format: p.api_format ?? "chat_completions",
         is_default: p.is_default,
         ...(p.vision_model ? { vision_model: p.vision_model } : {}),
       })),
@@ -228,6 +229,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       base_url: provider.base_url,
       api_key: provider.api_key, // plaintext — sent once over the wire
       model: provider.model,
+      api_format: provider.api_format,
       vision_model: provider.vision_model ?? null,
       is_default: get().defaultProviderId === provider.id,
     }).then((saved) => {
@@ -235,7 +237,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       set((s) => ({
         providers: s.providers.map((p) => (p.id === saved.id ? {
           ...p, api_key: saved.api_key, name: saved.name, base_url: saved.base_url,
-          model: saved.model, vision_model: saved.vision_model ?? undefined,
+          model: saved.model, api_format: saved.api_format, vision_model: saved.vision_model ?? undefined,
         } : p)),
       }));
     }).catch(() => { /* keep optimistic local row */ });
@@ -257,6 +259,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.base_url !== undefined ? { base_url: patch.base_url } : {}),
       ...(patch.model !== undefined ? { model: patch.model } : {}),
+      ...(patch.api_format !== undefined ? { api_format: patch.api_format } : {}),
       ...(patch.vision_model !== undefined ? { vision_model: patch.vision_model ?? null } : {}),
     }).catch(() => { /* non-fatal */ });
   },

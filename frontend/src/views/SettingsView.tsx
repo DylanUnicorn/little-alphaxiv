@@ -14,6 +14,7 @@ const EMPTY: Omit<Provider, "id"> = {
   base_url: "",
   api_key: "",
   model: "",
+  api_format: "chat_completions",
 };
 
 export function SettingsView() {
@@ -462,8 +463,8 @@ export function SettingsView() {
 
         <h2 id="providers" style={{ scrollMarginTop: "1rem" }}>Providers</h2>
         <p className="settings-hint">
-          Add any OpenAI-compatible endpoint (OpenAI, Anthropic via a compatible
-          gateway, local Ollama/OpenAI servers, etc.). Keys are stored
+          Add an OpenAI-compatible Chat Completions or Responses endpoint (OpenAI,
+          Anthropic via a compatible gateway, local Ollama/OpenAI servers, etc.). Keys are stored
           server-side, encrypted at rest — the plaintext key never leaves your
           browser except when you first save it. Only a masked preview is shown
           here afterward.
@@ -489,7 +490,7 @@ export function SettingsView() {
                   )}
                   <button className="link-btn danger" onClick={() => removeProvider(p.id)}>remove</button>
                 </div>
-                <div className="provider-detail">{p.base_url} · model: <strong>{p.model}</strong></div>
+                <div className="provider-detail">{p.base_url} · model: <strong>{p.model}</strong> · {p.api_format === "responses" ? "Responses API" : "Chat Completions"}</div>
                 <div className="provider-detail">key: {p.api_key || "(not set)"}</div>
                 <div className="provider-models-row">
                   <span className="provider-models-label">
@@ -546,6 +547,20 @@ export function SettingsView() {
                     />
                   )}
                 </div>
+                <div className="provider-vision-row">
+                  <span className="provider-vision-label">API format</span>
+                  <select
+                    className="provider-model-select"
+                    value={p.api_format}
+                    onChange={(e) => useSettings.getState().updateProvider(p.id, {
+                      api_format: e.target.value as Provider["api_format"],
+                    })}
+                    title="Responses providers use /v1/responses; all others use /v1/chat/completions"
+                  >
+                    <option value="chat_completions">Chat Completions (/chat/completions)</option>
+                    <option value="responses">Responses (/responses)</option>
+                  </select>
+                </div>
               </div>
             );
           })}
@@ -559,6 +574,15 @@ export function SettingsView() {
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} />
           <input placeholder="API key" type="password" value={draft.api_key}
             onChange={(e) => setDraft({ ...draft, api_key: e.target.value })} />
+          <select
+            className="provider-model-select"
+            value={draft.api_format}
+            onChange={(e) => setDraft({ ...draft, api_format: e.target.value as Provider["api_format"] })}
+            title="Choose the upstream endpoint this provider exposes"
+          >
+            <option value="chat_completions">Chat Completions (/chat/completions)</option>
+            <option value="responses">Responses (/responses)</option>
+          </select>
           <div className="provider-model-input-row">
             {draftModels.length > 0 ? (
               <select
