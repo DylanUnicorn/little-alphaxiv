@@ -20,6 +20,11 @@ export interface SelectedPdfTextPayload {
   pageNumber: number;
 }
 
+export interface PendingSelectedTextPrompt {
+  conversationId: string;
+  prompt: string;
+}
+
 export function selectedPdfTextPayload(
   text: string,
   startPage: number | null,
@@ -34,4 +39,15 @@ export function consumePendingPrompt(prompt: string | null | undefined, busy: bo
   const text = prompt?.trim();
   if (busy || !text) return { prompt: null, consumed: false };
   return { prompt: text, consumed: true };
+}
+
+export function pendingPromptForConversation(
+  pending: PendingSelectedTextPrompt | null,
+  conversationId: string | null,
+): string | null {
+  return pending?.conversationId === conversationId ? pending.prompt : null;
+}
+
+export function visibleSelectedTextPayload<T>(payload: T | null, disabled: boolean): T | null {
+  return disabled ? null : payload;
 }

@@ -24,6 +24,7 @@ import { pdfUrlForOa, paperUploadUrl } from "../lib/api";
 import * as db from "../lib/db";
 import { ensurePaperMeta, hasRealTitle, paperThreadTitle } from "../lib/paperMeta";
 import { resolvePdfSource } from "../lib/paperSource";
+import { pendingPromptForConversation, type PendingSelectedTextPrompt } from "../lib/selectedTextAskAi";
 import type { StylePreset } from "../types";
 
 export function PaperView() {
@@ -44,7 +45,7 @@ export function PaperView() {
   const [convIdState, setConvId] = useState<string | null>(convId ?? null);
   const [fullText, setFullText] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(true);
-  const [pendingSelectedTextPrompt, setPendingSelectedTextPrompt] = useState<string | null>(null);
+  const [pendingSelectedTextPrompt, setPendingSelectedTextPrompt] = useState<PendingSelectedTextPrompt | null>(null);
   // pdfUrlOverride + pdfUrlForId are a pair: the override is the URL to load
   // (when the paper isn't a plain arXiv paper), and pdfUrlForId is the arxivId
   // that override was resolved FOR. PdfViewer refuses to call getDocument until
@@ -207,7 +208,9 @@ export function PaperView() {
           pdfUrlOverride={pdfUrlOverride}
           pdfUrlForId={pdfUrlForId}
           onTextExtracted={onTextExtracted}
-          onAskSelectedText={setPendingSelectedTextPrompt}
+          onAskSelectedText={(prompt) => {
+            if (convIdState) setPendingSelectedTextPrompt({ conversationId: convIdState, prompt });
+          }}
         />}
         right={
           <div className="chat-col-inner">
@@ -237,7 +240,7 @@ export function PaperView() {
                     conversationId={convIdState}
                     systemPrompt={systemPrompt}
                     showPaperLinks={false}
-                    pendingPrompt={pendingSelectedTextPrompt}
+                    pendingPrompt={pendingPromptForConversation(pendingSelectedTextPrompt, convIdState)}
                     onPendingPromptConsumed={() => setPendingSelectedTextPrompt(null)}
                   />
                 ) : (

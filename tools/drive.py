@@ -71,10 +71,15 @@ def seed_provider(page):
         data=json.dumps({"username": E2E_USER, "password": E2E_PASS}),
         headers={"Content-Type": "application/json"},
     )
-    # Add the mock provider (idempotent via fixed id 'mock-prov').
+    # ProviderRow.id is globally unique, so scope the deterministic mock id to
+    # this E2E account instead of colliding with another test user's provider.
+    provider_id = f"mock-{E2E_USER}"
+    existing = page.request.get(f"{BACK}/api/providers")
+    if existing.ok and any(row.get("id") == provider_id for row in existing.json()):
+        return
     provider = page.request.post(
         f"{BACK}/api/providers",
-        data=json.dumps({"id": "mock-prov", **MOCK_PROVIDER, "is_default": True}),
+        data=json.dumps({"id": provider_id, **MOCK_PROVIDER, "is_default": True}),
         headers={"Content-Type": "application/json"},
     )
     if not register.ok and register.status != 409:

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildSelectedTextPrompt, findSelectedPdfPage, normalizeSelectedText, selectedPdfTextPayload } from "./selectedTextAskAi";
+import {
+  buildSelectedTextPrompt,
+  findSelectedPdfPage,
+  normalizeSelectedText,
+  pendingPromptForConversation,
+  selectedPdfTextPayload,
+  visibleSelectedTextPayload,
+} from "./selectedTextAskAi";
 
 describe("selected PDF text prompts", () => {
   it("normalizes a PDF excerpt and limits its length", () => {
@@ -22,5 +29,17 @@ describe("selected PDF text prompts", () => {
     expect(selectedPdfTextPayload("  useful\ntext ", 3, 3)).toEqual({ text: "useful text", pageNumber: 3 });
     expect(selectedPdfTextPayload("useful text", 3, 4)).toBeNull();
     expect(selectedPdfTextPayload("   ", 3, 3)).toBeNull();
+  });
+
+  it("keeps a pending prompt bound to the conversation that selected it", () => {
+    const pending = { conversationId: "paper-thread-a", prompt: "explain this" };
+    expect(pendingPromptForConversation(pending, "paper-thread-a")).toBe("explain this");
+    expect(pendingPromptForConversation(pending, "paper-thread-b")).toBeNull();
+  });
+
+  it("hides a captured selection as soon as Ask AI is disabled", () => {
+    const payload = { text: "useful text", pageNumber: 3 };
+    expect(visibleSelectedTextPayload(payload, false)).toEqual(payload);
+    expect(visibleSelectedTextPayload(payload, true)).toBeNull();
   });
 });

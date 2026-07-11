@@ -3,6 +3,7 @@ import {
   buildSelectedTextPrompt,
   findSelectedPdfPage,
   selectedPdfTextPayload,
+  visibleSelectedTextPayload,
   type SelectedPdfTextPayload,
 } from "../lib/selectedTextAskAi";
 
@@ -24,6 +25,10 @@ function elementForNode(node: Node): Element | null {
 
 export function SelectedTextAskAi({ disabled, onAsk }: Props) {
   const [pending, setPending] = useState<PendingSelection | null>(null);
+
+  useEffect(() => {
+    if (disabled) setPending(null);
+  }, [disabled]);
 
   useEffect(() => {
     function dismiss() {
@@ -89,19 +94,21 @@ export function SelectedTextAskAi({ disabled, onAsk }: Props) {
     };
   }, [disabled]);
 
-  if (!pending) return null;
+  const visiblePending = visibleSelectedTextPayload(pending, disabled);
+  if (!visiblePending) return null;
 
   return (
     <button
       type="button"
       className="selected-text-ask-ai"
-      style={{ left: pending.left, top: pending.top }}
+      style={{ left: visiblePending.left, top: visiblePending.top }}
       onPointerDown={(event) => {
         event.preventDefault();
         event.stopPropagation();
       }}
       onClick={() => {
-        onAsk(buildSelectedTextPrompt(pending.text, pending.pageNumber));
+        if (disabled) return;
+        onAsk(buildSelectedTextPrompt(visiblePending.text, visiblePending.pageNumber));
         window.getSelection()?.removeAllRanges();
         setPending(null);
       }}
@@ -110,4 +117,3 @@ export function SelectedTextAskAi({ disabled, onAsk }: Props) {
     </button>
   );
 }
-
