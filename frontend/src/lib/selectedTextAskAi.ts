@@ -8,3 +8,24 @@ export function normalizeSelectedText(text: string, maxLength = MAX_SELECTED_TEX
 export function buildSelectedTextPrompt(text: string, pageNumber: number): string {
   return `Please explain this excerpt from page ${pageNumber} of the paper:\n\n> ${text}`;
 }
+
+export function findSelectedPdfPage(node: Element): number | null {
+  const page = node.closest<HTMLElement>(".pdf-page-wrap[data-page-number]");
+  const value = Number(page?.dataset.pageNumber);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+export interface SelectedPdfTextPayload {
+  text: string;
+  pageNumber: number;
+}
+
+export function selectedPdfTextPayload(
+  text: string,
+  startPage: number | null,
+  endPage: number | null,
+): SelectedPdfTextPayload | null {
+  const normalized = normalizeSelectedText(text);
+  if (!normalized || !startPage || startPage !== endPage) return null;
+  return { text: normalized, pageNumber: startPage };
+}

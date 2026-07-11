@@ -1196,6 +1196,15 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .pdf-textlayer span, .pdf-textlayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0 0; }
 .pdf-textlayer ::selection { background: var(--accent-soft); }
 .pdf-textlayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: -1; cursor: default; user-select: none; }
+.selected-text-ask-ai {
+  position: fixed; z-index: 20; transform: translateY(-100%);
+  border: 0; border-radius: 4px; padding: 5px 8px;
+  background: var(--accent); color: var(--accent-contrast, #fff);
+  font: 600 12px/1 var(--font-sans); cursor: pointer;
+  box-shadow: 0 3px 12px color-mix(in srgb, #000 32%, transparent);
+}
+.selected-text-ask-ai:hover { filter: brightness(1.08); }
+.selected-text-ask-ai:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .pdf-loading, .pdf-error { color: var(--text-dim); text-align: center; padding: 30px; }
 
 /* ---------- Chat error boundary ---------- */
