@@ -71,4 +71,3 @@ and streamed answer together.
 This release does not add multi-page selection support, editable prefill mode,
 selection history, or a new backend endpoint. Those would change the interaction
 contract and can be designed separately if needed.
-

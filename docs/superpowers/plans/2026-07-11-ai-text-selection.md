@@ -202,4 +202,3 @@ git commit -m "fix: polish PDF selection ask interaction"
 - Spec coverage: Task 1 covers text normalization, caps, and prompt format; Task 2 covers valid single-page selection, positioning, dismissal, disabled state, and styling; Task 3 covers local data flow, immediate send, and no draft overwrite; Task 4 covers browser and annotation regressions.
 - Placeholder scan: no TBD/TODO items or unnamed validation steps remain.
 - Type consistency: `PdfViewer.onAskSelectedText` emits a `string`; `PaperView.pendingSelectedTextPrompt` stores `string | null`; `ChatPanel.pendingPrompt` consumes the same `string`.
-
