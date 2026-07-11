@@ -37,6 +37,7 @@ interface ConvState {
     initialMessages?: ChatMessage[];
     reuseEmpty?: boolean;
   }) => Promise<Conversation>;
+  syncEmptyProvider: (id: string, providerId?: string) => void;
   appendMessages: (id: string, msgs: ChatMessage[]) => Promise<void>;
   updateMessage: (
     id: string,
@@ -170,6 +171,15 @@ export const useConversations = create<ConvState>((set, get) => ({
     set((s) => ({ conversations: [conv, ...s.conversations], activeId: conv.id }));
     return conv;
   },
+
+  syncEmptyProvider: (id, providerId) =>
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === id && c.messages.length === 0
+          ? { ...c, provider_id: providerId }
+          : c
+      ),
+    })),
 
   appendMessages: async (id, msgs) =>
     withConvLock(id, async () => {

@@ -39,6 +39,7 @@ export function PaperView() {
   const create = useConversations((s) => s.create);
   const setActive = useConversations((s) => s.setActive);
   const updateSettings = useConversations((s) => s.updateSettings);
+  const syncEmptyProvider = useConversations((s) => s.syncEmptyProvider);
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
   const collapseSidebar = useUi((s) => s.collapseSidebar);
   const [convIdState, setConvId] = useState<string | null>(convId ?? null);
@@ -147,6 +148,14 @@ export function PaperView() {
     if (convId && convId !== convIdState) setConvId(convId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId]);
+
+  // An empty paper thread has not sent anything to its provider yet, so it
+  // should follow the current default when the user returns from Settings.
+  // Started threads deliberately keep their provider (enforced by the store).
+  useEffect(() => {
+    if (!convIdState) return;
+    syncEmptyProvider(convIdState, defaultProviderId ?? undefined);
+  }, [convIdState, defaultProviderId, syncEmptyProvider]);
 
   const onTextExtracted = useCallback((text: string) => {
     setFullText(text); setExtracting(false);
