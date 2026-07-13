@@ -616,9 +616,13 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 }
 .composer-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .composer-send-btn {
-  width: 42px; height: 42px;
+  width: 38px; height: 38px; position: relative;
   background: var(--accent-2); color: var(--accent-contrast); border-color: transparent;
-  font-size: 27px; font-weight: 600;
+  font-size: 22px; font-weight: 600;
+}
+/* Keep the compact visual footprint while preserving a 44px pointer target. */
+.composer-send-btn::before {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%;
 }
 .composer-send-btn:hover:not(:disabled) {
   filter: brightness(1.05);
