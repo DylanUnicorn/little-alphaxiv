@@ -17,7 +17,7 @@ import { runConversation, generateConversationTitle } from "../lib/llm";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
 import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
-import { consumePendingPrompt } from "../lib/selectedTextAskAi";
+import { buildSelectedTextMessage, type SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
 import { PaperCard } from "./PaperCard";
@@ -41,8 +41,8 @@ interface Props {
   conversationId: string;
   systemPrompt?: string;
   showPaperLinks?: boolean;
-  pendingPrompt?: string | null;
-  onPendingPromptConsumed?: () => void;
+  selectedTextContext?: SelectedPdfTextPayload | null;
+  onRemoveSelectedText?: () => void;
 }
 
 /** After the first turn of a conversation, ask the configured model to summarize
@@ -99,8 +99,8 @@ export function ChatPanel({
   conversationId,
   systemPrompt,
   showPaperLinks = true,
-  pendingPrompt,
-  onPendingPromptConsumed,
+  selectedTextContext,
+  onRemoveSelectedText,
 }: Props) {
   const navigate = useNavigate();
   const conv = useConversations((s) => s.conversations.find((c) => c.id === conversationId));
@@ -297,10 +297,13 @@ export function ChatPanel({
     abortRef.current?.abort();
   }
 
-  async function send(override?: string, includeAttachments = true) {
-    const text = (override ?? input).trim();
-    const sentAttachments = includeAttachments ? attachments : [];
-    if ((!text && sentAttachments.length === 0) || busy) return;
+  async function send(override?: string) {
+    const draft = (override ?? input).trim();
+    const text = selectedTextContext
+      ? buildSelectedTextMessage(selectedTextContext, draft)
+      : draft;
+    const sentAttachments = attachments;
+    if ((!draft && sentAttachments.length === 0 && !selectedTextContext) || busy) return;
     if (!provider) {
       setStatus("No provider configured. Add one in Settings.");
       return;
@@ -312,10 +315,9 @@ export function ChatPanel({
       ...(sentAttachments.length > 0 ? { attachments: [...sentAttachments] } : {}),
     };
     await appendMessages(c.id, [userMsg]);
-    if (includeAttachments) {
-      setInput("");
-      setAttachments([]);
-    }
+    setInput("");
+    setAttachments([]);
+    if (selectedTextContext) onRemoveSelectedText?.();
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
@@ -326,7 +328,10 @@ export function ChatPanel({
     // assistant replies (see maybeSummarizeTitle below).
     const wasFirstTurn = c.messages.length === 0;
     if (wasFirstTurn) {
-      rename(c.id, text.slice(0, 48) || (sentAttachments.length > 0 ? "Image chat" : "New chat"));
+      const fallbackTitle = selectedTextContext
+        ? draft || `Page ${selectedTextContext.pageNumber} excerpt`
+        : draft;
+      rename(c.id, fallbackTitle.slice(0, 48) || (sentAttachments.length > 0 ? "Image chat" : "New chat"));
     }
 
     let buf = "";
@@ -475,13 +480,6 @@ export function ChatPanel({
     }
   }
 
-  useEffect(() => {
-    const next = consumePendingPrompt(pendingPrompt, busy);
-    if (!next.consumed || !next.prompt) return;
-    onPendingPromptConsumed?.();
-    void send(next.prompt, false);
-  }, [pendingPrompt, busy]); // send is recreated per render but reads current conversation state.
-
   function onKey(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -550,6 +548,8 @@ export function ChatPanel({
         }
         attachments={attachments}
         onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+        selectedTextContext={selectedTextContext}
+        onRemoveSelectedText={onRemoveSelectedText}
         models={availableModels}
         currentModel={currentModel}
         onModelChange={handleModelChange}

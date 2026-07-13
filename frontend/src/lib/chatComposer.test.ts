@@ -1,5 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { computeTextareaHeight, pickImageFiles } from "./chatComposer";
+import { canSubmitComposer, computeTextareaHeight, pickImageFiles } from "./chatComposer";
+
+describe("canSubmitComposer", () => {
+  it("allows text, images, or selected-text context while idle", () => {
+    expect(canSubmitComposer("question", 0, false, false)).toBe(true);
+    expect(canSubmitComposer("", 1, false, false)).toBe(true);
+    expect(canSubmitComposer("", 0, true, false)).toBe(true);
+  });
+
+  it("rejects an empty or busy composer", () => {
+    expect(canSubmitComposer("", 0, false, false)).toBe(false);
+    expect(canSubmitComposer("question", 1, true, true)).toBe(false);
+  });
+});
 
 describe("computeTextareaHeight", () => {
   it("clamps below the minimum to the minimum", () => {
