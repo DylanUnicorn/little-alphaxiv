@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useEffect, useCallback, useState } from "react";
 import type { Attachment } from "../types";
-import { computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
+import { canSubmitComposer, computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
+import type { SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
 import { useSettings } from "../store/settings";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
@@ -19,6 +20,8 @@ interface Props {
   placeholder: string;
   attachments: Attachment[];
   onRemoveAttachment: (index: number) => void;
+  selectedTextContext?: SelectedPdfTextPayload | null;
+  onRemoveSelectedText?: () => void;
   models: { id: string }[];
   currentModel: string;
   onModelChange: (id: string) => void;
@@ -50,6 +53,8 @@ export function ChatComposer({
   placeholder,
   attachments,
   onRemoveAttachment,
+  selectedTextContext,
+  onRemoveSelectedText,
   models,
   currentModel,
   onModelChange,
@@ -106,6 +111,10 @@ export function ChatComposer({
   useLayoutEffect(() => {
     measure();
   }, [value, measure]);
+
+  useEffect(() => {
+    if (selectedTextContext) taRef.current?.focus();
+  }, [selectedTextContext]);
 
   // Re-measure when the column width changes (paper-view divider drag
   // reflows line wrapping) or the viewport height changes (cap depends on vh).
@@ -170,7 +179,12 @@ export function ChatComposer({
     [onDropFiles]
   );
 
-  const canSend = !busy && (value.trim().length > 0 || attachments.length > 0);
+  const canSend = canSubmitComposer(
+    value,
+    attachments.length,
+    !!selectedTextContext,
+    busy,
+  );
 
   return (
     <div
@@ -183,6 +197,24 @@ export function ChatComposer({
       {dragOver && (
         <div className="chat-composer-drop-overlay" aria-hidden>
           <span>⬇ 松开以添加图片</span>
+        </div>
+      )}
+      {selectedTextContext && (
+        <div className="composer-selected-text">
+          <div className="composer-selected-text-copy">
+            <strong>Page {selectedTextContext.pageNumber}:</strong>
+            <span>{selectedTextContext.text}</span>
+          </div>
+          <button
+            type="button"
+            className="composer-selected-text-remove"
+            aria-label="Remove selected text"
+            title="Remove selected text"
+            onClick={onRemoveSelectedText}
+            disabled={busy}
+          >
+            ×
+          </button>
         </div>
       )}
       <div className="chat-composer-input">

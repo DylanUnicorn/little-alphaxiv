@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  buildSelectedTextPrompt,
   findSelectedPdfPage,
   selectedPdfTextPayload,
   visibleSelectedTextPayload,
@@ -9,7 +8,7 @@ import {
 
 interface Props {
   disabled: boolean;
-  onAsk: (prompt: string) => void;
+  onAsk: (context: SelectedPdfTextPayload) => void;
 }
 
 interface PendingSelection extends SelectedPdfTextPayload {
@@ -108,7 +107,7 @@ export function SelectedTextAskAi({ disabled, onAsk }: Props) {
       }}
       onClick={() => {
         if (disabled) return;
-        onAsk(buildSelectedTextPrompt(visiblePending.text, visiblePending.pageNumber));
+        onAsk({ text: visiblePending.text, pageNumber: visiblePending.pageNumber });
         window.getSelection()?.removeAllRanges();
         setPending(null);
       }}

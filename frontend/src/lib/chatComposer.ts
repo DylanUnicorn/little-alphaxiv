@@ -12,6 +12,19 @@ export function computeTextareaHeight(
   return Math.min(max, Math.max(min, scrollHeight));
 }
 
+export function canSubmitComposer(
+  value: string,
+  attachmentCount: number,
+  hasSelectedTextContext: boolean,
+  busy: boolean,
+): boolean {
+  return !busy && (
+    value.trim().length > 0 ||
+    attachmentCount > 0 ||
+    hasSelectedTextContext
+  );
+}
+
 /** Partition dragged/pasted files into images (kept) and non-images (rejected).
  *
  *  `image/*` MIME is the gate, matching the <input accept="image/*"> contract

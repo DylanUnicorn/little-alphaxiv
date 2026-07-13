@@ -29,6 +29,7 @@ import { Tooltip } from "./Tooltip";
 import { useAnnotations } from "../store/annotations";
 import { SelectedTextAskAi } from "./SelectedTextAskAi";
 import type { PageSize } from "../types";
+import type { SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
 
@@ -45,7 +46,7 @@ interface Props {
   pdfUrlForId?: string | null;
   onLoaded?: (numPages: number) => void;
   onTextExtracted?: (text: string) => void;
-  onAskSelectedText?: (prompt: string) => void;
+  onAskSelectedText?: (context: SelectedPdfTextPayload) => void;
 }
 
 export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTextExtracted, onAskSelectedText }: Props) {
@@ -631,7 +632,7 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
           ))}
         <SelectedTextAskAi
           disabled={!onAskSelectedText || highlightOn}
-          onAsk={(prompt) => onAskSelectedText?.(prompt)}
+          onAsk={(context) => onAskSelectedText?.(context)}
         />
       </div>
       {showZotero && <ZoteroPanel arxivId={arxivId} onClose={() => setShowZotero(false)} />}
