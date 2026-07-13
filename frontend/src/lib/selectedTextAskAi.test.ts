@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSelectedTextPrompt,
+  buildSelectedTextMessage,
   findSelectedPdfPage,
   normalizeSelectedText,
-  pendingPromptForConversation,
+  pendingContextForConversation,
   selectedPdfTextPayload,
   visibleSelectedTextPayload,
 } from "./selectedTextAskAi";
@@ -14,9 +14,15 @@ describe("selected PDF text prompts", () => {
     expect(normalizeSelectedText("abcdefgh", 5)).toBe("abcde…");
   });
 
-  it("builds a page-grounded question with a quoted excerpt", () => {
-    expect(buildSelectedTextPrompt("a useful result", 4)).toBe(
-      "Please explain this excerpt from page 4 of the paper:\n\n> a useful result"
+  it("builds a page-grounded message with the user's custom prompt", () => {
+    expect(buildSelectedTextMessage({ text: "a useful result", pageNumber: 4 }, "Why?")).toBe(
+      "Excerpt from page 4:\n\n> a useful result\n\nWhy?"
+    );
+  });
+
+  it("quotes every excerpt line and supplies a default question", () => {
+    expect(buildSelectedTextMessage({ text: "line one\nline two", pageNumber: 2 }, "")).toBe(
+      "Excerpt from page 2:\n\n> line one\n> line two\n\nPlease explain this excerpt."
     );
   });
 
@@ -31,10 +37,13 @@ describe("selected PDF text prompts", () => {
     expect(selectedPdfTextPayload("   ", 3, 3)).toBeNull();
   });
 
-  it("keeps a pending prompt bound to the conversation that selected it", () => {
-    const pending = { conversationId: "paper-thread-a", prompt: "explain this" };
-    expect(pendingPromptForConversation(pending, "paper-thread-a")).toBe("explain this");
-    expect(pendingPromptForConversation(pending, "paper-thread-b")).toBeNull();
+  it("keeps selected-text context bound to the conversation that attached it", () => {
+    const pending = {
+      conversationId: "paper-thread-a",
+      context: { text: "a useful result", pageNumber: 4 },
+    };
+    expect(pendingContextForConversation(pending, "paper-thread-a")).toEqual(pending.context);
+    expect(pendingContextForConversation(pending, "paper-thread-b")).toBeNull();
   });
 
   it("hides a captured selection as soon as Ask AI is disabled", () => {

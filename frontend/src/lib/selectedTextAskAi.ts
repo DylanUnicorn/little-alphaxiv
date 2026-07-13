@@ -5,10 +5,6 @@ export function normalizeSelectedText(text: string, maxLength = MAX_SELECTED_TEX
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
 }
 
-export function buildSelectedTextPrompt(text: string, pageNumber: number): string {
-  return `Please explain this excerpt from page ${pageNumber} of the paper:\n\n> ${text}`;
-}
-
 export function findSelectedPdfPage(node: Element): number | null {
   const page = node.closest<HTMLElement>(".pdf-page-wrap[data-page-number]");
   const value = Number(page?.dataset.pageNumber);
@@ -20,9 +16,9 @@ export interface SelectedPdfTextPayload {
   pageNumber: number;
 }
 
-export interface PendingSelectedTextPrompt {
+export interface PendingSelectedTextContext {
   conversationId: string;
-  prompt: string;
+  context: SelectedPdfTextPayload;
 }
 
 export function selectedPdfTextPayload(
@@ -35,17 +31,23 @@ export function selectedPdfTextPayload(
   return { text: normalized, pageNumber: startPage };
 }
 
-export function consumePendingPrompt(prompt: string | null | undefined, busy: boolean) {
-  const text = prompt?.trim();
-  if (busy || !text) return { prompt: null, consumed: false };
-  return { prompt: text, consumed: true };
+export function buildSelectedTextMessage(
+  context: SelectedPdfTextPayload,
+  userPrompt: string,
+): string {
+  const quoted = context.text
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n");
+  const prompt = userPrompt.trim() || "Please explain this excerpt.";
+  return `Excerpt from page ${context.pageNumber}:\n\n${quoted}\n\n${prompt}`;
 }
 
-export function pendingPromptForConversation(
-  pending: PendingSelectedTextPrompt | null,
+export function pendingContextForConversation(
+  pending: PendingSelectedTextContext | null,
   conversationId: string | null,
-): string | null {
-  return pending?.conversationId === conversationId ? pending.prompt : null;
+): SelectedPdfTextPayload | null {
+  return pending?.conversationId === conversationId ? pending.context : null;
 }
 
 export function visibleSelectedTextPayload<T>(payload: T | null, disabled: boolean): T | null {
