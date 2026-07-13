@@ -112,6 +112,10 @@ export function ChatComposer({
     measure();
   }, [value, measure]);
 
+  useEffect(() => {
+    if (selectedTextContext) taRef.current?.focus();
+  }, [selectedTextContext]);
+
   // Re-measure when the column width changes (paper-view divider drag
   // reflows line wrapping) or the viewport height changes (cap depends on vh).
   useEffect(() => {

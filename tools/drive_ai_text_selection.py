@@ -43,6 +43,9 @@ def main() -> None:
             card.wait_for(state="visible", timeout=5_000)
             assert "Page 1:" in card.inner_text()
             assert page.locator(".msg-user").count() == user_count, "Ask AI submitted before explicit send"
+            assert page.locator(".composer-textarea").evaluate(
+                "element => document.activeElement === element"
+            ), "composer did not focus after attaching selected text"
             page.screenshot(path=str(OUT / "ai_text_context_card.png"), full_page=False)
 
             question = "What assumption is the author making?"
