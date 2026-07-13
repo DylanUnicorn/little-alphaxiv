@@ -43,6 +43,7 @@ interface Props {
   showPaperLinks?: boolean;
   selectedTextContext?: SelectedPdfTextPayload | null;
   onRemoveSelectedText?: () => void;
+  onSelectedTextSent?: (context: SelectedPdfTextPayload) => void;
 }
 
 /** After the first turn of a conversation, ask the configured model to summarize
@@ -101,6 +102,7 @@ export function ChatPanel({
   showPaperLinks = true,
   selectedTextContext,
   onRemoveSelectedText,
+  onSelectedTextSent,
 }: Props) {
   const navigate = useNavigate();
   const conv = useConversations((s) => s.conversations.find((c) => c.id === conversationId));
@@ -317,7 +319,7 @@ export function ChatPanel({
     await appendMessages(c.id, [userMsg]);
     setInput("");
     setAttachments([]);
-    if (selectedTextContext) onRemoveSelectedText?.();
+    if (selectedTextContext) onSelectedTextSent?.(selectedTextContext);
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);

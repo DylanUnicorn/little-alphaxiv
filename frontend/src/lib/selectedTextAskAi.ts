@@ -50,6 +50,17 @@ export function pendingContextForConversation(
   return pending?.conversationId === conversationId ? pending.context : null;
 }
 
+export function clearPendingContextAfterSend(
+  pending: PendingSelectedTextContext | null,
+  conversationId: string,
+  sentContext: SelectedPdfTextPayload,
+): PendingSelectedTextContext | null {
+  if (pending?.conversationId !== conversationId || pending.context !== sentContext) {
+    return pending;
+  }
+  return null;
+}
+
 export function visibleSelectedTextPayload<T>(payload: T | null, disabled: boolean): T | null {
   return disabled ? null : payload;
 }

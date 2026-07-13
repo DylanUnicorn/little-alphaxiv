@@ -24,7 +24,11 @@ import { pdfUrlForOa, paperUploadUrl } from "../lib/api";
 import * as db from "../lib/db";
 import { ensurePaperMeta, hasRealTitle, paperThreadTitle } from "../lib/paperMeta";
 import { resolvePdfSource } from "../lib/paperSource";
-import { pendingContextForConversation, type PendingSelectedTextContext } from "../lib/selectedTextAskAi";
+import {
+  clearPendingContextAfterSend,
+  pendingContextForConversation,
+  type PendingSelectedTextContext,
+} from "../lib/selectedTextAskAi";
 import type { StylePreset } from "../types";
 
 export function PaperView() {
@@ -251,6 +255,11 @@ export function PaperView() {
                     showPaperLinks={false}
                     selectedTextContext={pendingContextForConversation(pendingSelectedTextContext, convIdState)}
                     onRemoveSelectedText={() => setPendingSelectedTextContext(null)}
+                    onSelectedTextSent={(sentContext) => {
+                      setPendingSelectedTextContext((pending) =>
+                        clearPendingContextAfterSend(pending, convIdState, sentContext)
+                      );
+                    }}
                   />
                 ) : (
                   <div className="chat-shell"><div className="chat-empty">Starting discussion...</div></div>

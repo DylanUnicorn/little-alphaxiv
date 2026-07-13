@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSelectedTextMessage,
+  clearPendingContextAfterSend,
   findSelectedPdfPage,
   normalizeSelectedText,
   pendingContextForConversation,
@@ -44,6 +45,17 @@ describe("selected PDF text prompts", () => {
     };
     expect(pendingContextForConversation(pending, "paper-thread-a")).toEqual(pending.context);
     expect(pendingContextForConversation(pending, "paper-thread-b")).toBeNull();
+  });
+
+  it("clears only the exact context that was sent", () => {
+    const sent = { text: "a useful result", pageNumber: 4 };
+    const replacement = { text: "a newer selection", pageNumber: 5 };
+    const originalPending = { conversationId: "paper-thread-a", context: sent };
+    const replacementPending = { conversationId: "paper-thread-a", context: replacement };
+
+    expect(clearPendingContextAfterSend(originalPending, "paper-thread-a", sent)).toBeNull();
+    expect(clearPendingContextAfterSend(replacementPending, "paper-thread-a", sent)).toBe(replacementPending);
+    expect(clearPendingContextAfterSend(originalPending, "paper-thread-b", sent)).toBe(originalPending);
   });
 
   it("hides a captured selection as soon as Ask AI is disabled", () => {
