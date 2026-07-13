@@ -77,4 +77,3 @@ single-page validation and disabled state. The Playwright regression changes fro
 asserting immediate submission to asserting: card appears, no message is sent
 before explicit send, custom text is accepted, and the resulting message contains
 both page provenance and the custom question.
-

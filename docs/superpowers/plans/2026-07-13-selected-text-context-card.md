@@ -258,4 +258,3 @@ Run the selected-text driver twice to verify idempotent E2E setup.
 
 Review conversation binding, draft preservation, removal, keyboard states, and
 message serialization relative to this plan.
-
