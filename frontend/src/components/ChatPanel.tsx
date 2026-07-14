@@ -17,6 +17,7 @@ import { runConversation, generateConversationTitle } from "../lib/llm";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
 import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
+import { releaseSendLock, tryAcquireSendLock } from "../lib/chatSendLock";
 import { buildSelectedTextMessage, type SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
@@ -130,6 +131,10 @@ export function ChatPanel({
   // the signal through to fetch); the catch block distinguishes that user abort
   // from a real network/upstream error.
   const abortRef = useRef<AbortController | null>(null);
+  // React state does not update synchronously. This ref closes the gap between
+  // entering send() and the next busy=true render so a fast double click/Enter
+  // cannot append the same user message and launch two concurrent LLM streams.
+  const sendLockRef = useRef(false);
   // Seed the paper's metadata into IDB (so PaperView/PdfViewer show real
   // title/authors/abstract instead of the bare-id fallback), then open it.
   // arXiv-id papers -> existing /api/pdf path; OA papers -> /api/pdf-url
@@ -310,20 +315,29 @@ export function ChatPanel({
       setStatus("No provider configured. Add one in Settings.");
       return;
     }
+    if (!tryAcquireSendLock(sendLockRef)) return;
 
     const userMsg: ChatMessage = {
       role: "user",
       content: text || null,
       ...(sentAttachments.length > 0 ? { attachments: [...sentAttachments] } : {}),
     };
-    await appendMessages(c.id, [userMsg]);
-    setInput("");
-    setAttachments([]);
-    if (selectedTextContext) onSelectedTextSent?.(selectedTextContext);
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
     setStatus("Thinking…");
+    try {
+      await appendMessages(c.id, [userMsg]);
+    } catch (e: any) {
+      setStatus(`Failed to save message: ${e?.message || "error"}`);
+      if (abortRef.current === controller) abortRef.current = null;
+      releaseSendLock(sendLockRef);
+      setBusy(false);
+      return;
+    }
+    setInput("");
+    setAttachments([]);
+    if (selectedTextContext) onSelectedTextSent?.(selectedTextContext);
 
     // First turn: set an instant title from the question (so the sidebar
     // updates immediately), then refine it with an LLM summary once the
@@ -477,7 +491,8 @@ export function ChatPanel({
       }
       setStatus("");
     } finally {
-      abortRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
+      releaseSendLock(sendLockRef);
       setBusy(false);
     }
   }
