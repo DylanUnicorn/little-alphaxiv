@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAssistantExcerptMessage,
   buildSelectedTextMessage,
   clearPendingContextAfterSend,
   findSelectedPdfPage,
@@ -10,6 +11,15 @@ import {
 } from "./selectedTextAskAi";
 
 describe("selected PDF text prompts", () => {
+  it("builds a reply-grounded branch message without pretending it came from a PDF", () => {
+    expect(buildAssistantExcerptMessage("representation collapse", "How does this happen?")).toBe(
+      "Selected excerpt from the assistant reply:\n\n> representation collapse\n\nHow does this happen?"
+    );
+    expect(buildAssistantExcerptMessage("line one\nline two", "")).toBe(
+      "Selected excerpt from the assistant reply:\n\n> line one\n> line two\n\nPlease explain this excerpt."
+    );
+  });
+
   it("normalizes a PDF excerpt and limits its length", () => {
     expect(normalizeSelectedText("  A\n\n  B\tC  ", 100)).toBe("A B C");
     expect(normalizeSelectedText("abcdefgh", 5)).toBe("abcde…");

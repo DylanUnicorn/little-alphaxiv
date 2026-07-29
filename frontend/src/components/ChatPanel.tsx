@@ -18,8 +18,13 @@ import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } fro
 import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
 import { releaseSendLock, tryAcquireSendLock } from "../lib/chatSendLock";
-import { buildSelectedTextMessage, type SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
+import {
+  buildAssistantExcerptMessage,
+  buildSelectedTextMessage,
+  type SelectedPdfTextPayload,
+} from "../lib/selectedTextAskAi";
 import { buildChatRenderItems } from "../lib/agentActivity";
+import { isPendingBranchConversation } from "../lib/conversationBranches";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
 import { PaperCard } from "./PaperCard";
@@ -27,6 +32,7 @@ import { Markdown } from "./Markdown";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
 import { ChatComposer } from "./ChatComposer";
 import { AgentActivity } from "./AgentActivity";
+import { AssistantBranchAction } from "./AssistantBranchAction";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -110,6 +116,7 @@ export function ChatPanel({
   const navigate = useNavigate();
   const conv = useConversations((s) => s.conversations.find((c) => c.id === conversationId));
   const appendMessages = useConversations((s) => s.appendMessages);
+  const branchFromMessage = useConversations((s) => s.branchFromMessage);
   const rename = useConversations((s) => s.rename);
   // settings are updated via ChatToolbar callbacks or model selector
   const provider = useSettings((s) => s.getProvider(conv?.provider_id ?? null));
@@ -262,6 +269,17 @@ export function ChatPanel({
   if (!conv) return <div className="chat-panel"><p>No conversation.</p></div>;
 
   const c = conv;
+  const pendingBranchExcerpt = isPendingBranchConversation(c)
+    ? c.branch_excerpt ?? null
+    : null;
+  const composerSelectedTextContext = selectedTextContext
+    ? { text: selectedTextContext.text, label: `Page ${selectedTextContext.pageNumber}` }
+      : pendingBranchExcerpt
+        ? { text: pendingBranchExcerpt, label: "Selected reply" }
+        : null;
+  const composerOnRemoveSelectedText = selectedTextContext
+    ? onRemoveSelectedText
+    : undefined;
   const outputFormatStyle = {
     "--ai-output-font-size": `${aiOutputFormat.fontSize}px`,
     "--ai-output-line-height": String(aiOutputFormat.lineHeight),
@@ -314,9 +332,11 @@ export function ChatPanel({
     const draft = (override ?? input).trim();
     const text = selectedTextContext
       ? buildSelectedTextMessage(selectedTextContext, draft)
-      : draft;
+      : pendingBranchExcerpt
+        ? buildAssistantExcerptMessage(pendingBranchExcerpt, draft)
+        : draft;
     const sentAttachments = attachments;
-    if ((!draft && sentAttachments.length === 0 && !selectedTextContext) || busy) return;
+    if ((!draft && sentAttachments.length === 0 && !composerSelectedTextContext) || busy) return;
     if (!provider) {
       setStatus("No provider configured. Add one in Settings.");
       return;
@@ -348,11 +368,13 @@ export function ChatPanel({
     // First turn: set an instant title from the question (so the sidebar
     // updates immediately), then refine it with an LLM summary once the
     // assistant replies (see maybeSummarizeTitle below).
-    const wasFirstTurn = c.messages.length === 0;
+    const wasFirstTurn = c.messages.length === 0 || !!pendingBranchExcerpt;
     if (wasFirstTurn) {
       const fallbackTitle = selectedTextContext
         ? draft || `Page ${selectedTextContext.pageNumber} excerpt`
-        : draft;
+        : pendingBranchExcerpt
+          ? draft || pendingBranchExcerpt
+          : draft;
       rename(c.id, fallbackTitle.slice(0, 48) || (sentAttachments.length > 0 ? "Image chat" : "New chat"));
     }
 
@@ -510,6 +532,27 @@ export function ChatPanel({
     }
   }
 
+  async function createBranch(messageIndex: number, excerpt: string) {
+    if (busy) return;
+    setStatus("Creating branch…");
+    try {
+      const child = await branchFromMessage({
+        conversationId: c.id,
+        messageIndex,
+        excerpt,
+      });
+      setStatus("");
+      if (child.type === "paper" && child.paper_id) {
+        navigate(`/paper/${encodeURIComponent(child.paper_id)}/${child.id}`);
+      } else {
+        navigate(`/chat/${child.id}`);
+      }
+    } catch (error: any) {
+      setStatus(`Could not create branch: ${error?.message || "error"}`);
+      throw error;
+    }
+  }
+
   return (
     <div className="chat-panel">
       <ChatErrorBoundary>
@@ -539,8 +582,11 @@ export function ChatPanel({
             <MessageRow
               key={item.key}
               msg={item.message}
+              messageIndex={item.index}
               showPaperLinks={showPaperLinks}
               onOpenPaper={onOpenPaper}
+              branchDisabled={busy}
+              onBranch={createBranch}
             />
           ))}
           {streaming && (
@@ -582,8 +628,8 @@ export function ChatPanel({
         }
         attachments={attachments}
         onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-        selectedTextContext={selectedTextContext}
-        onRemoveSelectedText={onRemoveSelectedText}
+        selectedTextContext={composerSelectedTextContext}
+        onRemoveSelectedText={composerOnRemoveSelectedText}
         models={availableModels}
         currentModel={currentModel}
         onModelChange={handleModelChange}
@@ -604,12 +650,18 @@ export function ChatPanel({
 
 const MessageRow = memo(function MessageRow({
   msg,
+  messageIndex,
   showPaperLinks,
   onOpenPaper,
+  branchDisabled,
+  onBranch,
 }: {
   msg: ChatMessage;
+  messageIndex: number;
   showPaperLinks: boolean;
   onOpenPaper: (paper: Paper) => void;
+  branchDisabled: boolean;
+  onBranch: (messageIndex: number, excerpt: string) => Promise<void>;
 }) {
   if (msg.role === "user") {
     return (
@@ -637,7 +689,11 @@ const MessageRow = memo(function MessageRow({
   }
   // assistant
   return (
-    <div className="msg msg-assistant">
+    <AssistantBranchAction
+      messageIndex={messageIndex}
+      disabled={branchDisabled}
+      onBranch={onBranch}
+    >
       {msg.content ? (
         <Markdown>{msg.content}</Markdown>
       ) : (
@@ -645,6 +701,6 @@ const MessageRow = memo(function MessageRow({
       )}
       {msg.ui?.error && <div className="msg-error">{msg.ui.error}</div>}
       {msg.ui?.stopped && <div className="msg-stopped">已停止</div>}
-    </div>
+    </AssistantBranchAction>
   );
 });

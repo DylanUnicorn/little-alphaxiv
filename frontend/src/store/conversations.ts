@@ -13,6 +13,10 @@
 import { create } from "zustand";
 import type { ChatMessage, Conversation, ConversationType } from "../types";
 import * as api from "../lib/api";
+import {
+  branchMessagesThrough,
+  normalizeBranchExcerpt,
+} from "../lib/conversationBranches";
 
 interface ConvState {
   conversations: Conversation[];
@@ -36,6 +40,11 @@ interface ConvState {
     providerId?: string;
     initialMessages?: ChatMessage[];
     reuseEmpty?: boolean;
+  }) => Promise<Conversation>;
+  branchFromMessage: (opts: {
+    conversationId: string;
+    messageIndex: number;
+    excerpt: string;
   }) => Promise<Conversation>;
   syncEmptyProvider: (id: string, providerId?: string) => void;
   appendMessages: (id: string, msgs: ChatMessage[]) => Promise<void>;
@@ -156,8 +165,10 @@ export const useConversations = create<ConvState>((set, get) => ({
     }
 
     const now = Date.now();
+    const id = uid();
     const conv: Conversation = {
-      id: uid(),
+      id,
+      history_id: id,
       title: opts.title || (opts.type === "paper" ? "Paper discussion" : "New chat"),
       type: opts.type,
       paper_id: opts.paperId,
@@ -170,6 +181,43 @@ export const useConversations = create<ConvState>((set, get) => ({
     await persist(conv);
     set((s) => ({ conversations: [conv, ...s.conversations], activeId: conv.id }));
     return conv;
+  },
+
+  branchFromMessage: async ({ conversationId, messageIndex, excerpt }) => {
+    const parent = get().conversations.find((conversation) => conversation.id === conversationId);
+    if (!parent) throw new Error("Parent conversation not found.");
+    const branchExcerpt = normalizeBranchExcerpt(excerpt);
+    if (!branchExcerpt) throw new Error("Select some assistant text to create a branch.");
+    const messages = branchMessagesThrough(parent, messageIndex);
+    const now = Date.now();
+    const child: Conversation = {
+      id: uid(),
+      history_id: parent.history_id || parent.id,
+      parent_id: parent.id,
+      branch_from_message_index: messageIndex,
+      branch_excerpt: branchExcerpt,
+      title: `Branch: ${branchExcerpt}`.slice(0, 48),
+      type: parent.type,
+      paper_id: parent.paper_id,
+      provider_id: parent.provider_id,
+      model: parent.model,
+      style_preset: parent.style_preset,
+      context_capacity_override: parent.context_capacity_override,
+      reserve_tokens: parent.reserve_tokens,
+      last_usage: parent.last_usage,
+      messages,
+      created_at: now,
+      updated_at: now,
+    };
+    // A branch already contains inherited messages, so it is persisted now.
+    // Only reveal/activate it after the server accepts the lineage.
+    const saved = await api.putConversation(child);
+    set((state) => ({
+      conversations: [saved, ...state.conversations],
+      activeId: saved.id,
+      hasHistory: true,
+    }));
+    return saved;
   },
 
   syncEmptyProvider: (id, providerId) =>
@@ -250,17 +298,22 @@ export const useConversations = create<ConvState>((set, get) => ({
     }),
 
   remove: async (id) => {
-    await api.deleteConversation(id); // no-op if it was never persisted (404 tolerated server-side)
+    const result = await api.deleteConversation(id); // [] for an in-memory-only empty root
+    const deletedIds = result.deleted_ids.length > 0 ? result.deleted_ids : [id];
+    const kill = new Set(deletedIds);
     set((s) => {
-      const conversations = s.conversations.filter((c) => c.id !== id);
-      const activeId = s.activeId === id ? null : s.activeId;
+      const conversations = s.conversations.filter((c) => !kill.has(c.id));
+      const activeId = kill.has(s.activeId ?? "") ? null : s.activeId;
       return { conversations, activeId };
     });
   },
 
   removeMany: async (ids) => {
-    await Promise.all(ids.map((id) => api.deleteConversation(id)));
+    const results = await Promise.all(ids.map((id) => api.deleteConversation(id)));
     const kill = new Set(ids);
+    for (const result of results) {
+      for (const deletedId of result.deleted_ids) kill.add(deletedId);
+    }
     set((s) => ({
       conversations: s.conversations.filter((c) => !kill.has(c.id)),
       activeId: kill.has(s.activeId ?? "") ? null : s.activeId,

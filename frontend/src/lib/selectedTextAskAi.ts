@@ -43,6 +43,18 @@ export function buildSelectedTextMessage(
   return `Excerpt from page ${context.pageNumber}:\n\n${quoted}\n\n${prompt}`;
 }
 
+export function buildAssistantExcerptMessage(
+  excerpt: string,
+  userPrompt: string,
+): string {
+  const quoted = excerpt
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n");
+  const prompt = userPrompt.trim() || "Please explain this excerpt.";
+  return `Selected excerpt from the assistant reply:\n\n${quoted}\n\n${prompt}`;
+}
+
 export function pendingContextForConversation(
   pending: PendingSelectedTextContext | null,
   conversationId: string | null,
