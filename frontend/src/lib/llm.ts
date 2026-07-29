@@ -165,8 +165,10 @@ export async function runConversation(opts: {
           callbacks.onToolMessage?.(toolMsg);
         } catch (e: any) {
           const msg = `openalex search failed (${e?.message ?? "error"}); try search_arxiv`;
-          apiMessages.push({ role: "tool", tool_call_id: tc.id, name: "search_openalex", content: msg });
-          newMessages.push({ role: "tool", tool_call_id: tc.id, name: "search_openalex", content: msg });
+          const toolMsg: ChatMessage = { role: "tool", tool_call_id: tc.id, name: "search_openalex", content: msg };
+          apiMessages.push(toolMsg);
+          newMessages.push(toolMsg);
+          callbacks.onToolMessage?.(toolMsg);
           callbacks.onStatus?.("");
         }
       } else if (tc.function.name === "search_semantic_scholar") {
@@ -195,8 +197,10 @@ export async function runConversation(opts: {
           callbacks.onToolMessage?.(toolMsg);
         } catch (e: any) {
           const msg = `semantic scholar search failed (${e?.message ?? "error"}); try search_arxiv`;
-          apiMessages.push({ role: "tool", tool_call_id: tc.id, name: "search_semantic_scholar", content: msg });
-          newMessages.push({ role: "tool", tool_call_id: tc.id, name: "search_semantic_scholar", content: msg });
+          const toolMsg: ChatMessage = { role: "tool", tool_call_id: tc.id, name: "search_semantic_scholar", content: msg };
+          apiMessages.push(toolMsg);
+          newMessages.push(toolMsg);
+          callbacks.onToolMessage?.(toolMsg);
           callbacks.onStatus?.("");
         }
       } else if (tc.function.name === "web_search") {
@@ -228,8 +232,10 @@ export async function runConversation(opts: {
           callbacks.onToolMessage?.(toolMsg);
         } catch (e: any) {
           const msg = `web search failed (${e?.message ?? "error"}); try search_arxiv`;
-          apiMessages.push({ role: "tool", tool_call_id: tc.id, name: "web_search", content: msg });
-          newMessages.push({ role: "tool", tool_call_id: tc.id, name: "web_search", content: msg });
+          const toolMsg: ChatMessage = { role: "tool", tool_call_id: tc.id, name: "web_search", content: msg };
+          apiMessages.push(toolMsg);
+          newMessages.push(toolMsg);
+          callbacks.onToolMessage?.(toolMsg);
           callbacks.onStatus?.("");
         }
       } else {
