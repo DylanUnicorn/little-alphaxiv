@@ -20,7 +20,8 @@ def _root_payload(conv_id: str = "root") -> dict:
     return {
         "id": conv_id,
         "title": "Root history",
-        "type": "general",
+        "type": "paper",
+        "paper_id": "paper:branching-test",
         "history_id": conv_id,
         "parent_id": None,
         "branch_from_message_index": None,
@@ -48,7 +49,8 @@ def _branch_payload(
     return {
         "id": conv_id,
         "title": "Branch",
-        "type": "general",
+        "type": "paper",
+        "paper_id": "paper:branching-test",
         "history_id": history_id,
         "parent_id": parent_id,
         "branch_from_message_index": message_index,
@@ -125,6 +127,33 @@ async def test_branch_parent_cannot_reference_another_user(client):
         json=_branch_payload("stolen", "root"),
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_general_conversation_cannot_create_a_branch(client):
+    await _register(client)
+    general_root = {
+        **_root_payload(),
+        "id": "general-root",
+        "history_id": "general-root",
+        "type": "general",
+        "paper_id": None,
+    }
+    assert (
+        await client.put("/api/conversations/general-root", json=general_root)
+    ).status_code == 200
+
+    general_child = {
+        **_branch_payload("general-child", "general-root", history_id="general-root"),
+        "type": "general",
+        "paper_id": None,
+    }
+    response = await client.put(
+        "/api/conversations/general-child",
+        json=general_child,
+    )
+    assert response.status_code == 400
+    assert "paper" in response.text.lower()
 
 
 @pytest.mark.asyncio

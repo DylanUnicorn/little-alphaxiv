@@ -138,6 +138,11 @@ async def put_conversation(
             parent = await session.get(ConversationRow, parent_id)
             if parent is None or parent.user_id != user.id:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "parent conversation not found")
+            if parent.type != "paper" or not parent.paper_id:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "conversation branches are only supported for paper conversations",
+                )
             expected_history_id = parent.history_id or parent.id
             if history_id != expected_history_id:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "branch history_id mismatch")

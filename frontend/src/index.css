@@ -336,21 +336,6 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .conv-item:hover { background: var(--bg-3); color: var(--text); }
 .conv-item.active { background: var(--accent-soft); color: var(--text); }
 .conv-item.active .conv-title { color: var(--text); }
-.conv-item-main {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-.conv-item-main:focus-visible { outline-offset: 3px; }
 .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-tag { font-size: 11px; opacity: 0.8; }
 .conv-del {
@@ -359,32 +344,6 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 }
 .conv-item:hover .conv-del { opacity: 1; }
 .conv-del:hover { color: var(--danger); }
-.conv-tree-open {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  opacity: 0.6;
-}
-.conv-tree-open:hover,
-.conv-tree-open[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); opacity: 1; }
-.conv-tree-open svg {
-  width: 15px;
-  height: 15px;
-  fill: var(--bg-2);
-  stroke: currentColor;
-  stroke-width: 1.25;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 .sidebar-foot { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
 .provider-status { font-size: 11px; color: var(--text-dim); }
 .provider-status .warn { color: var(--warn); }
@@ -1651,42 +1610,6 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .history-item-del:hover { color: var(--danger); }
 
 /* ---------- Conversation branch trees ---------- */
-.conversation-tree-popover {
-  position: fixed;
-  z-index: var(--z-popover);
-  width: 268px;
-  max-height: min(440px, calc(100vh - 16px));
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--bg-2);
-  color: var(--text);
-  box-shadow: var(--shadow-sm);
-  animation: branch-tree-in var(--transition-base) ease-out;
-}
-.conversation-tree-popover-head {
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.conversation-tree-popover-head > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.conversation-tree-popover-head strong { font-size: 12.5px; font-weight: 650; }
-.conversation-tree-popover-head span { color: var(--text-dim); font-size: 11px; }
-.conversation-tree-popover-head button {
-  margin-left: auto;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 17px;
-}
-.conversation-tree-popover-head button:hover { background: var(--bg-3); color: var(--text); }
 .conversation-tree { min-width: 0; background: var(--bg-sunken); }
 .conversation-tree-scroll {
   overflow: auto;
@@ -1802,12 +1725,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .history-tree-group-copy strong { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .history-tree-group-copy span { color: var(--text-dim); font-size: 10.5px; }
 .history-tree-group .history-item-del { opacity: 0.65; }
-@keyframes branch-tree-in {
-  from { opacity: 0; transform: translateX(-3px); }
-  to { opacity: 1; transform: translateX(0); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .conversation-tree-popover { animation: none; }
   .conversation-tree-node::before { transition: none; }
 }
 
