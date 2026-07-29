@@ -30,6 +30,7 @@ import { useAnnotations } from "../store/annotations";
 import { SelectedTextAskAi } from "./SelectedTextAskAi";
 import type { PageSize } from "../types";
 import type { SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
+import { shouldKeepPdfPointerInteraction } from "../lib/pdfPointerInteraction";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
 
@@ -661,23 +662,6 @@ async function extractText(
     await new Promise((r) => setTimeout(r, 0));
   }
   return pages.join("\n\n");
-}
-
-function shouldKeepPdfPointerInteraction(target: Element | null): boolean {
-  if (!target) return false;
-  const el = target as HTMLElement;
-  if (
-    el.tagName === "INPUT" ||
-    el.tagName === "TEXTAREA" ||
-    el.isContentEditable
-  ) {
-    return true;
-  }
-  // Keep normal text selection when the press starts on actual pdf.js text.
-  if (target.closest(".pdf-textlayer span")) return true;
-  // Annotation handles/text/rects own their pointer gestures.
-  if (target.closest(".annot-svg, .annot-text, .annot-text-input")) return true;
-  return false;
 }
 
 interface TextItemLike {

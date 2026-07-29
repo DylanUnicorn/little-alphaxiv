@@ -5,7 +5,7 @@ Run with backend (:8000), Vite (:5173), and tools/mock_llm.py (:5050) running.
 
 from __future__ import annotations
 
-from drive import OUT, new_page, seed_provider
+from drive import APP, OUT, new_page, seed_provider
 
 
 def main() -> None:
@@ -15,11 +15,17 @@ def main() -> None:
         page = new_page(pw)
         try:
             seed_provider(page)
-            page.goto("http://127.0.0.1:5173/paper/1706.03762", wait_until="networkidle")
+            page.goto(f"{APP}/paper/1706.03762", wait_until="networkidle")
             assert "/login" not in page.url, f"unexpected auth redirect: {page.url}"
             page.wait_for_selector(".pdf-textlayer span", timeout=20_000)
 
             span = page.locator(".pdf-textlayer span").first
+
+            zoom_in = page.locator(".pdf-toolbar button", has_text="+")
+            assert zoom_in.count() == 1, "expected one PDF zoom-in button"
+            for _ in range(3):
+                zoom_in.click()
+            assert page.locator(".zoom-pct").inner_text() == "160%"
 
             def select_span() -> None:
                 span.evaluate(
@@ -41,6 +47,7 @@ def main() -> None:
 
             card = page.locator(".composer-selected-text")
             card.wait_for(state="visible", timeout=5_000)
+            page.locator(".selected-text-ask-ai").wait_for(state="detached", timeout=5_000)
             assert "Page 1:" in card.inner_text()
             assert page.locator(".msg-user").count() == user_count, "Ask AI submitted before explicit send"
             assert page.locator(".composer-textarea").evaluate(
