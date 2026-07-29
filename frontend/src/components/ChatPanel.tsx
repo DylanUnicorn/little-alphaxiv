@@ -7,7 +7,7 @@
 //   - Per-conversation model override, style preset, context window
 //   - GLM reasoning_content display as "thinking" block
 
-import { memo, useEffect, useRef, useState, useCallback, type CSSProperties } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useCallback, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider, ModelInfo, TokenUsage } from "../types";
 import { STYLE_PRESETS } from "../types";
@@ -19,12 +19,14 @@ import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
 import { releaseSendLock, tryAcquireSendLock } from "../lib/chatSendLock";
 import { buildSelectedTextMessage, type SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
+import { buildChatRenderItems } from "../lib/agentActivity";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
 import { PaperCard } from "./PaperCard";
 import { Markdown } from "./Markdown";
 import { ChatErrorBoundary } from "./ChatErrorBoundary";
 import { ChatComposer } from "./ChatComposer";
+import { AgentActivity } from "./AgentActivity";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -124,6 +126,10 @@ export function ChatPanel({
   const [reasoning, setReasoning] = useState("");
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const renderItems = useMemo(
+    () => buildChatRenderItems(conv?.messages ?? []),
+    [conv?.messages]
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // AbortController for the current in-flight turn, if any. Null when idle.
@@ -523,8 +529,19 @@ export function ChatPanel({
               </div>
             </div>
           )}
-          {conv.messages.map((m, i) => (
-            <MessageRow key={i} msg={m} showPaperLinks={showPaperLinks} onOpenPaper={onOpenPaper} />
+          {renderItems.map((item, itemIndex) => item.kind === "activity" ? (
+            <AgentActivity
+              key={item.key}
+              activity={item}
+              active={busy && !streaming && itemIndex === renderItems.length - 1}
+            />
+          ) : (
+            <MessageRow
+              key={item.key}
+              msg={item.message}
+              showPaperLinks={showPaperLinks}
+              onOpenPaper={onOpenPaper}
+            />
           ))}
           {streaming && (
             <div className="msg msg-assistant pending">
