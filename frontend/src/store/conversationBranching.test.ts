@@ -16,7 +16,8 @@ function rootConversation(): Conversation {
     id: "root",
     history_id: "root",
     title: "Root",
-    type: "general",
+    type: "paper",
+    paper_id: "paper:branching-test",
     provider_id: "provider-a",
     model: "model-a",
     style_preset: "thorough",
@@ -77,6 +78,24 @@ describe("conversation branching store", () => {
 
     expect(useConversations.getState().conversations.map((conversation) => conversation.id)).toEqual(["root"]);
     expect(useConversations.getState().activeId).toBe("root");
+  });
+
+  it("rejects branch creation from a general chat before persistence", async () => {
+    const general = {
+      ...rootConversation(),
+      type: "general" as const,
+      paper_id: undefined,
+    };
+    useConversations.setState({ conversations: [general], activeId: general.id });
+
+    await expect(useConversations.getState().branchFromMessage({
+      conversationId: general.id,
+      messageIndex: 1,
+      excerpt: "collapse",
+    })).rejects.toThrow(/paper/i);
+
+    expect(api.putConversation).not.toHaveBeenCalled();
+    expect(useConversations.getState().conversations).toEqual([general]);
   });
 
   it("assigns self lineage to every newly created root", async () => {

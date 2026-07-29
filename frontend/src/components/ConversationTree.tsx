@@ -1,11 +1,8 @@
 import {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useState,
-  type RefObject,
 } from "react";
-import { createPortal } from "react-dom";
 import type { Conversation } from "../types";
 import {
   collectConversationSubtreeIds,
@@ -17,7 +14,6 @@ interface TreeProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   onDeleteBranch?: (id: string) => Promise<void> | void;
-  compact?: boolean;
 }
 
 function nodeLabel(node: Conversation, isRoot: boolean): string {
@@ -30,7 +26,6 @@ export function ConversationTree({
   activeId,
   onSelect,
   onDeleteBranch,
-  compact = false,
 }: TreeProps) {
   const layout = useMemo(() => layoutConversationTree(nodes), [nodes]);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
@@ -51,7 +46,7 @@ export function ConversationTree({
   const subtreeSize = collectConversationSubtreeIds(nodes, inspected.id).length;
 
   return (
-    <div className={`conversation-tree${compact ? " compact" : ""}`}>
+    <div className="conversation-tree">
       <div className="conversation-tree-scroll">
         <div
           className="conversation-tree-canvas"
@@ -123,75 +118,5 @@ export function ConversationTree({
         )}
       </div>
     </div>
-  );
-}
-
-interface PopoverProps extends TreeProps {
-  open: boolean;
-  anchorRef: RefObject<HTMLElement>;
-  onClose: () => void;
-  onPointerEnter?: () => void;
-  onPointerLeave?: () => void;
-}
-
-export function ConversationTreePopover({
-  open,
-  anchorRef,
-  onClose,
-  onPointerEnter,
-  onPointerLeave,
-  ...treeProps
-}: PopoverProps) {
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-
-  useLayoutEffect(() => {
-    if (!open || !anchorRef.current) return;
-    const update = () => {
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = 268;
-      const estimatedHeight = Math.min(440, 146 + treeProps.nodes.length * 34);
-      setPosition({
-        left: Math.min(window.innerWidth - width - 8, rect.right + 8),
-        top: Math.max(8, Math.min(rect.top - 16, window.innerHeight - estimatedHeight - 8)),
-      });
-    };
-    update();
-    window.addEventListener("resize", update);
-    document.addEventListener("scroll", update, true);
-    return () => {
-      window.removeEventListener("resize", update);
-      document.removeEventListener("scroll", update, true);
-    };
-  }, [anchorRef, open, treeProps.nodes.length]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
-  return createPortal(
-    <section
-      className="conversation-tree-popover"
-      style={position}
-      aria-label="History branches"
-      onMouseEnter={onPointerEnter}
-      onMouseLeave={onPointerLeave}
-    >
-      <div className="conversation-tree-popover-head">
-        <div>
-          <strong>History branches</strong>
-          <span>{treeProps.nodes.length} node{treeProps.nodes.length === 1 ? "" : "s"}</span>
-        </div>
-        <button type="button" aria-label="Close History tree" onClick={onClose}>×</button>
-      </div>
-      <ConversationTree {...treeProps} compact />
-    </section>,
-    document.body,
   );
 }

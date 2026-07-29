@@ -13,7 +13,7 @@
 //   - Entries are grouped under alphaxiv-style date headers (Today / Yesterday
 //     / Previous 7 Days / Previous 30 Days / <Month Year>) via groupByDate.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
@@ -24,20 +24,14 @@ import * as db from "../lib/db";
 import { hasRealTitle } from "../lib/paperMeta";
 import type { Conversation } from "../types";
 import { Tooltip } from "./Tooltip";
-import {
-  collectConversationSubtreeIds,
-  groupConversationHistories,
-  type ConversationHistory,
-} from "../lib/conversationBranches";
-import { ConversationTreePopover } from "./ConversationTree";
 
 type Item =
-  | { kind: "general"; history: ConversationHistory }
+  | { kind: "general"; conv: Conversation }
   | { kind: "paper"; paperId: string; threads: Conversation[]; rep: Conversation };
 
 /** Timestamp used to bucket a sidebar item into a date group. */
 function itemTs(it: Item): number {
-  return it.kind === "general" ? it.history.updatedAt : it.rep.updated_at;
+  return it.kind === "general" ? it.conv.updated_at : it.rep.updated_at;
 }
 
 /** Sidebar label for a paper group: prefer the paper's real cached title (looked
@@ -53,130 +47,6 @@ function paperGroupLabel(
   const t = rep.title;
   if (t && t !== "Paper discussion" && !t.startsWith("📄")) return t;
   return `📄 ${paperId}`;
-}
-
-function GeneralHistoryRow({
-  history,
-  activeId,
-  onSelect,
-  onRemove,
-}: {
-  history: ConversationHistory;
-  activeId: string | null;
-  onSelect: (id: string) => void;
-  onRemove: (id: string) => Promise<void>;
-}) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [treeOpen, setTreeOpen] = useState(false);
-  const active = history.nodes.some((node) => node.id === activeId);
-
-  function openTree() {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = null;
-    setTreeOpen(true);
-  }
-
-  function scheduleClose() {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(() => {
-      setTreeOpen(false);
-      closeTimer.current = null;
-    }, 140);
-  }
-
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
-
-  async function deleteBranch(id: string) {
-    const deletedIds = new Set(collectConversationSubtreeIds(history.nodes, id));
-    const activeWasDeleted = activeId ? deletedIds.has(activeId) : false;
-    const parentId = history.nodes.find((node) => node.id === id)?.parent_id;
-    await onRemove(id);
-    if (!activeWasDeleted) return;
-    const fallback = parentId && !deletedIds.has(parentId)
-      ? history.nodes.find((node) => node.id === parentId)
-      : history.nodes
-          .filter((node) => !deletedIds.has(node.id))
-          .sort((a, b) => b.updated_at - a.updated_at)[0];
-    if (fallback) {
-      setTreeOpen(false);
-      onSelect(fallback.id);
-    }
-  }
-
-  return (
-    <>
-      <div
-        ref={rowRef}
-        className={`conv-item ${active ? "active" : ""}`}
-        role="group"
-        aria-label={`History: ${history.root.title || "New chat"}`}
-        onMouseEnter={openTree}
-        onMouseLeave={scheduleClose}
-        onFocus={openTree}
-      >
-        <button
-          type="button"
-          className="conv-item-main"
-          aria-label={`Open History: ${history.root.title || "New chat"}`}
-          onClick={() => onSelect(history.representative.id)}
-        >
-          <span className="conv-tag">💬</span>
-          <span className="conv-title">{history.root.title || "New chat"}</span>
-          {history.nodes.length > 1 && <span className="conv-count">{history.nodes.length}</span>}
-        </button>
-        <button
-          type="button"
-          className="conv-tree-open"
-          aria-label="Show History tree"
-          aria-expanded={treeOpen}
-          onClick={(event) => {
-            event.stopPropagation();
-            setTreeOpen((open) => !open);
-          }}
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M5 3v3c0 1.1.9 2 2 2h2c1.1 0 2 .9 2 2v3M5 8v5" />
-            <circle cx="5" cy="2.5" r="1.5" />
-            <circle cx="5" cy="13.5" r="1.5" />
-            <circle cx="11" cy="13.5" r="1.5" />
-          </svg>
-        </button>
-        <Tooltip label={history.nodes.length > 1 ? "Delete entire History" : "Delete"} side="top">
-          <button
-            type="button"
-            className="conv-del"
-            onClick={async (event) => {
-              event.stopPropagation();
-              const count = history.nodes.length;
-              const message = count > 1
-                ? `Delete this entire History and all ${count} nodes? This cannot be undone.`
-                : "Delete this conversation? This cannot be undone.";
-              if (!window.confirm(message)) return;
-              setTreeOpen(false);
-              await onRemove(history.root.id);
-            }}
-          >×</button>
-        </Tooltip>
-      </div>
-      <ConversationTreePopover
-        open={treeOpen}
-        anchorRef={rowRef}
-        nodes={history.nodes}
-        activeId={activeId}
-        onSelect={(id) => {
-          setTreeOpen(false);
-          onSelect(id);
-        }}
-        onDeleteBranch={deleteBranch}
-        onClose={() => setTreeOpen(false)}
-        onPointerEnter={openTree}
-        onPointerLeave={scheduleClose}
-      />
-    </>
-  );
 }
 
 export function Sidebar() {
@@ -207,7 +77,7 @@ export function Sidebar() {
     navigate(`/chat/${c.id}`);
   }
 
-  // Build sidebar items: one row per general History root + paper groups.
+  // Build sidebar items: one flat row per general chat + paper groups.
   const items: Item[] = [];
   const paperGroups = new Map<string, Conversation[]>();
   for (const c of conversations) {
@@ -217,10 +87,10 @@ export function Sidebar() {
       paperGroups.set(c.paper_id, arr);
     }
   }
-  for (const history of groupConversationHistories(
-    conversations.filter((conversation) => conversation.type === "general"),
-  )) {
-    items.push({ kind: "general", history });
+  for (const conversation of conversations) {
+    if (conversation.type === "general") {
+      items.push({ kind: "general", conv: conversation });
+    }
   }
   for (const [paperId, threads] of paperGroups) {
     const rep = threads.slice().sort((a, b) => b.updated_at - a.updated_at)[0];
@@ -228,8 +98,8 @@ export function Sidebar() {
   }
   // Most-recently-touched first.
   items.sort((a, b) => {
-    const ta = a.kind === "general" ? a.history.updatedAt : a.rep.updated_at;
-    const tb = b.kind === "general" ? b.history.updatedAt : b.rep.updated_at;
+    const ta = a.kind === "general" ? a.conv.updated_at : a.rep.updated_at;
+    const tb = b.kind === "general" ? b.conv.updated_at : b.rep.updated_at;
     return tb - ta;
   });
   // Bucket into alphaxiv-style date groups (items are already MRU, so each
@@ -304,17 +174,28 @@ export function Sidebar() {
             <div className="conv-group-label">{g.label}</div>
             {g.items.map((it) => {
               if (it.kind === "general") {
+                const active = it.conv.id === activeId;
                 return (
-                  <GeneralHistoryRow
-                    key={it.history.id}
-                    history={it.history}
-                    activeId={activeId}
-                    onSelect={(id) => {
-                      setActive(id);
-                      navigate(`/chat/${id}`);
+                  <div
+                    key={it.conv.id}
+                    className={`conv-item ${active ? "active" : ""}`}
+                    onClick={() => {
+                      setActive(it.conv.id);
+                      navigate(`/chat/${it.conv.id}`);
                     }}
-                    onRemove={remove}
-                  />
+                  >
+                    <span className="conv-tag">💬</span>
+                    <span className="conv-title">{it.conv.title || "New chat"}</span>
+                    <Tooltip label="Delete" side="top">
+                      <button
+                        className="conv-del"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void remove(it.conv.id);
+                        }}
+                      >×</button>
+                    </Tooltip>
+                  </div>
                 );
               }
               // paper group

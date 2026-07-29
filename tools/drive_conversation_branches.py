@@ -1,4 +1,4 @@
-"""Playwright E2E for selection-created conversation History branches.
+"""Playwright E2E for paper-preview-only conversation branches.
 
 Run with an isolated backend, frontend, and ``tools/mock_llm.py``. Environment
 variables ``LAX_FRONT`` and ``LAX_BACK`` override the default dev URLs.
@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Locator, Page, sync_playwright
 
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, errors="replace")
 sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, errors="replace")
@@ -23,9 +23,11 @@ MOCK = os.environ.get("LAX_MOCK", "http://127.0.0.1:5050/v1")
 OUT = Path(__file__).parent / "shots_branches"
 OUT.mkdir(exist_ok=True)
 
-USERNAME = f"branch_e2e_{int(time.time()) % 1_000_000}"
+USERNAME = f"paper_branch_e2e_{int(time.time()) % 1_000_000}"
 PASSWORD = "testtest123"
-ROOT_ID = f"branch-root-{int(time.time())}"
+GENERAL_ID = f"general-root-{int(time.time())}"
+PAPER_ID = "1706.03762"
+ROOT_ID = f"paper-branch-root-{int(time.time())}"
 PROVIDER_ID = f"mock-{USERNAME}"
 
 
@@ -45,7 +47,7 @@ def put_json(page: Page, url: str, payload: dict):
     )
 
 
-def seed_account_and_history(page: Page) -> dict:
+def seed_account_and_histories(page: Page) -> dict:
     registered = post_json(
         page,
         f"{BACK}/api/auth/register",
@@ -56,16 +58,14 @@ def seed_account_and_history(page: Page) -> dict:
         },
     )
     assert registered.status == 201, registered.text()
-    direct_me = page.request.get(f"{BACK}/api/auth/me")
-    print("AUTH", {"direct": direct_me.status})
-    assert direct_me.status == 200, direct_me.text()
+    assert page.request.get(f"{BACK}/api/auth/me").status == 200
 
     provider = post_json(
         page,
         f"{BACK}/api/providers",
         {
             "id": PROVIDER_ID,
-            "name": "Branch mock",
+            "name": "Paper branch mock",
             "base_url": MOCK,
             "api_key": "mock",
             "model": "mock-model",
@@ -75,17 +75,52 @@ def seed_account_and_history(page: Page) -> dict:
     assert provider.status == 201, provider.text()
 
     now = int(time.time() * 1000)
+    general = {
+        "id": GENERAL_ID,
+        "history_id": GENERAL_ID,
+        "title": "Flat general chat",
+        "type": "general",
+        "provider_id": PROVIDER_ID,
+        "messages": [
+            {"role": "user", "content": "Explain ordinary chat behavior."},
+            {
+                "role": "assistant",
+                "content": "General chat selection must never create a conversation branch.",
+            },
+        ],
+        "created_at": now - 1_000,
+        "updated_at": now - 1_000,
+    }
+    saved_general = put_json(page, f"{BACK}/api/conversations/{GENERAL_ID}", general)
+    assert saved_general.status == 200, saved_general.text()
+
+    paper = {
+        "arxiv_id": PAPER_ID,
+        "title": "Attention Is All You Need",
+        "authors": ["Ashish Vaswani"],
+        "abstract": "A transformer architecture paper used by the branch E2E.",
+        "pdf_url": f"https://arxiv.org/pdf/{PAPER_ID}",
+        "abs_url": f"https://arxiv.org/abs/{PAPER_ID}",
+        "published": "2017-06-12",
+        "primary_category": "cs.CL",
+        "full_text": "Transformers use self-attention to model token relationships.",
+        "fetched_at": now,
+    }
+    saved_paper = put_json(page, f"{BACK}/api/papers/{PAPER_ID}", paper)
+    assert saved_paper.status == 200, saved_paper.text()
+
     root = {
         "id": ROOT_ID,
         "history_id": ROOT_ID,
         "parent_id": None,
         "branch_from_message_index": None,
         "branch_excerpt": None,
-        "title": "Branching root",
-        "type": "general",
+        "title": "Paper branching root",
+        "type": "paper",
+        "paper_id": PAPER_ID,
         "provider_id": PROVIDER_ID,
         "messages": [
-            {"role": "user", "content": "Explain training failures."},
+            {"role": "user", "content": "Explain training failures in this paper."},
             {
                 "role": "assistant",
                 "content": None,
@@ -116,13 +151,12 @@ def seed_account_and_history(page: Page) -> dict:
         "created_at": now,
         "updated_at": now,
     }
-    seeded = put_json(page, f"{BACK}/api/conversations/{ROOT_ID}", root)
-    assert seeded.status == 200, seeded.text()
+    saved_root = put_json(page, f"{BACK}/api/conversations/{ROOT_ID}", root)
+    assert saved_root.status == 200, saved_root.text()
     return root
 
 
-def select_phrase(page: Page, message_index: int, phrase: str) -> None:
-    host = page.locator(f'.msg-assistant[data-message-index="{message_index}"]')
+def select_phrase(host: Locator, phrase: str) -> None:
     host.wait_for(state="visible", timeout=15_000)
     selected = host.evaluate(
         """(element, phrase) => {
@@ -147,13 +181,17 @@ def select_phrase(page: Page, message_index: int, phrase: str) -> None:
     assert selected == phrase, f"selection failed: {selected!r}"
 
 
+def open_history(page: Page) -> Locator:
+    page.locator(".toolbar-action-btn").filter(has_text="History").click()
+    panel = page.locator(".history-panel")
+    panel.wait_for(state="visible", timeout=5_000)
+    return panel
+
+
 def main() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1440, "height": 900})
-        # Keep this run isolated even if a developer already has a different
-        # backend on :8000. Vite's proxy is bypassed only inside this browser
-        # context; production code still issues normal same-origin /api calls.
         context.route(
             f"{FRONT}/api/**",
             lambda route: route.continue_(
@@ -164,25 +202,34 @@ def main() -> None:
         page_errors: list[str] = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         try:
-            root = seed_account_and_history(page)
-            page.goto(f"{FRONT}/chat/{ROOT_ID}", wait_until="domcontentloaded")
-            page.wait_for_timeout(1_000)
-            print(
-                "BOOT",
-                {"url": page.url, "cookies": [cookie["name"] for cookie in context.cookies()]},
-            )
-            if page_errors:
-                print("BOOT PAGE ERRORS", page_errors)
-            page.wait_for_selector("textarea", timeout=15_000)
-            page.wait_for_selector('.msg-assistant[data-message-index="3"]', timeout=15_000)
+            root = seed_account_and_histories(page)
 
+            # General chat stays flat and never exposes the Branch selection action.
+            page.goto(f"{FRONT}/chat/{GENERAL_ID}", wait_until="domcontentloaded")
+            page.wait_for_selector("textarea", timeout=15_000)
+            general_phrase = "never create a conversation branch"
+            general_reply = page.locator(".msg-assistant").filter(has_text=general_phrase)
+            select_phrase(general_reply, general_phrase)
+            page.wait_for_timeout(250)
+            assert page.locator(".assistant-branch-action").count() == 0
+            assert page.locator(".conversation-tree").count() == 0
+            assert page.locator(".conv-tree-open").count() == 0
+            print("GENERAL CHAT SCOPE OK")
+
+            # Paper preview sub-chat exposes the selection-created branch flow.
+            page.goto(
+                f"{FRONT}/paper/{PAPER_ID}/{ROOT_ID}",
+                wait_until="domcontentloaded",
+            )
+            page.wait_for_selector("textarea", timeout=15_000)
+            paper_reply = page.locator('.msg-assistant[data-message-index="3"]')
             phrase = "representation collapse"
-            select_phrase(page, 3, phrase)
+            select_phrase(paper_reply, phrase)
             branch_action = page.locator(".assistant-branch-action")
             branch_action.wait_for(state="visible", timeout=5_000)
             branch_action.click()
             page.wait_for_function(
-                "rootId => location.pathname.startsWith('/chat/') && !location.pathname.endsWith(rootId)",
+                "rootId => location.pathname.startsWith('/paper/') && !location.pathname.endsWith(rootId)",
                 arg=ROOT_ID,
                 timeout=15_000,
             )
@@ -198,6 +245,8 @@ def main() -> None:
             child_before = page.request.get(f"{BACK}/api/conversations/{child_id}")
             assert child_before.status == 200, child_before.text()
             child_json = child_before.json()
+            assert child_json["type"] == "paper"
+            assert child_json["paper_id"] == PAPER_ID
             assert child_json["parent_id"] == ROOT_ID
             assert child_json["history_id"] == ROOT_ID
             assert child_json["branch_from_message_index"] == 3
@@ -207,26 +256,20 @@ def main() -> None:
             page.locator(".composer-send-btn").click()
             page.get_by_text("How does this happen?", exact=False).wait_for(timeout=10_000)
             page.get_by_text("Key findings:", exact=False).last.wait_for(timeout=20_000)
-
             root_after = page.request.get(f"{BACK}/api/conversations/{ROOT_ID}").json()
             assert root_after["messages"] == root["messages"], "parent branch was mutated"
 
-            history_row = page.locator('.conv-item:has-text("Branching root")').first
-            history_row.hover()
-            popover = page.locator(".conversation-tree-popover")
-            popover.wait_for(state="visible", timeout=5_000)
-            assert popover.locator(".conversation-tree-node").count() == 2
-            assert popover.locator(
+            panel = open_history(page)
+            assert panel.locator(".conversation-tree-node").count() == 2
+            assert panel.locator(
                 f'.conversation-tree-node[data-node-id="{child_id}"][data-active="true"]'
             ).count() == 1
-            page.screenshot(path=str(OUT / "01_dark_active_branch.png"), full_page=False)
+            page.screenshot(path=str(OUT / "01_paper_dark_active_branch.png"), full_page=False)
 
-            popover.locator(f'.conversation-tree-node[data-node-id="{ROOT_ID}"]').click()
-            page.wait_for_url(f"{FRONT}/chat/{ROOT_ID}", timeout=10_000)
+            panel.locator(f'.conversation-tree-node[data-node-id="{ROOT_ID}"]').click()
+            page.wait_for_url(f"{FRONT}/paper/{PAPER_ID}/{ROOT_ID}", timeout=10_000)
 
-            # Add a second child under the same root so the visual regression
-            # exercises an actual fork, not just a two-node vertical path.
-            sibling_id = f"branch-sibling-{int(time.time() * 1000)}"
+            sibling_id = f"paper-branch-sibling-{int(time.time() * 1000)}"
             sibling = {
                 **root,
                 "id": sibling_id,
@@ -234,7 +277,7 @@ def main() -> None:
                 "parent_id": ROOT_ID,
                 "branch_from_message_index": 3,
                 "branch_excerpt": "distinct inputs map to identical embeddings",
-                "title": "Sibling branch",
+                "title": "Sibling paper branch",
                 "messages": root["messages"][:4],
                 "created_at": int(time.time() * 1000),
                 "updated_at": int(time.time() * 1000),
@@ -244,42 +287,42 @@ def main() -> None:
             page.reload(wait_until="domcontentloaded")
             page.wait_for_selector("textarea", timeout=15_000)
 
-            page.locator("#sb-theme").select_option("light")
+            page.locator('button[aria-label="Chat settings"]').click()
+            page.locator(".settings-select").select_option("light")
             page.wait_for_function("document.documentElement.dataset.theme === 'light'")
-            page.wait_for_timeout(350)
-            history_row = page.locator('.conv-item:has-text("Branching root")').first
-            history_row.hover()
-            popover.wait_for(state="visible", timeout=5_000)
-            assert popover.locator(".conversation-tree-node").count() == 3
-            assert popover.locator(
+            page.locator('button[aria-label="Chat settings"]').click()
+            panel = open_history(page)
+            assert panel.locator(".conversation-tree-node").count() == 3
+            assert panel.locator(
                 f'.conversation-tree-node[data-node-id="{ROOT_ID}"][data-active="true"]'
             ).count() == 1
-            child_box = popover.locator(
+            child_box = panel.locator(
                 f'.conversation-tree-node[data-node-id="{child_id}"]'
             ).bounding_box()
-            sibling_box = popover.locator(
+            sibling_box = panel.locator(
                 f'.conversation-tree-node[data-node-id="{sibling_id}"]'
             ).bounding_box()
             assert child_box and sibling_box and abs(child_box["x"] - sibling_box["x"]) > 20
-            page.screenshot(path=str(OUT / "02_light_active_root.png"), full_page=False)
+            page.screenshot(path=str(OUT / "02_paper_light_active_root.png"), full_page=False)
 
-            popover.locator(f'.conversation-tree-node[data-node-id="{child_id}"]').hover()
+            panel.locator(f'.conversation-tree-node[data-node-id="{child_id}"]').hover()
             page.once("dialog", lambda dialog: dialog.accept())
-            popover.locator(".conversation-tree-delete").click()
+            panel.locator(".conversation-tree-delete").click()
             page.wait_for_timeout(500)
-            assert popover.locator(".conversation-tree-node").count() == 2
+            assert panel.locator(".conversation-tree-node").count() == 2
             assert page.request.get(f"{BACK}/api/conversations/{child_id}").status == 404
-            popover.locator(f'.conversation-tree-node[data-node-id="{sibling_id}"]').hover()
+
+            panel.locator(f'.conversation-tree-node[data-node-id="{sibling_id}"]').hover()
             page.once("dialog", lambda dialog: dialog.accept())
-            popover.locator(".conversation-tree-delete").click()
+            panel.locator(".conversation-tree-delete").click()
             page.wait_for_timeout(500)
-            assert popover.locator(".conversation-tree-node").count() == 1
+            assert panel.locator(".conversation-tree-node").count() == 1
             assert page.request.get(f"{BACK}/api/conversations/{sibling_id}").status == 404
             assert page.request.get(f"{BACK}/api/conversations/{ROOT_ID}").status == 200
-            page.screenshot(path=str(OUT / "03_branch_deleted.png"), full_page=False)
+            page.screenshot(path=str(OUT / "03_paper_branches_deleted.png"), full_page=False)
 
             assert not page_errors, "Browser errors:\n" + "\n".join(page_errors)
-            print(f"BRANCH E2E PASSED root={ROOT_ID} child={child_id}")
+            print(f"PAPER-ONLY BRANCH E2E PASSED root={ROOT_ID} child={child_id}")
             print(f"Screenshots: {OUT}")
         finally:
             context.close()

@@ -533,7 +533,7 @@ export function ChatPanel({
   }
 
   async function createBranch(messageIndex: number, excerpt: string) {
-    if (busy) return;
+    if (busy || c.type !== "paper") return;
     setStatus("Creating branch…");
     try {
       const child = await branchFromMessage({
@@ -585,6 +585,7 @@ export function ChatPanel({
               messageIndex={item.index}
               showPaperLinks={showPaperLinks}
               onOpenPaper={onOpenPaper}
+              branchEnabled={c.type === "paper"}
               branchDisabled={busy}
               onBranch={createBranch}
             />
@@ -653,6 +654,7 @@ const MessageRow = memo(function MessageRow({
   messageIndex,
   showPaperLinks,
   onOpenPaper,
+  branchEnabled,
   branchDisabled,
   onBranch,
 }: {
@@ -660,6 +662,7 @@ const MessageRow = memo(function MessageRow({
   messageIndex: number;
   showPaperLinks: boolean;
   onOpenPaper: (paper: Paper) => void;
+  branchEnabled: boolean;
   branchDisabled: boolean;
   onBranch: (messageIndex: number, excerpt: string) => Promise<void>;
 }) {
@@ -688,12 +691,8 @@ const MessageRow = memo(function MessageRow({
     );
   }
   // assistant
-  return (
-    <AssistantBranchAction
-      messageIndex={messageIndex}
-      disabled={branchDisabled}
-      onBranch={onBranch}
-    >
+  const content = (
+    <>
       {msg.content ? (
         <Markdown>{msg.content}</Markdown>
       ) : (
@@ -701,6 +700,18 @@ const MessageRow = memo(function MessageRow({
       )}
       {msg.ui?.error && <div className="msg-error">{msg.ui.error}</div>}
       {msg.ui?.stopped && <div className="msg-stopped">已停止</div>}
+    </>
+  );
+  if (!branchEnabled) {
+    return <div className="msg msg-assistant">{content}</div>;
+  }
+  return (
+    <AssistantBranchAction
+      messageIndex={messageIndex}
+      disabled={branchDisabled}
+      onBranch={onBranch}
+    >
+      {content}
     </AssistantBranchAction>
   );
 });

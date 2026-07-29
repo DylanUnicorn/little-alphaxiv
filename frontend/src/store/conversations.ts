@@ -186,6 +186,9 @@ export const useConversations = create<ConvState>((set, get) => ({
   branchFromMessage: async ({ conversationId, messageIndex, excerpt }) => {
     const parent = get().conversations.find((conversation) => conversation.id === conversationId);
     if (!parent) throw new Error("Parent conversation not found.");
+    if (parent.type !== "paper" || !parent.paper_id) {
+      throw new Error("Conversation branches are only available in paper preview chats.");
+    }
     const branchExcerpt = normalizeBranchExcerpt(excerpt);
     if (!branchExcerpt) throw new Error("Select some assistant text to create a branch.");
     const messages = branchMessagesThrough(parent, messageIndex);
