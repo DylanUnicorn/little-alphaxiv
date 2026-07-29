@@ -43,6 +43,7 @@ export function ChatView() {
   const navigate = useNavigate();
   const conversations = useConversations((s) => s.conversations);
   const loaded = useConversations((s) => s.loaded);
+  const setActive = useConversations((s) => s.setActive);
   const ss = useSettings((s) => s.searchSources);
   const enabledSources = { openalex: ss.openalex.enabled, s2: ss.semanticScholar.enabled, anysearch: ss.anysearch.enabled };
   const systemPrompt = buildGeneralSystemPrompt(enabledSources);
@@ -51,8 +52,10 @@ export function ChatView() {
     if (!loaded || !id) return;
     if (!conversations.some((c) => c.id === id)) {
       navigate("/", { replace: true });
+      return;
     }
-  }, [loaded, id, conversations, navigate]);
+    setActive(id);
+  }, [loaded, id, conversations, navigate, setActive]);
 
   if (!id) return <Navigate to="/" replace />;
   return (

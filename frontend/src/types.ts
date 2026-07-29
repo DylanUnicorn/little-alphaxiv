@@ -99,6 +99,15 @@ export interface Conversation {
   id: string;
   title: string;
   type: ConversationType;
+  /** Stable History root id. Root conversations point to themselves. Legacy
+   * rows may omit it and are treated as independent roots client-side. */
+  history_id?: string;
+  /** Immediate ancestor for a selection-created branch. Empty on roots. */
+  parent_id?: string;
+  /** Index of the assistant message in the parent where this branch forked. */
+  branch_from_message_index?: number;
+  /** Normalized selected reply text used to start the first branch question. */
+  branch_excerpt?: string;
   paper_id?: string; // arxiv_id when type === "paper"
   provider_id?: string;
   model?: string; // per-conversation model override (falls back to provider default)

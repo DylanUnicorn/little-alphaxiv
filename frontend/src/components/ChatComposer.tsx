@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useEffect, useCallback, useState } from "react";
 import type { Attachment } from "../types";
 import { canSubmitComposer, computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
-import type { SelectedPdfTextPayload } from "../lib/selectedTextAskAi";
 import { useSettings } from "../store/settings";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
@@ -20,7 +19,7 @@ interface Props {
   placeholder: string;
   attachments: Attachment[];
   onRemoveAttachment: (index: number) => void;
-  selectedTextContext?: SelectedPdfTextPayload | null;
+  selectedTextContext?: { text: string; label: string } | null;
   onRemoveSelectedText?: () => void;
   models: { id: string }[];
   currentModel: string;
@@ -202,19 +201,21 @@ export function ChatComposer({
       {selectedTextContext && (
         <div className="composer-selected-text">
           <div className="composer-selected-text-copy">
-            <strong>Page {selectedTextContext.pageNumber}:</strong>
+            <strong>{selectedTextContext.label}:</strong>
             <span>{selectedTextContext.text}</span>
           </div>
-          <button
-            type="button"
-            className="composer-selected-text-remove"
-            aria-label="Remove selected text"
-            title="Remove selected text"
-            onClick={onRemoveSelectedText}
-            disabled={busy}
-          >
-            ×
-          </button>
+          {onRemoveSelectedText && (
+            <button
+              type="button"
+              className="composer-selected-text-remove"
+              aria-label="Remove selected text"
+              title="Remove selected text"
+              onClick={onRemoveSelectedText}
+              disabled={busy}
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
       <div className="chat-composer-input">

@@ -86,6 +86,13 @@ class ConversationRow(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
     title: str
     type: str  # "general" | "paper"
+    # A History is a tree of independently openable conversations. Roots point
+    # history_id at themselves; selection-created children point at the root
+    # and carry an immutable parent/message locator.
+    history_id: str | None = None
+    parent_id: str | None = None
+    branch_from_message_index: int | None = None
+    branch_excerpt: str | None = None
     paper_id: str | None = None
     # ON DELETE SET NULL: deleting a provider leaves conversations alive but
     # unbound; the frontend already tolerates a dangling provider_id.
@@ -101,7 +108,11 @@ class ConversationRow(SQLModel, table=True):
     created_at: int
     updated_at: int
 
-    __table_args__ = (Index("ix_conv_user_updated", "user_id", "updated_at"),)
+    __table_args__ = (
+        Index("ix_conv_user_updated", "user_id", "updated_at"),
+        Index("ix_conv_user_history", "user_id", "history_id"),
+        Index("ix_conv_user_parent", "user_id", "parent_id"),
+    )
 
 
 # ---------------------------------------------------------------------------

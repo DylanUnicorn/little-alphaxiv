@@ -732,9 +732,15 @@ export async function putConversation(conv: Conversation): Promise<Conversation>
   return r.json();
 }
 
-export async function deleteConversation(id: string): Promise<void> {
+export interface DeleteConversationResult {
+  ok: boolean;
+  deleted_ids: string[];
+}
+
+export async function deleteConversation(id: string): Promise<DeleteConversationResult> {
   const r = await jfetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!r.ok) throw new Error(await errText(r));
+  return r.json();
 }
 
 // ---- annotations ----

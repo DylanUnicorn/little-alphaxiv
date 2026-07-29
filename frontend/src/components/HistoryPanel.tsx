@@ -1,10 +1,13 @@
-// History panel for the paper view's right column. Replaces the crude dropdown
-// list with a proper conversation-management surface: each of the paper's
-// threads is listed by the user's first question (so you can tell them apart),
-// with relative time, message count, delete, and a prominent "New" button.
+// Paper-view History management. Each explicit "New conversation" is one
+// root; selection-created conversations render beneath it as a branch tree.
 
 import { useConversations } from "../store/conversations";
 import type { Conversation } from "../types";
+import {
+  collectConversationSubtreeIds,
+  groupConversationHistories,
+} from "../lib/conversationBranches";
+import { ConversationTree } from "./ConversationTree";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -17,76 +20,125 @@ interface Props {
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
   return new Date(ts).toLocaleDateString();
 }
 
-function threadTitle(c: Conversation): string {
-  if (c.title && c.title !== "Paper discussion" && !c.title.startsWith("📄")) {
-    return c.title;
+function threadTitle(conversation: Conversation): string {
+  if (
+    conversation.title
+    && conversation.title !== "Paper discussion"
+    && !conversation.title.startsWith("📄")
+  ) {
+    return conversation.title;
   }
-  return c.messages.length === 0 ? "New discussion" : "Untitled discussion";
+  return conversation.messages.length === 0 ? "New discussion" : "Untitled discussion";
 }
 
 export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Props) {
-  const conversations = useConversations((s) => s.conversations);
-  const remove = useConversations((s) => s.remove);
+  const conversations = useConversations((state) => state.conversations);
+  const remove = useConversations((state) => state.remove);
+  const threads = conversations.filter(
+    (conversation) => conversation.type === "paper" && conversation.paper_id === arxivId,
+  );
+  const histories = groupConversationHistories(threads);
 
-  const threads = conversations
-    .filter((c) => c.type === "paper" && c.paper_id === arxivId)
-    .sort((a, b) => b.updated_at - a.updated_at);
-
-  async function handleDelete(id: string) {
-    const wasActive = id === activeId;
-    const remaining = threads.filter((t) => t.id !== id);
+  async function deleteBranch(id: string) {
+    const history = histories.find((candidate) => candidate.nodes.some((node) => node.id === id));
+    if (!history) return;
+    const deletedIds = new Set(collectConversationSubtreeIds(history.nodes, id));
+    const activeWasDeleted = activeId ? deletedIds.has(activeId) : false;
+    const parentId = history.nodes.find((node) => node.id === id)?.parent_id;
     await remove(id);
-    if (wasActive) {
-      if (remaining[0]) onSelect(remaining[0].id);
-      else onNew();
-    }
+    if (!activeWasDeleted) return;
+    const fallback = parentId && !deletedIds.has(parentId)
+      ? history.nodes.find((node) => node.id === parentId)
+      : histories
+          .flatMap((candidate) => candidate.nodes)
+          .filter((node) => !deletedIds.has(node.id))
+          .sort((a, b) => b.updated_at - a.updated_at)[0];
+    if (fallback) onSelect(fallback.id);
+    else onNew();
+  }
+
+  async function deleteHistory(rootId: string) {
+    const history = histories.find((candidate) => candidate.root.id === rootId);
+    if (!history) return;
+    const activeWasDeleted = activeId
+      ? history.nodes.some((node) => node.id === activeId)
+      : false;
+    const count = history.nodes.length;
+    const prompt = count > 1
+      ? `Delete this entire History and all ${count} nodes? This cannot be undone.`
+      : "Delete this conversation? This cannot be undone.";
+    if (!window.confirm(prompt)) return;
+    await remove(rootId);
+    if (!activeWasDeleted) return;
+    const fallback = histories
+      .filter((candidate) => candidate.root.id !== rootId)
+      .flatMap((candidate) => candidate.nodes)
+      .sort((a, b) => b.updated_at - a.updated_at)[0];
+    if (fallback) onSelect(fallback.id);
+    else onNew();
   }
 
   return (
     <div className="history-panel">
       <div className="history-head">
-        <span className="history-title">Conversations</span>
-        <Tooltip label="New conversation" side="bottom">
+        <span className="history-title">History</span>
+        <Tooltip label="New root conversation" side="bottom">
           <button className="history-new" onClick={onNew}>✚ New</button>
         </Tooltip>
         <Tooltip label="Close" side="bottom">
           <button className="history-close" onClick={onClose}>✕</button>
         </Tooltip>
       </div>
-      <div className="history-list">
-        {threads.length === 0 && (
+      <div className="history-list history-tree-list">
+        {histories.length === 0 && (
           <div className="history-empty">No conversations for this paper yet.</div>
         )}
-        {threads.map((c) => (
-          <div
-            key={c.id}
-            className={`history-item ${c.id === activeId ? "active" : ""}`}
-            onClick={() => onSelect(c.id)}
-          >
-            <div className="history-item-main">
-              <div className="history-item-title">{threadTitle(c)}</div>
-              <div className="history-item-meta">
-                {c.messages.length} msg · {relativeTime(c.updated_at)}
+        {histories.map((history) => {
+          const active = history.nodes.some((node) => node.id === activeId);
+          return (
+            <section
+              key={history.id}
+              className={`history-tree-group${active ? " active" : ""}`}
+            >
+              <div className="history-tree-group-head">
+                <button
+                  type="button"
+                  className="history-tree-group-copy"
+                  onClick={() => onSelect(history.representative.id)}
+                >
+                  <strong>{threadTitle(history.root)}</strong>
+                  <span>
+                    {history.nodes.length} node{history.nodes.length === 1 ? "" : "s"}
+                    {" · "}{relativeTime(history.updatedAt)}
+                  </span>
+                </button>
+                <Tooltip label="Delete entire History" side="top">
+                  <button
+                    type="button"
+                    className="history-item-del"
+                    onClick={() => deleteHistory(history.root.id)}
+                  >×</button>
+                </Tooltip>
               </div>
-            </div>
-            <Tooltip label="Delete" side="top">
-              <button
-                className="history-item-del"
-                onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
-              >×</button>
-            </Tooltip>
-          </div>
-        ))}
+              <ConversationTree
+                nodes={history.nodes}
+                activeId={activeId}
+                onSelect={onSelect}
+                onDeleteBranch={deleteBranch}
+              />
+            </section>
+          );
+        })}
       </div>
     </div>
   );
