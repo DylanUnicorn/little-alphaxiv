@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 import codecs
+import os
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -25,10 +26,10 @@ sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, errors="replace")
 OUT = Path(__file__).parent / "shots"
 OUT.mkdir(exist_ok=True)
 
-APP = "http://127.0.0.1:5173"
+APP = os.environ.get("LAX_E2E_APP", "http://127.0.0.1:5173")
 MOCK_PROVIDER = {
     "name": "Mock",
-    "base_url": "http://127.0.0.1:5050/v1",
+    "base_url": os.environ.get("LAX_E2E_MOCK_BASE", "http://127.0.0.1:5050/v1"),
     "api_key": "mock",
     "model": "mock-model",
 }
@@ -48,7 +49,7 @@ def new_page(pw, headless=True):
 
 E2E_USER = "e2e_drive_v2"
 E2E_PASS = "testtest123"
-BACK = "http://127.0.0.1:8000"
+BACK = os.environ.get("LAX_E2E_BACK", "http://127.0.0.1:8000")
 
 
 def seed_provider(page):
