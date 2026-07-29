@@ -1444,6 +1444,11 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .toolbar-action-btn.active {
   color: var(--accent);
 }
+.history-quick-trigger {
+  display: flex;
+  margin: -6px;
+  padding: 6px;
+}
 .toolbar-action-icon {
   font-size: 17px;
   line-height: 1;
@@ -1611,6 +1616,11 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 
 /* ---------- Conversation branch trees ---------- */
 .conversation-tree { min-width: 0; background: var(--bg-sunken); }
+.conversation-tree.compact { height: 100%; }
+.conversation-tree.compact .conversation-tree-scroll {
+  height: 100%;
+  max-height: 100%;
+}
 .conversation-tree-scroll {
   overflow: auto;
   max-width: 100%;
@@ -1690,6 +1700,20 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   font-size: 10.5px;
 }
 .conversation-tree-delete:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.history-quick-popover {
+  position: fixed;
+  z-index: var(--z-popover);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  box-shadow: var(--shadow-sm);
+  animation: history-quick-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes history-quick-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .history-tree-list { padding: 8px; }
 .history-tree-group {
   margin-bottom: 10px;
@@ -1727,6 +1751,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .history-tree-group .history-item-del { opacity: 0.65; }
 @media (prefers-reduced-motion: reduce) {
   .conversation-tree-node::before { transition: none; }
+  .history-quick-popover { animation: none; }
 }
 
 /* Active state for toolbar toggle buttons */

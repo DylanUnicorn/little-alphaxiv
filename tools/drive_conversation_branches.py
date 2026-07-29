@@ -188,6 +188,13 @@ def open_history(page: Page) -> Locator:
     return panel
 
 
+def hover_quick_history(page: Page) -> Locator:
+    page.locator('button[aria-label="Conversation history"]').hover()
+    popover = page.locator(".history-quick-popover")
+    popover.wait_for(state="visible", timeout=5_000)
+    return popover
+
+
 def main() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -223,6 +230,18 @@ def main() -> None:
             )
             page.wait_for_selector("textarea", timeout=15_000)
             paper_reply = page.locator('.msg-assistant[data-message-index="3"]')
+
+            quick = hover_quick_history(page)
+            assert quick.locator(".conversation-tree-node").count() == 1
+            assert quick.locator(
+                f'.conversation-tree-node[data-node-id="{ROOT_ID}"][data-active="true"]'
+            ).count() == 1
+            assert quick.locator(".conversation-tree-detail").count() == 0
+            assert quick.locator(".conversation-tree-delete").count() == 0
+            assert quick.inner_text().strip() == ""
+            paper_reply.hover()
+            quick.wait_for(state="hidden", timeout=5_000)
+
             phrase = "representation collapse"
             select_phrase(paper_reply, phrase)
             branch_action = page.locator(".assistant-branch-action")
@@ -259,8 +278,29 @@ def main() -> None:
             root_after = page.request.get(f"{BACK}/api/conversations/{ROOT_ID}").json()
             assert root_after["messages"] == root["messages"], "parent branch was mutated"
 
+            quick = hover_quick_history(page)
+            assert quick.locator(".conversation-tree-node").count() == 2
+            assert quick.locator(
+                f'.conversation-tree-node[data-node-id="{child_id}"][data-active="true"]'
+            ).count() == 1
+            assert quick.locator(".conversation-tree-detail").count() == 0
+            assert quick.locator(".conversation-tree-delete").count() == 0
+            page.screenshot(
+                path=str(OUT / "00_paper_dark_quick_history.png"),
+                full_page=False,
+            )
+
+            quick.locator(f'.conversation-tree-node[data-node-id="{ROOT_ID}"]').click()
+            page.wait_for_url(f"{FRONT}/paper/{PAPER_ID}/{ROOT_ID}", timeout=10_000)
+            quick = hover_quick_history(page)
+            quick.locator(f'.conversation-tree-node[data-node-id="{child_id}"]').click()
+            page.wait_for_url(f"{FRONT}/paper/{PAPER_ID}/{child_id}", timeout=10_000)
+
             panel = open_history(page)
+            assert page.locator(".history-quick-popover").count() == 0
             assert panel.locator(".conversation-tree-node").count() == 2
+            assert panel.locator(".conversation-tree-detail").count() == 1
+            print("HISTORY HOVER QUICK TREE OK")
             assert panel.locator(
                 f'.conversation-tree-node[data-node-id="{child_id}"][data-active="true"]'
             ).count() == 1
@@ -291,6 +331,15 @@ def main() -> None:
             page.locator(".settings-select").select_option("light")
             page.wait_for_function("document.documentElement.dataset.theme === 'light'")
             page.locator('button[aria-label="Chat settings"]').click()
+            quick = hover_quick_history(page)
+            assert quick.locator(".conversation-tree-node").count() == 3
+            assert quick.locator(
+                f'.conversation-tree-node[data-node-id="{ROOT_ID}"][data-active="true"]'
+            ).count() == 1
+            page.screenshot(
+                path=str(OUT / "04_paper_light_quick_history.png"),
+                full_page=False,
+            )
             panel = open_history(page)
             assert panel.locator(".conversation-tree-node").count() == 3
             assert panel.locator(

@@ -14,6 +14,7 @@ interface TreeProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   onDeleteBranch?: (id: string) => Promise<void> | void;
+  compact?: boolean;
 }
 
 function nodeLabel(node: Conversation, isRoot: boolean): string {
@@ -26,6 +27,7 @@ export function ConversationTree({
   activeId,
   onSelect,
   onDeleteBranch,
+  compact = false,
 }: TreeProps) {
   const layout = useMemo(() => layoutConversationTree(nodes), [nodes]);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
@@ -46,7 +48,7 @@ export function ConversationTree({
   const subtreeSize = collectConversationSubtreeIds(nodes, inspected.id).length;
 
   return (
-    <div className="conversation-tree">
+    <div className={`conversation-tree${compact ? " compact" : ""}`}>
       <div className="conversation-tree-scroll">
         <div
           className="conversation-tree-canvas"
@@ -83,7 +85,7 @@ export function ConversationTree({
                 aria-current={isCurrent ? "step" : undefined}
                 data-node-id={node.id}
                 data-active={isCurrent ? "true" : "false"}
-                title={label}
+                title={compact ? undefined : label}
                 onMouseEnter={() => setInspectedId(node.id)}
                 onFocus={() => setInspectedId(node.id)}
                 onClick={() => onSelect(node.id)}
@@ -92,31 +94,33 @@ export function ConversationTree({
           })}
         </div>
       </div>
-      <div className="conversation-tree-detail" aria-live="polite">
-        <div className="conversation-tree-detail-copy">
-          <strong>{nodeLabel(inspected, inspectedIsRoot)}</strong>
-          <span>
-            {inspectedIsRoot
-              ? "Root of this History"
-              : inspected.branch_excerpt || "Conversation branch"}
-          </span>
+      {!compact && (
+        <div className="conversation-tree-detail" aria-live="polite">
+          <div className="conversation-tree-detail-copy">
+            <strong>{nodeLabel(inspected, inspectedIsRoot)}</strong>
+            <span>
+              {inspectedIsRoot
+                ? "Root of this History"
+                : inspected.branch_excerpt || "Conversation branch"}
+            </span>
+          </div>
+          {!inspectedIsRoot && onDeleteBranch && (
+            <button
+              type="button"
+              className="conversation-tree-delete"
+              onClick={async () => {
+                const suffix = subtreeSize > 1
+                  ? ` and its ${subtreeSize - 1} descendant${subtreeSize === 2 ? "" : "s"}`
+                  : "";
+                if (!window.confirm(`Delete this branch${suffix}? This cannot be undone.`)) return;
+                await onDeleteBranch(inspected.id);
+              }}
+            >
+              Delete branch{subtreeSize > 1 ? ` (${subtreeSize})` : ""}
+            </button>
+          )}
         </div>
-        {!inspectedIsRoot && onDeleteBranch && (
-          <button
-            type="button"
-            className="conversation-tree-delete"
-            onClick={async () => {
-              const suffix = subtreeSize > 1
-                ? ` and its ${subtreeSize - 1} descendant${subtreeSize === 2 ? "" : "s"}`
-                : "";
-              if (!window.confirm(`Delete this branch${suffix}? This cannot be undone.`)) return;
-              await onDeleteBranch(inspected.id);
-            }}
-          >
-            Delete branch{subtreeSize > 1 ? ` (${subtreeSize})` : ""}
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 }
