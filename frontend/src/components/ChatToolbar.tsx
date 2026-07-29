@@ -9,6 +9,8 @@ import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { THEMES } from "../themes";
 import { STYLE_PRESETS, type StylePreset } from "../types";
+import { groupConversationHistories } from "../lib/conversationBranches";
+import { HistoryQuickTreePopover } from "./HistoryQuickTreePopover";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -16,6 +18,7 @@ interface Props {
   arxivId: string;
   showHistory: boolean;
   onToggleHistory: () => void;
+  onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
   onStyleChange: (style: StylePreset) => void;
 }
@@ -25,6 +28,7 @@ export function ChatToolbar({
   arxivId,
   showHistory,
   onToggleHistory,
+  onSelectConversation,
   onNewConversation,
   onStyleChange,
 }: Props) {
@@ -34,12 +38,41 @@ export function ChatToolbar({
   const setTheme = useSettings((s) => s.setTheme);
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showQuickHistory, setShowQuickHistory] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const quickCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Paper conversations for this arxiv_id (count badge on the history toggle).
   const paperConvs = conversations.filter(
     (c) => c.type === "paper" && c.paper_id === arxivId
   );
+  const activeHistory = groupConversationHistories(paperConvs).find(
+    (history) => history.nodes.some((node) => node.id === conversationId),
+  );
+
+  function clearQuickCloseTimer() {
+    if (quickCloseTimer.current) clearTimeout(quickCloseTimer.current);
+    quickCloseTimer.current = null;
+  }
+
+  function openQuickHistory() {
+    clearQuickCloseTimer();
+    if (!showHistory && activeHistory) setShowQuickHistory(true);
+  }
+
+  function closeQuickHistory() {
+    clearQuickCloseTimer();
+    setShowQuickHistory(false);
+  }
+
+  function scheduleQuickHistoryClose() {
+    clearQuickCloseTimer();
+    quickCloseTimer.current = setTimeout(() => {
+      setShowQuickHistory(false);
+      quickCloseTimer.current = null;
+    }, 160);
+  }
 
   // Close settings dropdown on outside click.
   useEffect(() => {
@@ -50,6 +83,14 @@ export function ChatToolbar({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  useEffect(() => {
+    if (showHistory) closeQuickHistory();
+  }, [showHistory]);
+
+  useEffect(() => setShowQuickHistory(false), [arxivId, conversationId]);
+
+  useEffect(() => () => clearQuickCloseTimer(), []);
 
   const currentStyle: StylePreset = activeConv?.style_preset || "default";
 
@@ -72,16 +113,40 @@ export function ChatToolbar({
           </button>
         </Tooltip>
 
-        <Tooltip label="Conversation history" side="bottom">
+        <div
+          className="history-quick-trigger"
+          onMouseEnter={openQuickHistory}
+          onMouseLeave={scheduleQuickHistoryClose}
+        >
           <button
+            ref={historyButtonRef}
             className={`toolbar-action-btn ${showHistory ? "active" : ""}`}
-            onClick={onToggleHistory}
+            onClick={() => {
+              closeQuickHistory();
+              onToggleHistory();
+            }}
+            aria-label="Conversation history"
+            aria-expanded={showHistory}
           >
             <span className="toolbar-action-icon" aria-hidden>↶</span>
             <span>History</span>
             <span className="conv-count">{paperConvs.length}</span>
           </button>
-        </Tooltip>
+        </div>
+
+        <HistoryQuickTreePopover
+          open={showQuickHistory && !showHistory}
+          anchorRef={historyButtonRef}
+          nodes={activeHistory?.nodes ?? []}
+          activeId={conversationId}
+          onSelect={(id) => {
+            closeQuickHistory();
+            onSelectConversation(id);
+          }}
+          onClose={closeQuickHistory}
+          onPointerEnter={openQuickHistory}
+          onPointerLeave={scheduleQuickHistoryClose}
+        />
 
         <div className="toolbar-dropdown" ref={settingsRef}>
           <Tooltip label="Chat settings" side="bottom">

@@ -233,6 +233,7 @@ export function PaperView() {
                 arxivId={arxivId}
                 showHistory={showHistory}
                 onToggleHistory={() => setShowHistory((v) => !v)}
+                onSelectConversation={handleSelectConversation}
                 onNewConversation={handleNewConversation}
                 onStyleChange={(s: StylePreset) => updateSettings(convIdState, { style_preset: s })}
               />
