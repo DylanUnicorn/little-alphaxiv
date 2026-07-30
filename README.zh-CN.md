@@ -63,6 +63,12 @@ OpenAI 兼容的 Anthropic 网关、本地 Ollama 的 OpenAI shim、one-api/new-
   `Open source page` 三按钮，绝不卡死。
 - **论文感知聊天** — pdf.js 一次性提取全文（全局缓存、跨用户去重）；助手
   讨论论文的真实内容。
+- **针对选中文本提问** — 在 PDF 页面选择一段文字，把它作为带页码、可移除的
+  上下文卡片附到输入框，再补充自己的问题并发送到原论文会话；已有草稿不会丢失。
+- **论文会话分支** — 从任一助手回答创建另一条探索路径，并通过论文 History
+  面板里的持久化会话树或悬浮快捷树在各分支之间切换。
+- **透明的 Agent 活动** — 搜索等工具调用会显示成紧凑、可折叠的活动块，包含
+  来源、查询、状态、结果数量和简短预览，不再留下难以理解的聊天空白。
 - **PDF 批注** — 矩形 / 自由画笔 / 文本 / 高亮工具，带撤销-重做操作栈，按
   用户隔离、服务端持久化。
 - **用户账号** — 注册/登录、httpOnly 会话 cookie、bcrypt 密码；每个查询都
@@ -70,7 +76,10 @@ OpenAI 兼容的 Anthropic 网关、本地 Ollama 的 OpenAI shim、one-api/new-
 - **API key 加密存储** — 明文 key 只在保存时离开浏览器一次；之后界面只显示
   掩码预览（`sk-m…cret`）。
 - **密码找回** — 邮件重置（SMTP 或控制台）、一次性令牌、重置时清除所有会话。
-- **多 provider** — 配置多个 OpenAI 兼容 provider，按会话或全局设置默认。
+- **多 provider** — 配置多个 OpenAI 兼容 provider，为每个 provider 选择
+  Chat Completions 或 Responses API，并按会话或全局设置默认。
+- **可定制的 AI 输出** — 调整助手字体、行高、段落间距、公式缩放以及
+  MathType/MathML 渲染，适配长时间阅读。
 - **Zotero 集成** — 本地 + connector + web API；从批注一键同步笔记。
 - **打开本地论文（Open Local Paper）** — 通过侧栏的 `+ Open Local Paper` 把
   付费墙 / 非 arXiv 的 PDF 带进 app：上传文件（pdf.js 解析内嵌元数据，可选
@@ -198,9 +207,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000   # 自动把 frontend/dist 挂�
 
 ### D. 便携 Linux App（无需 Docker）
 
-如果不想安装 Docker，我们会在
+如果不想安装 Docker，部分版本会在
 [GitHub Releases](https://github.com/DylanUnicorn/little-alphaxiv/releases)
-中提供单文件 `.run` app（架构自动匹配：`x86_64` 或 `aarch64`）：
+的 Assets 中提供单文件 `.run` app（架构与构建机器一致：`x86_64` 或
+`aarch64`）。请以对应版本的 Assets 列表为准：
 
 ```text
 LittleAlphaxiv-<version>-<arch>.run
@@ -375,9 +385,14 @@ little-alphaxiv/
 | Zotero 集成（本地 + web） | ✅ 可用；按请求传凭据（v1） |
 | 打开本地论文（上传 + Zotero 反向导入） | ✅ 已验证 |
 | 通过 anysearch MCP 的 `web_search` | ✅ 用户自配 key（设置）+ 匿名兜底 |
+| 选中文本 Ask AI + 论文会话分支 | ✅ 已验证 |
+| Chat Completions + Responses API provider | ✅ 已验证 |
+| 分组、可折叠的 Agent 活动 | ✅ 已验证 |
 
-已知待办（非阻塞）见 [`CLAUDE.md`](./CLAUDE.md)。主要几项：`tools/` 里若干 Playwright 驱动仍用旧的 localStorage seed 模式；
-Zotero 路由仍按请求传凭据（功能正常，未来清理）。
+已知待办（非阻塞）见 [`CLAUDE.md`](./CLAUDE.md)。主要几项：`tools/` 里若干
+Playwright 驱动仍用旧的 localStorage seed 模式；Zotero 路由仍按请求传凭据
+（功能正常，未来清理）。产品仍处于积极迭代的 v0.1 阶段；会话分支目前有意
+只用于论文预览聊天。
 
 ## 📝 更新日志
 
