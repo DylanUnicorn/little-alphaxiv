@@ -19,6 +19,7 @@ interface Props {
   anchorRef: RefObject<HTMLButtonElement>;
   nodes: Conversation[];
   activeId: string | null;
+  revealedNodeId?: string | null;
   onSelect: (id: string) => void;
   onClose: () => void;
   onPointerEnter: () => void;
@@ -37,6 +38,7 @@ export function HistoryQuickTreePopover({
   anchorRef,
   nodes,
   activeId,
+  revealedNodeId = null,
   onSelect,
   onClose,
   onPointerEnter,
@@ -87,6 +89,7 @@ export function HistoryQuickTreePopover({
       <ConversationTree
         nodes={nodes}
         activeId={activeId}
+        revealedNodeId={revealedNodeId}
         onSelect={onSelect}
         compact
       />

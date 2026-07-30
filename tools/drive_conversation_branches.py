@@ -236,6 +236,12 @@ def main() -> None:
             assert quick.locator(
                 f'.conversation-tree-node[data-node-id="{ROOT_ID}"][data-active="true"]'
             ).count() == 1
+            root_node = quick.locator(
+                f'.conversation-tree-node[data-node-id="{ROOT_ID}"][data-root="true"]'
+            )
+            assert root_node.count() == 1
+            assert "History root" in (root_node.get_attribute("aria-label") or "")
+            assert root_node.locator(".conversation-tree-root-marker").count() == 1
             assert quick.locator(".conversation-tree-detail").count() == 0
             assert quick.locator(".conversation-tree-delete").count() == 0
             assert quick.inner_text().strip() == ""
@@ -254,6 +260,47 @@ def main() -> None:
             )
             child_id = page.url.rsplit("/", 1)[-1]
             assert child_id != ROOT_ID
+
+            auto_quick = page.locator(".history-quick-popover")
+            auto_quick.wait_for(state="visible", timeout=5_000)
+            auto_quick.hover()
+            revealed_node = auto_quick.locator(
+                f'.conversation-tree-node[data-node-id="{child_id}"][data-revealed="true"]'
+            )
+            revealed_edge = auto_quick.locator(
+                f'.conversation-tree-lines path[data-revealed="true"]'
+            )
+            assert revealed_node.count() == 1
+            assert revealed_edge.count() == 1
+            assert "conversation-branch-node-arrive" in revealed_node.evaluate(
+                "node => getComputedStyle(node).animationName"
+            )
+            assert "conversation-branch-edge-grow" in revealed_edge.evaluate(
+                "edge => getComputedStyle(edge).animationName"
+            )
+            root_box = auto_quick.locator(
+                f'.conversation-tree-node[data-node-id="{ROOT_ID}"]'
+            ).bounding_box()
+            child_box = revealed_node.bounding_box()
+            assert root_box and child_box and root_box["y"] < child_box["y"]
+            assert auto_quick.locator(".conversation-tree-root-marker").count() == 1
+
+            page.emulate_media(reduced_motion="reduce")
+            assert revealed_node.evaluate(
+                "node => getComputedStyle(node).animationName"
+            ) == "none"
+            assert revealed_edge.evaluate(
+                "edge => getComputedStyle(edge).animationName"
+            ) == "none"
+            page.emulate_media(reduced_motion="no-preference")
+            page.wait_for_timeout(1_500)
+            assert auto_quick.is_visible(), "hover should take ownership of the auto-reveal"
+            page.screenshot(
+                path=str(OUT / "00_paper_dark_new_branch_growth.png"),
+                full_page=False,
+            )
+            paper_reply.hover()
+            auto_quick.wait_for(state="hidden", timeout=5_000)
 
             selected_chip = page.locator(".composer-selected-text")
             selected_chip.wait_for(state="visible", timeout=10_000)
@@ -299,6 +346,7 @@ def main() -> None:
             panel = open_history(page)
             assert page.locator(".history-quick-popover").count() == 0
             assert panel.locator(".conversation-tree-node").count() == 2
+            assert panel.locator(".conversation-tree-root-marker").count() == 1
             assert panel.locator(".conversation-tree-detail").count() == 1
             print("HISTORY HOVER QUICK TREE OK")
             assert panel.locator(

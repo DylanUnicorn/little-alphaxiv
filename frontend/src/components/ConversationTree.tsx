@@ -15,10 +15,11 @@ interface TreeProps {
   onSelect: (id: string) => void;
   onDeleteBranch?: (id: string) => Promise<void> | void;
   compact?: boolean;
+  revealedNodeId?: string | null;
 }
 
 function nodeLabel(node: Conversation, isRoot: boolean): string {
-  if (isRoot) return node.title || "History root";
+  if (isRoot) return node.title ? `History root: ${node.title}` : "History root";
   return node.title || node.branch_excerpt || "Branch";
 }
 
@@ -28,6 +29,7 @@ export function ConversationTree({
   onSelect,
   onDeleteBranch,
   compact = false,
+  revealedNodeId = null,
 }: TreeProps) {
   const layout = useMemo(() => layoutConversationTree(nodes), [nodes]);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
@@ -65,7 +67,10 @@ export function ConversationTree({
               return (
                 <path
                   key={`${edge.parentId}-${edge.childId}`}
+                  className={edge.childId === revealedNodeId ? "revealed" : undefined}
                   d={`M ${edge.fromX} ${edge.fromY} C ${edge.fromX} ${middleY}, ${edge.toX} ${middleY}, ${edge.toX} ${edge.toY}`}
+                  pathLength={1}
+                  data-revealed={edge.childId === revealedNodeId ? "true" : "false"}
                 />
               );
             })}
@@ -74,22 +79,28 @@ export function ConversationTree({
             const node = byId.get(position.id)!;
             const isCurrent = node.id === activeId;
             const isInspected = node.id === inspected.id;
-            const label = nodeLabel(node, node.id === root.id);
+            const isRoot = node.id === root.id;
+            const isRevealed = node.id === revealedNodeId;
+            const label = nodeLabel(node, isRoot);
             return (
               <button
                 key={node.id}
                 type="button"
-                className={`conversation-tree-node${isCurrent ? " current" : ""}${isInspected ? " inspected" : ""}`}
+                className={`conversation-tree-node${isRoot ? " root" : ""}${isCurrent ? " current" : ""}${isInspected ? " inspected" : ""}${isRevealed ? " revealed" : ""}`}
                 style={{ left: position.x - 14, top: position.y - 14 }}
                 aria-label={`${label}${isCurrent ? ", current node" : ""}`}
                 aria-current={isCurrent ? "step" : undefined}
                 data-node-id={node.id}
                 data-active={isCurrent ? "true" : "false"}
+                data-root={isRoot ? "true" : "false"}
+                data-revealed={isRevealed ? "true" : "false"}
                 title={compact ? undefined : label}
                 onMouseEnter={() => setInspectedId(node.id)}
                 onFocus={() => setInspectedId(node.id)}
                 onClick={() => onSelect(node.id)}
-              />
+              >
+                {isRoot && <span className="conversation-tree-root-marker" aria-hidden="true" />}
+              </button>
             );
           })}
         </div>

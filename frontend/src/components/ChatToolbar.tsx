@@ -4,12 +4,13 @@
 // theme). The history is a full panel (see HistoryPanel), not a
 // dropdown — the dropdown was too crude to tell threads apart.
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { THEMES } from "../themes";
 import { STYLE_PRESETS, type StylePreset } from "../types";
 import { groupConversationHistories } from "../lib/conversationBranches";
+import { newlyAddedBranchIds } from "../lib/historyBranchReveal";
 import { HistoryQuickTreePopover } from "./HistoryQuickTreePopover";
 import { Tooltip } from "./Tooltip";
 
@@ -39,16 +40,28 @@ export function ChatToolbar({
 
   const [showSettings, setShowSettings] = useState(false);
   const [showQuickHistory, setShowQuickHistory] = useState(false);
+  const [revealedBranchId, setRevealedBranchId] = useState<string | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const quickCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const knownPaperNodeIds = useRef<Set<string> | null>(null);
+  const knownPaperId = useRef(arxivId);
+  const pendingBranchIds = useRef(new Set<string>());
+  const previousConversationId = useRef(conversationId);
 
   // Paper conversations for this arxiv_id (count badge on the history toggle).
-  const paperConvs = conversations.filter(
-    (c) => c.type === "paper" && c.paper_id === arxivId
+  const paperConvs = useMemo(
+    () => conversations.filter(
+      (c) => c.type === "paper" && c.paper_id === arxivId
+    ),
+    [arxivId, conversations],
   );
-  const activeHistory = groupConversationHistories(paperConvs).find(
-    (history) => history.nodes.some((node) => node.id === conversationId),
+  const activeHistory = useMemo(
+    () => groupConversationHistories(paperConvs).find(
+      (history) => history.nodes.some((node) => node.id === conversationId),
+    ),
+    [conversationId, paperConvs],
   );
 
   function clearQuickCloseTimer() {
@@ -56,20 +69,30 @@ export function ChatToolbar({
     quickCloseTimer.current = null;
   }
 
+  function clearAutoRevealTimer() {
+    if (autoRevealTimer.current) clearTimeout(autoRevealTimer.current);
+    autoRevealTimer.current = null;
+  }
+
   function openQuickHistory() {
     clearQuickCloseTimer();
+    clearAutoRevealTimer();
     if (!showHistory && activeHistory) setShowQuickHistory(true);
   }
 
   function closeQuickHistory() {
     clearQuickCloseTimer();
+    clearAutoRevealTimer();
     setShowQuickHistory(false);
+    setRevealedBranchId(null);
   }
 
   function scheduleQuickHistoryClose() {
     clearQuickCloseTimer();
+    clearAutoRevealTimer();
     quickCloseTimer.current = setTimeout(() => {
       setShowQuickHistory(false);
+      setRevealedBranchId(null);
       quickCloseTimer.current = null;
     }, 160);
   }
@@ -88,9 +111,48 @@ export function ChatToolbar({
     if (showHistory) closeQuickHistory();
   }, [showHistory]);
 
-  useEffect(() => setShowQuickHistory(false), [arxivId, conversationId]);
+  useEffect(() => {
+    const currentIds = new Set(paperConvs.map((conversation) => conversation.id));
+    const conversationChanged = previousConversationId.current !== conversationId;
 
-  useEffect(() => () => clearQuickCloseTimer(), []);
+    if (knownPaperId.current !== arxivId) {
+      knownPaperId.current = arxivId;
+      knownPaperNodeIds.current = currentIds;
+      pendingBranchIds.current.clear();
+      previousConversationId.current = conversationId;
+      closeQuickHistory();
+      return;
+    }
+
+    for (const id of newlyAddedBranchIds(knownPaperNodeIds.current, paperConvs)) {
+      pendingBranchIds.current.add(id);
+    }
+    knownPaperNodeIds.current = currentIds;
+
+    if (pendingBranchIds.current.has(conversationId)) {
+      pendingBranchIds.current.delete(conversationId);
+      clearQuickCloseTimer();
+      clearAutoRevealTimer();
+      setRevealedBranchId(conversationId);
+      if (!showHistory && activeHistory) {
+        setShowQuickHistory(true);
+        autoRevealTimer.current = setTimeout(() => {
+          setShowQuickHistory(false);
+          setRevealedBranchId(null);
+          autoRevealTimer.current = null;
+        }, 1_350);
+      }
+    } else if (conversationChanged) {
+      closeQuickHistory();
+    }
+
+    previousConversationId.current = conversationId;
+  }, [activeHistory, arxivId, conversationId, paperConvs, showHistory]);
+
+  useEffect(() => () => {
+    clearQuickCloseTimer();
+    clearAutoRevealTimer();
+  }, []);
 
   const currentStyle: StylePreset = activeConv?.style_preset || "default";
 
@@ -139,6 +201,7 @@ export function ChatToolbar({
           anchorRef={historyButtonRef}
           nodes={activeHistory?.nodes ?? []}
           activeId={conversationId}
+          revealedNodeId={revealedBranchId}
           onSelect={(id) => {
             closeQuickHistory();
             onSelectConversation(id);
