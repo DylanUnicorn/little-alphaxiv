@@ -45,6 +45,7 @@ export function ConversationTree({
   }, [activeId, byId, root?.id]);
 
   if (!root) return null;
+  const rootHasChildren = nodes.some((node) => node.parent_id === root.id);
   const inspected = byId.get(inspectedId ?? "") ?? byId.get(activeId ?? "") ?? root;
   const inspectedIsRoot = inspected.id === root.id;
   const subtreeSize = collectConversationSubtreeIds(nodes, inspected.id).length;
@@ -86,13 +87,14 @@ export function ConversationTree({
               <button
                 key={node.id}
                 type="button"
-                className={`conversation-tree-node${isRoot ? " root" : ""}${isCurrent ? " current" : ""}${isInspected ? " inspected" : ""}${isRevealed ? " revealed" : ""}`}
+                className={`conversation-tree-node${isRoot ? " root" : ""}${isRoot && !rootHasChildren ? " unbranched" : ""}${isCurrent ? " current" : ""}${isInspected ? " inspected" : ""}${isRevealed ? " revealed" : ""}`}
                 style={{ left: position.x - 14, top: position.y - 14 }}
                 aria-label={`${label}${isCurrent ? ", current node" : ""}`}
                 aria-current={isCurrent ? "step" : undefined}
                 data-node-id={node.id}
                 data-active={isCurrent ? "true" : "false"}
                 data-root={isRoot ? "true" : "false"}
+                data-has-children={isRoot ? (rootHasChildren ? "true" : "false") : undefined}
                 data-revealed={isRevealed ? "true" : "false"}
                 title={compact ? undefined : label}
                 onMouseEnter={() => setInspectedId(node.id)}

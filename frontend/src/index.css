@@ -1670,7 +1670,7 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
   pointer-events: none;
 }
-.conversation-tree-root-marker::after {
+.conversation-tree-node.root.unbranched .conversation-tree-root-marker::after {
   content: "";
   position: absolute;
   bottom: -6px;
