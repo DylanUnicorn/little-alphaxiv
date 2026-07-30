@@ -67,6 +67,15 @@ there.
   buttons so you're never stuck.
 - **Paper-aware chat** — pdf.js extracts the full text once (cached globally and
   deduplicated across users); the assistant discusses the paper's actual content.
+- **Ask AI about selected text** — select an excerpt on a PDF page, attach it as
+  a page-labelled context card, add your question, and send it to the originating
+  paper thread without losing the draft already in the composer.
+- **Branching paper conversations** — branch from an assistant answer to explore
+  a different line of inquiry, then navigate the persistent conversation tree
+  from the paper History panel or its hover quick-tree.
+- **Transparent Agent activity** — searches and other tool calls appear as
+  compact, collapsible activity with source, query, status, result count, and a
+  short preview instead of unexplained blank chat rows.
 - **PDF annotations** — rectangle / freehand / text / highlight tools with an
   undo-redo op stack, per-user and server-backed.
 - **Per-user accounts** — register/login, httpOnly session cookies, bcrypt
@@ -75,8 +84,11 @@ there.
   once (at save); afterward the UI only shows a masked preview (`sk-m…cret`).
 - **Password recovery** — email-based reset (SMTP or console), single-use tokens,
   session purge on reset.
-- **Multi-provider** — configure multiple OpenAI-compatible providers, set a
-  default per-conversation or globally.
+- **Multi-provider** — configure multiple OpenAI-compatible providers, choose
+  Chat Completions or Responses API per provider, and set a default per
+  conversation or globally.
+- **Customizable AI output** — tune assistant typography, paragraph spacing,
+  formula scale, and MathType/MathML rendering for long reading sessions.
 - **Zotero integration** — local + connector + web API; one-click note sync from
   annotations.
 - **Open Local Paper** — bring a paywalled / off-arXiv PDF into the app via
@@ -214,9 +226,10 @@ provider, and chat. Everyone's data is independent and invisible to others.
 
 ### D. Portable Linux app (no Docker)
 
-For Linux users who do not want Docker, each release provides a single `.run`
-app file (architecture auto-matches the build host: `x86_64` or `aarch64`) on the
-[GitHub releases page](https://github.com/DylanUnicorn/little-alphaxiv/releases):
+For Linux users who do not want Docker, releases may provide a single `.run`
+app file (architecture matches the build host: `x86_64` or `aarch64`) on the
+[GitHub releases page](https://github.com/DylanUnicorn/little-alphaxiv/releases).
+Check the release's Assets section for availability:
 
 ```text
 LittleAlphaxiv-<version>-<arch>.run
@@ -411,11 +424,15 @@ little-alphaxiv/
 | Zotero integration (local + web) | ✅ working; per-request creds (v1) |
 | Open Local Paper (upload + Zotero reverse-import) | ✅ verified |
 | `web_search` via anysearch MCP | ✅ per-user key (Settings) + anonymous fallback |
+| Selected-text Ask AI + paper conversation branches | ✅ verified |
+| Chat Completions + Responses API providers | ✅ verified |
+| Grouped, collapsible Agent activity | ✅ verified |
 
 Known follow-ups (non-blocking) live in [`CLAUDE.md`](./CLAUDE.md). Notable ones:
 a handful of Playwright drivers in `tools/` still use
 the old localStorage seed pattern; the Zotero router still takes per-request
-creds (functional, future cleanup).
+creds (functional, future cleanup). The product remains in active v0.1
+iteration; paper branching is intentionally scoped to paper-preview chats.
 
 ## 📝 Changelog
 

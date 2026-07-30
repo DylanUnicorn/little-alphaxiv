@@ -9,6 +9,106 @@ Release notes are also published on the
 
 ## [Unreleased]
 
+## [v0.1.4] - 2026-07-30
+
+A large feature release on the v0.1 line. It makes paper reading more
+grounded, chat execution more transparent, and long research conversations
+easier to explore without presenting the still-evolving product as the v0.2
+milestone.
+
+### Added
+
+- **Ask AI about selected PDF text** — selecting text on a PDF page now exposes
+  an `Ask AI` action. The excerpt is staged as a removable, page-labelled
+  context card above the paper-chat composer, so users can add their own
+  question before explicitly sending it. Draft text and newer selections are
+  preserved, and the excerpt remains bound to the paper thread where it was
+  selected. ([#15](https://github.com/DylanUnicorn/little-alphaxiv/pull/15),
+  [#17](https://github.com/DylanUnicorn/little-alphaxiv/pull/17))
+- **Persistent paper-conversation branches** — assistant messages can be used
+  as branch points for alternative follow-up paths. The paper History panel
+  renders the lineage as a tree, restores it across reloads, highlights the
+  active path, and offers a hover quick-tree for fast navigation. Branching is
+  deliberately limited to paper conversations; general chats remain flat.
+  ([#23](https://github.com/DylanUnicorn/little-alphaxiv/pull/23),
+  [#24](https://github.com/DylanUnicorn/little-alphaxiv/pull/24),
+  [#25](https://github.com/DylanUnicorn/little-alphaxiv/pull/25),
+  [#26](https://github.com/DylanUnicorn/little-alphaxiv/pull/26),
+  [#28](https://github.com/DylanUnicorn/little-alphaxiv/pull/28))
+- **Readable Agent activity** — tool calls and their results are grouped into a
+  compact, collapsible activity block showing the tool/source, query, state,
+  result count, and a short result preview. Empty protocol-only assistant rows
+  are no longer rendered as unexplained gaps.
+  ([#22](https://github.com/DylanUnicorn/little-alphaxiv/pull/22))
+- **OpenAI Responses API providers** — provider settings now include an API
+  format selector for Chat Completions or Responses. Streaming text, tool calls,
+  usage, and non-streaming title generation are adapted to the app's existing
+  conversation protocol. Existing providers retain Chat Completions by default.
+  ([#12](https://github.com/DylanUnicorn/little-alphaxiv/pull/12))
+- **AI output formatting controls** — Settings now exposes assistant font size,
+  line height, paragraph spacing, formula scale, and MathType/MathML rendering
+  preferences. A new alphaxiv-inspired light theme and improved formula
+  normalization/rendering accompany the controls.
+  ([#9](https://github.com/DylanUnicorn/little-alphaxiv/pull/9),
+  [#10](https://github.com/DylanUnicorn/little-alphaxiv/pull/10))
+
+### Changed
+
+- **Progressive PDF loading feedback** — cold arXiv downloads now stream through
+  the backend while reporting percentage or downloaded size. Cache writes use
+  verified temporary files so cancelled or incomplete downloads are never
+  promoted. Full-text extraction waits until the first page is visible and
+  yields between pages, improving perceived startup and scroll responsiveness.
+  ([#13](https://github.com/DylanUnicorn/little-alphaxiv/pull/13))
+- **PDF and chat interaction polish** — zoomed PDF pages support drag-to-pan and
+  horizontal scrolling without taking over text selection or annotation tools.
+  The paper-chat toolbar, composer, send button, Markdown hierarchy, list
+  spacing, and display-math presentation now follow a more focused reading
+  layout. ([#9](https://github.com/DylanUnicorn/little-alphaxiv/pull/9),
+  [#10](https://github.com/DylanUnicorn/little-alphaxiv/pull/10),
+  [#18](https://github.com/DylanUnicorn/little-alphaxiv/pull/18),
+  [#27](https://github.com/DylanUnicorn/little-alphaxiv/pull/27))
+
+### Fixed
+
+- Prevented duplicate user messages and overlapping generation when multiple
+  send paths fire concurrently.
+  ([#19](https://github.com/DylanUnicorn/little-alphaxiv/pull/19))
+- Kept the PDF selection `Ask AI` control clickable at non-default zoom levels.
+  ([#20](https://github.com/DylanUnicorn/little-alphaxiv/pull/20))
+- Kept reused or already-open empty paper chats synchronized with the current
+  default provider.
+  ([#14](https://github.com/DylanUnicorn/little-alphaxiv/pull/14),
+  [#16](https://github.com/DylanUnicorn/little-alphaxiv/pull/16))
+- Made the attachment remove control reachable and discoverable on hover, while
+  remaining available to keyboard and touch users.
+  ([#11](https://github.com/DylanUnicorn/little-alphaxiv/pull/11))
+- Corrected Markdown blockquote alignment and several conversation-tree stem,
+  direction, and root-visibility details.
+  ([#21](https://github.com/DylanUnicorn/little-alphaxiv/pull/21),
+  [#26](https://github.com/DylanUnicorn/little-alphaxiv/pull/26),
+  [#28](https://github.com/DylanUnicorn/little-alphaxiv/pull/28))
+
+### Upgrade notes
+
+- Database migrations `0004`–`0007` run automatically at startup. Back up
+  `deploy/data/` before upgrading as usual, and never delete
+  `deploy/data/.lax_secret_key`.
+- Existing provider and conversation data is preserved. General conversations
+  created during the brief branching experiment are normalized to independent,
+  flat conversations without changing their messages.
+- This remains an early v0.1 release. Paper branching is intentionally scoped
+  to paper-preview chats, and some older Playwright drivers still require
+  migration from the legacy localStorage seed path.
+
+## [v0.1.3] - 2026-07-05
+
+Pre-release of the first portable Linux `.run` package. The artifact was built
+from an early packaging commit and tested on the contributor's Linux setup;
+Docker and source installs remained the recommended cross-platform paths.
+See the [v0.1.3 release page](https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.3)
+for its platform requirements and portability caveats.
+
 ## [v0.1.2] - 2026-07-03
 
 A Zotero-focused release. Importing a PDF from your Zotero library could hang
@@ -152,6 +252,9 @@ experience together with local-paper upload, Zotero reverse-import, per-paper
 page memory, and anysearch web search. Full notes on the
 [v0.1.0 release page](https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.0).
 
+[v0.1.4]: https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.4
+[v0.1.3]: https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.3
+[v0.1.2]: https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/DylanUnicorn/little-alphaxiv/releases/tag/v0.1.0
-[Unreleased]: https://github.com/DylanUnicorn/little-alphaxiv/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/DylanUnicorn/little-alphaxiv/compare/v0.1.4...HEAD
