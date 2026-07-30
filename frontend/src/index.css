@@ -779,6 +779,11 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .composer-send-btn::before {
   content: ""; position: absolute; inset: -3px; border-radius: 50%;
 }
+.paper-view .composer-send-btn {
+  width: 36px; height: 36px;
+  font-size: 19px;
+}
+.paper-view .composer-send-btn::before { inset: -4px; }
 .composer-send-btn:hover:not(:disabled) {
   filter: brightness(1.05);
   background: var(--accent-2);
