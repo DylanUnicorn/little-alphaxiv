@@ -241,7 +241,11 @@ def main() -> None:
             )
             assert root_node.count() == 1
             assert "History root" in (root_node.get_attribute("aria-label") or "")
+            assert root_node.get_attribute("data-has-children") == "false"
             assert root_node.locator(".conversation-tree-root-marker").count() == 1
+            assert root_node.locator(".conversation-tree-root-marker").evaluate(
+                'marker => getComputedStyle(marker, "::after").content'
+            ) != "none"
             assert quick.locator(".conversation-tree-detail").count() == 0
             assert quick.locator(".conversation-tree-delete").count() == 0
             assert quick.inner_text().strip() == ""
@@ -283,7 +287,14 @@ def main() -> None:
             ).bounding_box()
             child_box = revealed_node.bounding_box()
             assert root_box and child_box and root_box["y"] < child_box["y"]
-            assert auto_quick.locator(".conversation-tree-root-marker").count() == 1
+            branched_root = auto_quick.locator(
+                f'.conversation-tree-node[data-node-id="{ROOT_ID}"]'
+            )
+            assert branched_root.get_attribute("data-has-children") == "true"
+            assert branched_root.locator(".conversation-tree-root-marker").count() == 1
+            assert branched_root.locator(".conversation-tree-root-marker").evaluate(
+                'marker => getComputedStyle(marker, "::after").content'
+            ) == "none"
 
             page.emulate_media(reduced_motion="reduce")
             assert revealed_node.evaluate(
@@ -416,6 +427,13 @@ def main() -> None:
             assert panel.locator(".conversation-tree-node").count() == 1
             assert page.request.get(f"{BACK}/api/conversations/{sibling_id}").status == 404
             assert page.request.get(f"{BACK}/api/conversations/{ROOT_ID}").status == 200
+            restored_root = panel.locator(
+                f'.conversation-tree-node[data-node-id="{ROOT_ID}"]'
+            )
+            assert restored_root.get_attribute("data-has-children") == "false"
+            assert restored_root.locator(".conversation-tree-root-marker").evaluate(
+                'marker => getComputedStyle(marker, "::after").content'
+            ) != "none"
             page.screenshot(path=str(OUT / "03_paper_branches_deleted.png"), full_page=False)
 
             assert not page_errors, "Browser errors:\n" + "\n".join(page_errors)
