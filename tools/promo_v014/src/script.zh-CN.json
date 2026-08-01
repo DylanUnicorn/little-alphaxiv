@@ -1,0 +1,62 @@
+{
+  "durationSeconds": 72,
+  "voice": "zh-CN-YunxiNeural",
+  "rate": "+8%",
+  "segments": [
+    {
+      "id": "hook",
+      "start": 0.4,
+      "text": "找论文、读 PDF、问 AI，不该在三个工具之间来回切换。",
+      "caption": "找论文 · 读 PDF · 问 AI"
+    },
+    {
+      "id": "reveal",
+      "start": 5.3,
+      "text": "Little Alphaxiv，把发现、阅读和讨论放进同一个工作区。",
+      "caption": "一个工作区，连起完整研究流程"
+    },
+    {
+      "id": "search",
+      "start": 12.0,
+      "text": "从一个问题开始，论文卡片与搜索过程一起呈现。",
+      "caption": "从问题出发 · 搜索过程透明可见"
+    },
+    {
+      "id": "ask",
+      "start": 22.1,
+      "text": "点击论文，PDF 与理解全文的助手并排打开。选中原文，就能带着页码继续追问。",
+      "caption": "选中即问 · 页码与原文一起进入上下文"
+    },
+    {
+      "id": "branch",
+      "start": 35.2,
+      "text": "从任何回答创建分支，保留主线，也保留每一次探索。",
+      "caption": "保留主线 · 探索另一条推理路径"
+    },
+    {
+      "id": "reading",
+      "start": 46.9,
+      "text": "Agent 活动透明可见，PDF 缩放、拖拽和排版都更顺手。",
+      "caption": "透明 Agent 活动 · 更顺手的 PDF 阅读"
+    },
+    {
+      "id": "provider",
+      "start": 55.0,
+      "text": "你还可以选择 Chat Completions 或 Responses API，接入自己的 provider。",
+      "caption": "Chat Completions / Responses API"
+    },
+    {
+      "id": "trust",
+      "start": 62.5,
+      "text": "自托管，数据留在自己的服务器，API key 加密保存。",
+      "caption": "自托管 · 服务端持久化 · API key 加密"
+    },
+    {
+      "id": "end",
+      "start": 68.2,
+      "text": "Little Alphaxiv v0.1.4，让读论文真正连贯起来。",
+      "caption": "让读论文真正连贯起来"
+    }
+  ]
+}
+

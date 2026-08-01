@@ -1,0 +1,23 @@
+{
+  "name": "little-alphaxiv-v014-promo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preview": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts LittleAlphaxivV014Promo ../../example_demo/little-alphaxiv-v0.1.4-promo-zh.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "still": "remotion still src/index.ts LittleAlphaxivV014Promo ../../example_demo/little-alphaxiv-v0.1.4-promo-zh-cover.png --frame=80"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.503",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "remotion": "4.0.503"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.9.0"
+  }
+}
+

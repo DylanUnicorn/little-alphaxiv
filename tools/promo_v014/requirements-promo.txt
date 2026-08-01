@@ -1,0 +1,4 @@
+edge-tts==7.2.8
+imageio-ffmpeg==0.6.0
+playwright==1.60.0
+
