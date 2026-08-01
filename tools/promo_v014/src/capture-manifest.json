@@ -1,0 +1,49 @@
+{
+  "capturedAt": "2026-08-01T18:11:34+0800",
+  "front": "http://127.0.0.1:8000",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "health": {
+    "status": "ok"
+  },
+  "demoUser": "promo_v014_1785579050",
+  "clips": [
+    {
+      "name": "search",
+      "file": "raw/search.webm",
+      "trimStartSeconds": 0.566,
+      "usableDurationSeconds": 8.017,
+      "bytes": 648920
+    },
+    {
+      "name": "ask-ai",
+      "file": "raw/ask-ai.webm",
+      "trimStartSeconds": 1.317,
+      "usableDurationSeconds": 10.43,
+      "bytes": 1162460
+    },
+    {
+      "name": "branch",
+      "file": "raw/branch.webm",
+      "trimStartSeconds": 0.908,
+      "usableDurationSeconds": 8.591,
+      "bytes": 881042
+    },
+    {
+      "name": "appearance",
+      "file": "raw/appearance.webm",
+      "trimStartSeconds": 0.504,
+      "usableDurationSeconds": 6.393,
+      "bytes": 759333
+    },
+    {
+      "name": "provider",
+      "file": "raw/provider.webm",
+      "trimStartSeconds": 0.664,
+      "usableDurationSeconds": 4.223,
+      "bytes": 652326
+    }
+  ]
+}
