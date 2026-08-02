@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ActivityRenderItem, AgentActivityStep } from "../lib/agentActivity";
 
 interface Props {
@@ -24,7 +24,10 @@ function activeLabel(step: AgentActivityStep | undefined): string {
   return `Running ${step.label}`;
 }
 
-export function AgentActivity({ activity, active }: Props) {
+// Completed activity groups are historical content. Their props stay stable
+// while the composer draft changes, so skip rebuilding their nested result
+// lists on every keystroke.
+export const AgentActivity = memo(function AgentActivity({ activity, active }: Props) {
   const [open, setOpen] = useState(active);
   const wasActive = useRef(active);
 
@@ -98,4 +101,4 @@ export function AgentActivity({ activity, active }: Props) {
       </ol>
     </details>
   );
-}
+});
