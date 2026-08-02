@@ -532,7 +532,10 @@ export function ChatPanel({
     }
   }
 
-  async function createBranch(messageIndex: number, excerpt: string) {
+  // Keep this callback stable while the user edits the composer draft. Every
+  // assistant MessageRow receives it; recreating it per keystroke defeats the
+  // row's memo boundary and re-runs Markdown/KaTeX rendering for all history.
+  const createBranch = useCallback(async (messageIndex: number, excerpt: string) => {
     if (busy || c.type !== "paper") return;
     setStatus("Creating branch…");
     try {
@@ -551,7 +554,7 @@ export function ChatPanel({
       setStatus(`Could not create branch: ${error?.message || "error"}`);
       throw error;
     }
-  }
+  }, [branchFromMessage, busy, c.id, c.type, navigate]);
 
   return (
     <div className="chat-panel">
