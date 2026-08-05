@@ -12,10 +12,9 @@ to the client chunk-by-chunk (instead of buffering the whole file in memory
 before responding) so pdf.js's onProgress fires and the user sees a real
 download % rather than a frozen "Loading PDF…" spinner. The stream is teed
 to a .part file that is atomically renamed to the cache on completion, so the
-next open is a warm disk hit (served with range support). Accept-Ranges is
-NOT advertised on the streaming 200 — pdf.js then uses progressive full-body
-loading for that request; range seeking kicks in on the next (cache-hit)
-request via serve_pdf_bytes.
+next open is a warm disk hit (served with range support). Cold 200 responses
+also advertise Accept-Ranges now that cold range requests can be proxied to
+arXiv, so pdf.js can prioritize the byte ranges needed for first render.
 """
 from __future__ import annotations
 
@@ -129,9 +128,114 @@ async def get_pdf(
     if path.exists():
         # Warm: serve from disk with range support so pdf.js can seek fast.
         return serve_pdf_bytes(path.read_bytes(), range_header)
+    if range_header:
+        # Cold range request: let pdf.js fetch the first bytes / xref bytes it
+        # needs instead of waiting for the whole PDF to stream through.
+        ranged = await _proxy_arxiv_range(arxiv_id, range_header)
+        if ranged is not None:
+            return ranged
     # Cold: stream the arXiv download through to the client (tee to cache) so
     # pdf.js gets bytes progressively + onProgress fires (real download %).
     return await _stream_arxiv_pdf(arxiv_id, path)
+
+
+def _arxiv_pdf_url(arxiv_id: str) -> str:
+    base_id = arxiv_id.split("v")[0]
+    return f"https://arxiv.org/pdf/{base_id}.pdf"
+
+
+def _normalize_single_range(range_header: str | None) -> str | None:
+    if not range_header or not range_header.startswith("bytes="):
+        return None
+    spec = range_header[len("bytes="):]
+    if "," in spec or "-" not in spec:
+        return None
+    start_s, end_s = spec.split("-", 1)
+    if not start_s and not end_s:
+        return None
+    if start_s and not start_s.isdigit():
+        return None
+    if end_s and not end_s.isdigit():
+        return None
+    if start_s and end_s and int(start_s) > int(end_s):
+        return None
+    return f"bytes={start_s}-{end_s}"
+
+
+async def _proxy_arxiv_range(
+    arxiv_id: str,
+    range_header: str,
+) -> Response | StreamingResponse | None:
+    """Forward a cold-cache byte range to arXiv.
+
+    This keeps first-open latency low for pdf.js range-first loading. Partial
+    responses are intentionally not cached here; a normal full-body request still
+    populates the disk cache via _stream_arxiv_pdf.
+    """
+    normalized_range = _normalize_single_range(range_header)
+    if normalized_range is None:
+        return None
+
+    client = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+    try:
+        resp = await client.send(
+            client.build_request(
+                "GET",
+                _arxiv_pdf_url(arxiv_id),
+                headers={
+                    "User-Agent": "little-alphaxiv/0.1",
+                    "Range": normalized_range,
+                },
+            ),
+            stream=True,
+        )
+    except httpx.RequestError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"arxiv pdf error: {exc}") from exc
+
+    if resp.status_code == 200:
+        # Upstream ignored Range. Close this response and fall back to the
+        # full-streaming path so the cache is still populated.
+        await resp.aclose()
+        await client.aclose()
+        return None
+    if resp.status_code == 416:
+        headers = {"Accept-Ranges": "bytes"}
+        cr = resp.headers.get("content-range")
+        if cr:
+            headers["Content-Range"] = cr
+        await resp.aclose()
+        await client.aclose()
+        return Response(status_code=416, headers=headers)
+    if resp.status_code != 206:
+        status_code = resp.status_code
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(
+            status_code=502,
+            detail=f"arxiv pdf returned {status_code} for {_arxiv_pdf_url(arxiv_id)}",
+        )
+
+    headers: dict[str, str] = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=86400",
+    }
+    cl = resp.headers.get("content-length")
+    cr = resp.headers.get("content-range")
+    if cl:
+        headers["Content-Length"] = cl
+    if cr:
+        headers["Content-Range"] = cr
+
+    async def gen():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(gen(), status_code=206, media_type="application/pdf", headers=headers)
 
 
 def _commit_part(part: Path, cache_path: Path, expected: int | None) -> None:
@@ -157,11 +261,10 @@ async def _stream_arxiv_pdf(arxiv_id: str, cache_path: Path) -> StreamingRespons
     them progressively and its onProgress fires (real download %). The same
     bytes are written to a unique .part file and atomically renamed to
     cache_path on completion — the next open hits the warm disk cache (range
-    served via serve_pdf_bytes). No Accept-Ranges is advertised on this 200 so
-    pdf.js uses progressive full-body loading for this request.
+    served via serve_pdf_bytes). Accept-Ranges is advertised on this 200 because
+    cold range requests are also proxied to arXiv.
     """
-    base_id = arxiv_id.split("v")[0]
-    url = f"https://arxiv.org/pdf/{base_id}.pdf"
+    url = _arxiv_pdf_url(arxiv_id)
     client = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
     try:
         resp = await client.send(
@@ -179,7 +282,10 @@ async def _stream_arxiv_pdf(arxiv_id: str, cache_path: Path) -> StreamingRespons
             detail=f"arxiv pdf returned {resp.status_code} for {url}",
         )
 
-    headers: dict[str, str] = {"Cache-Control": "public, max-age=86400"}
+    headers: dict[str, str] = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=86400",
+    }
     cl = resp.headers.get("content-length")
     if cl and cl.isdigit():
         headers["Content-Length"] = cl  # lets pdf.js show a % (absent → bytes only)
