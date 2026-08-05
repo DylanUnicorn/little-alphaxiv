@@ -9,7 +9,9 @@ conversation and tool-calling protocol.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from typing import Any, AsyncIterable, AsyncIterator
 
 import httpx
@@ -24,12 +26,19 @@ from ..deps import current_user
 from ..models import ProviderRow, User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # OpenAI-compatible chat completions path appended to the provider's base_url.
 _CHAT_PATH = "/chat/completions"
 _RESPONSES_PATH = "/responses"
 # Keep the upstream connection alive across long streaming turns.
 _TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=60.0, pool=15.0)
+_STREAM_RETRY_BACKOFF_S = 0.25
+_STREAM_MAX_ATTEMPTS = 2
+
+
+def _request_error_detail(exc: httpx.RequestError) -> str:
+    return (str(exc).strip() or type(exc).__name__)[:300]
 
 
 def _resolve_target(base_url: str, api_format: str = "chat_completions") -> str:
@@ -330,34 +339,66 @@ async def llm_proxy(
 
     # Streaming: pipe upstream SSE straight through.
     async def stream_upstream() -> Any:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        received_upstream_bytes = False
+        for attempt in range(1, _STREAM_MAX_ATTEMPTS + 1):
             try:
-                async with client.stream(
-                    "POST", target, headers=headers, json=upstream_payload
-                ) as resp:
-                    if resp.status_code >= 400:
-                        text = await resp.aread()
-                        # Surface upstream error as an SSE error event so the
-                        # client can render it instead of silently dying.
-                        err = {
-                            "error": True,
-                            "status": resp.status_code,
-                            "body": text.decode("utf-8", errors="replace"),
-                        }
-                        yield f"data: {json.dumps(err)}\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-                    if is_responses:
-                        async for chunk in _responses_sse_to_chat_sse(resp.aiter_raw()):
-                            yield chunk
-                    else:
-                        async for chunk in resp.aiter_raw():
-                            if chunk:
+                async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                    async with client.stream(
+                        "POST", target, headers=headers, json=upstream_payload
+                    ) as resp:
+                        if resp.status_code >= 400:
+                            text = await resp.aread()
+                            # Surface upstream error as an SSE error event so the
+                            # client can render it instead of silently dying.
+                            err = {
+                                "error": True,
+                                "status": resp.status_code,
+                                "body": text.decode("utf-8", errors="replace"),
+                            }
+                            yield f"data: {json.dumps(err)}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
+
+                        async def tracked_chunks() -> AsyncIterator[bytes]:
+                            nonlocal received_upstream_bytes
+                            async for chunk in resp.aiter_raw():
+                                if not chunk:
+                                    continue
+                                received_upstream_bytes = True
                                 yield chunk
+                        if is_responses:
+                            async for chunk in _responses_sse_to_chat_sse(tracked_chunks()):
+                                yield chunk
+                        else:
+                            async for chunk in tracked_chunks():
+                                yield chunk
+                return
             except httpx.RequestError as exc:
-                err = {"error": True, "message": f"upstream stream error: {exc}"}
+                detail = _request_error_detail(exc)
+                can_retry = not received_upstream_bytes and attempt < _STREAM_MAX_ATTEMPTS
+                logger.warning(
+                    "LLM upstream stream failure provider=%s model=%s attempt=%d/%d "
+                    "received_bytes=%s error=%s: %s%s",
+                    provider.id,
+                    upstream_payload.get("model"),
+                    attempt,
+                    _STREAM_MAX_ATTEMPTS,
+                    received_upstream_bytes,
+                    type(exc).__name__,
+                    detail,
+                    "; retrying" if can_retry else "",
+                    exc_info=not can_retry,
+                )
+                if can_retry:
+                    await asyncio.sleep(_STREAM_RETRY_BACKOFF_S)
+                    continue
+                err = {
+                    "error": True,
+                    "message": f"upstream stream error ({type(exc).__name__}): {detail}",
+                }
                 yield f"data: {json.dumps(err)}\n\n"
                 yield "data: [DONE]\n\n"
+                return
 
     return StreamingResponse(
         stream_upstream(),

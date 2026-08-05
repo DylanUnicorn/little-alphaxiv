@@ -3,9 +3,62 @@ from __future__ import annotations
 
 import json
 
+import httpx
 import pytest
 
 from app.routers import llm
+
+
+class _StreamResponse:
+    status_code = 200
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def aiter_raw(self):
+        for item in self._chunks:
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+
+
+class _StreamContext:
+    def __init__(self, item):
+        self._item = item
+
+    async def __aenter__(self):
+        if isinstance(self._item, BaseException):
+            raise self._item
+        return self._item
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class _ScriptedStreamClient:
+    script = []
+    calls = 0
+
+    def __init__(self, **_kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    def stream(self, *_args, **_kwargs):
+        item = self.script[self.calls]
+        self.__class__.calls += 1
+        return _StreamContext(item)
+
+
+def _script_streams(monkeypatch, items):
+    _ScriptedStreamClient.script = list(items)
+    _ScriptedStreamClient.calls = 0
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _ScriptedStreamClient)
+    monkeypatch.setattr(llm, "_STREAM_RETRY_BACKOFF_S", 0, raising=False)
 
 
 async def _register_and_add_provider(client, *, api_format: str | None = None) -> dict:
@@ -185,3 +238,56 @@ async def test_responses_stream_converts_text_tool_and_completion_events():
     }
     assert payloads[3]["usage"] == {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14}
     assert chunks[-1] == "data: [DONE]\n\n"
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_request_error_before_first_upstream_byte(client, monkeypatch):
+    await _register_and_add_provider(client, api_format="responses")
+    completed = (
+        b'data: {"type":"response.output_text.delta","delta":"Recovered"}\n\n'
+        b'data: {"type":"response.completed","response":{}}\n\n'
+    )
+    _script_streams(monkeypatch, [httpx.ConnectError("TLS EOF"), _StreamResponse([completed])])
+
+    response = await client.post("/api/llm", json={
+        "provider_id": "responses-provider",
+        "payload": {"model": "gpt-4.1-mini", "stream": True, "messages": [{"role": "user", "content": "Hello"}]},
+    })
+
+    assert response.status_code == 200
+    assert _ScriptedStreamClient.calls == 2
+    assert '"content": "Recovered"' in response.text
+    assert "upstream stream error" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_persistent_blank_error_names_exception_type(client, monkeypatch):
+    await _register_and_add_provider(client, api_format="responses")
+    _script_streams(monkeypatch, [httpx.ConnectError(""), httpx.ConnectError("")])
+
+    response = await client.post("/api/llm", json={
+        "provider_id": "responses-provider",
+        "payload": {"model": "gpt-4.1-mini", "stream": True, "messages": [{"role": "user", "content": "Hello"}]},
+    })
+
+    assert _ScriptedStreamClient.calls == 2
+    assert "upstream stream error (ConnectError): ConnectError" in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_retry_after_first_upstream_byte(client, monkeypatch):
+    await _register_and_add_provider(client)
+    partial = b'data: {"choices":[{"delta":{"content":"Partial"},"finish_reason":null}]}\n\n'
+    _script_streams(monkeypatch, [
+        _StreamResponse([partial, httpx.ReadError("connection reset")]),
+        _StreamResponse([b'data: [DONE]\n\n']),
+    ])
+
+    response = await client.post("/api/llm", json={
+        "provider_id": "responses-provider",
+        "payload": {"model": "gpt-4.1-mini", "stream": True, "messages": [{"role": "user", "content": "Hello"}]},
+    })
+
+    assert _ScriptedStreamClient.calls == 1
+    assert "Partial" in response.text
+    assert "upstream stream error (ReadError): connection reset" in response.text
