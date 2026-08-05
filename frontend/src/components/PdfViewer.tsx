@@ -34,6 +34,9 @@ import { shouldKeepPdfPointerInteraction } from "../lib/pdfPointerInteraction";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
 
+const ARXIV_RANGE_CHUNK_SIZE = 256 * 1024;
+const BACKGROUND_TEXT_EXTRACTION_DELAY_MS = 500;
+
 interface Props {
   arxivId: string;
   /** When set (non-arXiv OA papers), load the PDF from /api/pdf-url?url=…
@@ -59,10 +62,8 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
   // total is undefined when the server streams without Content-Length → we show
   // MB-loaded instead of a %. null until the first byte arrives.
   const [progress, setProgress] = useState<{ loaded: number; total?: number } | null>(null);
-  // Flips true once page 1 finishes its first canvas+textlayer render. The
-  // full-text extraction effect waits on this so it never contends with the
-  // first-page paint on the pdf.js worker — the user sees page 1 immediately,
-  // then we mine text for the chat context in the background.
+  // Flips true once page 1's canvas has painted. Full-text extraction waits on
+  // this plus a short delay, so the visible page wins the pdf.js worker first.
   const [firstPageRendered, setFirstPageRendered] = useState(false);
   const markFirstPageRendered = useCallback(() => setFirstPageRendered(true), []);
   const [zoom, setZoom] = useState(1); // 1 = fit width
@@ -114,7 +115,17 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
     // coordinates (ghost annotations). `loading` stays true and doc stays null
     // (no PDF to draw on) until the resolution lands and re-triggers this effect.
     if (pdfUrlForId !== arxivId) return;
-    const task = pdfjsLib.getDocument({ url: pdfUrlOverride || pdfUrl(arxivId) });
+    const sourceUrl = pdfUrlOverride || pdfUrl(arxivId);
+    const task = pdfjsLib.getDocument({
+      url: sourceUrl,
+      ...(pdfUrlOverride
+        ? {}
+        : {
+            rangeChunkSize: ARXIV_RANGE_CHUNK_SIZE,
+            disableStream: true,
+            disableAutoFetch: true,
+          }),
+    });
     // Real download progress: the backend streams the arXiv PDF on a cache miss
     // (Content-Length forwarded), so this fires chunk-by-chunk and the spinner
     // shows "Loading PDF… 42%" instead of a frozen string. On a warm (cached)
@@ -149,10 +160,9 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arxivId, pdfUrlOverride, pdfUrlForId]);
 
-  // Full-text extraction for the chat context. Deferred until page 1 has
-  // rendered (so it never competes with the first-page paint on the pdf.js
-  // worker) with a 3s fallback so it always eventually runs. Cancelable
-  // between pages + yields each page so scrolling stays smooth mid-extraction.
+  // Full-text extraction for the chat context. Deferred until page 1's canvas
+  // has painted, then nudged a little later so it stays behind visible render
+  // work. The 3s fallback still starts it if page 1 never becomes visible.
   // Best-effort: never blocks the loading indicator or the render.
   useEffect(() => {
     if (!doc || !arxivId) return;
@@ -165,23 +175,28 @@ export function PdfViewer({ arxivId, pdfUrlOverride, pdfUrlForId, onLoaded, onTe
       return () => window.clearTimeout(fallback);
     }
     let cancelled = false;
-    void (async () => {
-      try {
-        // Repeat visit? The full text is already cached (saved last time).
-        // Re-extracting would re-walk every page on the worker for nothing.
-        const cached = await db.getPaper(arxivId);
-        if (cancelled) return;
-        if (cached?.full_text) {
-          onTextExtracted?.(cached.full_text);
-          return;
+    const extractionTimer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          // Repeat visit? The full text is already cached (saved last time).
+          // Re-extracting would re-walk every page on the worker for nothing.
+          const cached = await db.getPaper(arxivId);
+          if (cancelled) return;
+          if (cached?.full_text) {
+            onTextExtracted?.(cached.full_text);
+            return;
+          }
+          const text = await extractText(doc, () => cancelled);
+          if (text && !cancelled) onTextExtracted?.(text);
+        } catch {
+          /* extraction is best-effort */
         }
-        const text = await extractText(doc, () => cancelled);
-        if (text && !cancelled) onTextExtracted?.(text);
-      } catch {
-        /* extraction is best-effort */
-      }
-    })();
-    return () => { cancelled = true; };
+      })();
+    }, BACKGROUND_TEXT_EXTRACTION_DELAY_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(extractionTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, arxivId, firstPageRendered]);
 
@@ -712,7 +727,7 @@ function PdfPage({
   const [visible, setVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
   const [pageSize, setPageSize] = useState<PageSize>({ w: 0, h: 0 });
-  // Fires onRendered once, after the FIRST canvas+textlayer paint. Zoom changes
+  // Fires onRendered once, after the first canvas paint. Zoom changes
   // re-run the render effect but don't re-fire (renderedOnceRef guards it) —
   // PdfViewer uses the page-1 signal to start background text extraction only
   // after the user can actually see the PDF.
@@ -769,6 +784,22 @@ function PdfPage({
         }
       }
 
+      if (!cancelled) {
+        setRendered(true);
+        // Signal to the scroll-restore logic (PdfViewer) that this page has
+        // finished its first canvas paint and its wrap height is now real.
+        wrapRef.current?.setAttribute("data-rendered", "1");
+        if (!renderedOnceRef.current) {
+          renderedOnceRef.current = true;
+          onRendered?.();
+        }
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (cancelled) {
+          page.cleanup();
+          return;
+        }
+      }
+
       // text layer for selection
       const tl = textLayerRef.current;
       if (tl) {
@@ -779,7 +810,10 @@ function PdfPage({
         tl.style.width = `${viewport.width}px`;
         tl.style.height = `${viewport.height}px`;
         const textContent = await page.getTextContent();
-        if (cancelled) return;
+        if (cancelled) {
+          page.cleanup();
+          return;
+        }
         textTask = renderTextLayer({
           textContentSource: textContent,
           container: tl,
@@ -790,16 +824,6 @@ function PdfPage({
         } catch {
           /* ignore */
         }
-      }
-      setRendered(true);
-      // Signal to the scroll-restore logic (PdfViewer) that this page has
-      // finished rendering and its wrap height is now real (not the 1000px
-      // placeholder). Restoring a saved fractional scroll position waits on
-      // this before applying its delta.
-      wrapRef.current?.setAttribute("data-rendered", "1");
-      if (!renderedOnceRef.current) {
-        renderedOnceRef.current = true;
-        onRendered?.();
       }
       page.cleanup();
     })();

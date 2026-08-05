@@ -52,6 +52,7 @@ class _FakeClient:
     next_resp: _FakeResp | None = None
     send_raises: BaseException | None = None
     constructed: int = 0
+    requests: list[dict] = []
 
     def __init__(self, *args, **kwargs):
         _FakeClient.constructed += 1
@@ -60,6 +61,7 @@ class _FakeClient:
         return {"method": method, "url": url, "headers": headers}
 
     async def send(self, request, stream: bool = False):
+        _FakeClient.requests.append(request)
         if _FakeClient.send_raises is not None:
             raise _FakeClient.send_raises
         assert _FakeClient.next_resp is not None, "no fake response staged"
@@ -77,6 +79,7 @@ def fake_arxiv(monkeypatch, tmp_path):
     _FakeClient.next_resp = None
     _FakeClient.send_raises = None
     _FakeClient.constructed = 0
+    _FakeClient.requests = []
     return tmp_path
 
 
@@ -98,10 +101,9 @@ async def test_cold_miss_streams_body_and_caches(client, fake_arxiv):
     assert cache.read_bytes() == PDF
     # Content-Length is forwarded so pdf.js can show a real download %.
     assert r.headers.get("content-length") == str(len(PDF))
-    # Accept-Ranges is NOT advertised on the streaming 200 — pdf.js uses
-    # progressive full-body loading for this request; range kicks in on the
-    # next (cache-hit) request via serve_pdf_bytes.
-    assert "accept-ranges" not in {k.lower() for k in r.headers.keys()}
+    # Cold streaming 200 advertises range support; cache-miss Range requests
+    # are proxied upstream so pdf.js can switch to range-first loading.
+    assert r.headers["accept-ranges"] == "bytes"
     # No .part litter left after a clean completion.
     assert not list(fake_arxiv.glob("*.part*"))
     assert _FakeClient.constructed == 1
@@ -116,6 +118,51 @@ async def test_cold_miss_unknown_length_streams_mb_progress(client, fake_arxiv):
     assert r.content == PDF
     assert (fake_arxiv / "2345.6789.pdf").read_bytes() == PDF
     assert "content-length" not in {k.lower() for k in r.headers.keys()}
+
+
+# --------------------------------------------------------------------------- #
+# cold cache miss: range proxy for first-render latency
+# --------------------------------------------------------------------------- #
+async def test_cold_miss_forwards_range_206_without_waiting_for_full_cache(client, fake_arxiv):
+    body = PDF[0:10]
+    _FakeClient.next_resp = _FakeResp(
+        206,
+        body,
+        headers={
+            "content-length": str(len(body)),
+            "content-range": f"bytes 0-9/{len(PDF)}",
+        },
+    )
+    r = await client.get("/api/pdf/1234.5678", headers={"Range": "bytes=0-9"})
+    assert r.status_code == 206
+    assert r.content == body
+    assert r.headers["content-range"] == f"bytes 0-9/{len(PDF)}"
+    assert r.headers["accept-ranges"] == "bytes"
+    assert _FakeClient.requests[0]["headers"]["Range"] == "bytes=0-9"
+    # Partial ranges are not promoted to the full-PDF cache.
+    assert not (fake_arxiv / "1234.5678.pdf").exists()
+
+
+async def test_cold_range_ignored_by_upstream_falls_back_to_full_stream_cache(client, fake_arxiv):
+    _FakeClient.next_resp = _FakeResp(
+        200, PDF, headers={"content-length": str(len(PDF))}
+    )
+    r = await client.get("/api/pdf/1234.5678", headers={"Range": "bytes=0-9"})
+    assert r.status_code == 200
+    assert r.content == PDF
+    assert (fake_arxiv / "1234.5678.pdf").read_bytes() == PDF
+    assert _FakeClient.constructed == 2
+
+
+async def test_cold_miss_invalid_range_falls_back_to_full_stream_cache(client, fake_arxiv):
+    _FakeClient.next_resp = _FakeResp(
+        200, PDF, headers={"content-length": str(len(PDF))}
+    )
+    r = await client.get("/api/pdf/1234.5678", headers={"Range": "bytes=9-0"})
+    assert r.status_code == 200
+    assert r.content == PDF
+    assert (fake_arxiv / "1234.5678.pdf").read_bytes() == PDF
+    assert _FakeClient.requests[0]["headers"].get("Range") is None
 
 
 # --------------------------------------------------------------------------- #
