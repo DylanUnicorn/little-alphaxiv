@@ -81,9 +81,13 @@ function normalizeTextMath(text: string): string {
   // unescaped pairs before parsing. Code regions have already been split out.
   return normalizedDelimiters.replace(
     /(^|[^\\])\$\$([\s\S]*?)\$\$/g,
-    (match, prefix: string, content: string) => {
+    (match, prefix: string, content: string, offset: number, source: string) => {
       const trimmed = content.trim();
-      return trimmed ? `${prefix}$$\n${trimmed}\n$$` : match;
+      if (!trimmed) return match;
+      const before = prefix && prefix !== "\n" ? `${prefix}\n` : prefix;
+      const end = offset + match.length;
+      const after = end < source.length && source[end] !== "\n" ? "\n" : "";
+      return `${before}$$\n${trimmed}\n$$${after}`;
     },
   );
 }

@@ -706,47 +706,66 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 .composer-selected-text-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-.composer-textarea {
-  display: block; width: 100%;
-  min-height: 60px; /* 2 lines */
-  resize: none; overflow-y: auto;
+.composer-rich-input {
+  position: relative; width: 100%;
+  min-height: 60px; max-height: min(40vh, 240px);
+  overflow-y: auto; overflow-x: hidden;
   padding: 8px 4px 12px;
-  border: none; background: transparent;
-  color: var(--text); font-size: 16px; line-height: 1.5; font-family: inherit;
+  color: var(--text); cursor: text;
+}
+.composer-editor { min-height: 40px; }
+.composer-editor .ProseMirror {
+  min-height: 40px; outline: none;
+  color: var(--text); font: inherit;
+  font-size: 16px; line-height: 1.5;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.composer-editor .ProseMirror p { margin: 0; }
+.composer-placeholder {
+  position: absolute; inset: 8px 4px auto;
+  color: var(--text-dim); font-size: 16px; line-height: 1.5;
+  pointer-events: none; user-select: none;
+}
+.composer-rich-input.is-disabled { cursor: default; }
+.composer-rich-input.is-disabled .ProseMirror { cursor: default; }
+
+.composer-math-node {
+  max-width: 100%; color: var(--text);
+}
+.composer-math-node.is-inline {
+  display: inline-flex; align-items: baseline;
+  margin: 0 1px; vertical-align: -0.16em;
+}
+.composer-math-field {
+  display: inline-block; min-width: 1ch; max-width: 100%;
+  padding: 0 2px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text);
+  font-size: 1.04em; line-height: 1.35;
+  --caret-color: var(--accent);
+  --selection-background-color: var(--accent-soft);
+  --contains-highlight-background-color: transparent;
+}
+.composer-math-field:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px; background: var(--accent-soft);
+}
+.composer-math-field::part(menu-toggle),
+.composer-math-field::part(virtual-keyboard-toggle) { display: none; }
+.composer-math-node.is-display {
+  display: block; width: 100%; margin: 7px 0;
+  overflow-x: auto; overflow-y: hidden; text-align: center;
+}
+.composer-math-node.is-display .composer-math-field {
+  display: inline-block; width: max-content; min-width: 3ch;
+  padding: 3px 5px; font-size: 1.08em;
+}
+.composer-rich-input.is-disabled .composer-math-field {
+  pointer-events: none; opacity: 0.84;
 }
 
 @media (max-width: 720px) {
   .composer-selected-text { gap: 8px; padding: 9px 10px; }
 }
-.composer-textarea:focus { outline: none; }
-.composer-textarea::placeholder { color: var(--text-dim); }
-
-.composer-markdown-preview {
-  margin: 2px 0 4px; padding: 9px 11px 10px;
-  border-radius: var(--radius-md); background: var(--bg-3); color: var(--text);
-}
-.composer-markdown-preview-label {
-  margin-bottom: 5px; color: var(--text-dim); font-size: 11px; font-weight: 650;
-}
-.composer-markdown-preview-body {
-  max-height: 160px; overflow-y: auto; overflow-wrap: anywhere;
-  font-size: 14px; line-height: 1.5;
-}
-.composer-markdown-preview-body p { margin: 0 0 7px; }
-.composer-markdown-preview-body ul,
-.composer-markdown-preview-body ol { margin: 5px 0 7px; padding-left: 22px; }
-.composer-markdown-preview-body code {
-  padding: 1px 4px; border-radius: var(--radius-sm); background: var(--bg-2);
-  font-family: var(--font-mono); font-size: 0.88em;
-}
-.composer-markdown-preview .katex-display {
-  margin: 7px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden;
-  text-align: center;
-}
-.composer-markdown-preview .katex-display > .katex {
-  display: inline-block; max-width: none;
-}
-
 /* Attachment previews inside the composer (above the bar). */
 .composer-attachments {
   display: flex; gap: 6px; flex-wrap: wrap;

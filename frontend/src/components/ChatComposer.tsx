@@ -1,20 +1,26 @@
-import { useLayoutEffect, useRef, useEffect, useCallback, useDeferredValue, useState } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import type { MathfieldElement } from "mathlive";
 import type { Attachment } from "../types";
-import { canSubmitComposer, computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
-import { hasRenderableMath } from "../lib/mathMarkdown";
+import { canSubmitComposer, pickImageFiles } from "../lib/chatComposer";
+import {
+  composerDocumentToInlineContent,
+  composerDocumentToMarkdown,
+  markdownToComposerDocument,
+} from "../lib/composerDocument";
 import { useSettings } from "../store/settings";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
-import { Markdown } from "./Markdown";
 import { Tooltip } from "./Tooltip";
+import { MathNodeExtension } from "./composer/mathNodeExtension";
 
 interface Props {
   value: string;
   onValueChange: (v: string) => void;
   onSend: () => void;
   onStop?: () => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
-  onPaste: (e: React.ClipboardEvent) => void;
+  onPaste: (e: ClipboardEvent) => void;
   onAttach: () => void;
   onDropFiles: (files: File[]) => void;
   busy: boolean;
@@ -30,23 +36,11 @@ interface Props {
   systemPrompt: string;
 }
 
-// 2-line minimum; cap = min(40vh, 240px). Both in px; the cap is resolved
-// against the live viewport so a tall window allows ~8 lines.
-const MIN_HEIGHT = 60;
-const MAX_HEIGHT_VH = 40; // percent of viewport height
-const MAX_HEIGHT_PX = 240;
-
-function maxForViewport(): number {
-  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-  return Math.min(MAX_HEIGHT_PX, Math.round((vh * MAX_HEIGHT_VH) / 100));
-}
-
 export function ChatComposer({
   value,
   onValueChange,
   onSend,
   onStop,
-  onKeyDown,
   onPaste,
   onAttach,
   onDropFiles,
@@ -62,11 +56,93 @@ export function ChatComposer({
   conversationId,
   systemPrompt,
 }: Props) {
-  const taRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const valueRef = useRef(value);
+  const onValueChangeRef = useRef(onValueChange);
+  const onSendRef = useRef(onSend);
+  const onPasteRef = useRef(onPaste);
+  const [isEditorEmpty, setIsEditorEmpty] = useState(value.length === 0);
   const anysearch = useSettings((s) => s.searchSources.anysearch);
   const setSearchSources = useSettings((s) => s.setSearchSources);
-  const previewValue = useDeferredValue(value);
-  const showMathPreview = hasRenderableMath(previewValue);
+
+  valueRef.current = value;
+  onValueChangeRef.current = onValueChange;
+  onSendRef.current = onSend;
+  onPasteRef.current = onPaste;
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        blockquote: false,
+        bold: false,
+        bulletList: false,
+        code: false,
+        codeBlock: false,
+        heading: false,
+        horizontalRule: false,
+        italic: false,
+        listItem: false,
+        orderedList: false,
+        strike: false,
+      }),
+      MathNodeExtension,
+    ],
+    content: markdownToComposerDocument(value),
+    editable: !busy,
+    immediatelyRender: false,
+    editorProps: {
+      attributes: {
+        "aria-label": "Message",
+        "aria-multiline": "true",
+        role: "textbox",
+      },
+      handleKeyDown: (_view, event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing) return false;
+        event.preventDefault();
+        onSendRef.current();
+        return true;
+      },
+      handlePaste: (_view, event) => {
+        onPasteRef.current(event);
+        if (event.defaultPrevented) return true;
+        const text = event.clipboardData?.getData("text/plain") ?? "";
+        if (!text) return false;
+        const content = composerDocumentToInlineContent(text);
+        if (!content.some((node) => node.type === "math")) return false;
+        event.preventDefault();
+        editorRef.current?.commands.insertContent(content);
+        return true;
+      },
+    },
+    onUpdate: ({ editor: updatedEditor }) => {
+      const nextValue = composerDocumentToMarkdown(updatedEditor.getJSON());
+      setIsEditorEmpty(nextValue.length === 0);
+      if (nextValue === valueRef.current) return;
+      valueRef.current = nextValue;
+      onValueChangeRef.current(nextValue);
+    },
+  });
+  editorRef.current = editor;
+
+  // Keep the Tiptap document synchronized with the controlled string without
+  // replacing the document (and therefore the caret) for our own updates.
+  useEffect(() => {
+    if (!editor) return;
+    const currentValue = composerDocumentToMarkdown(editor.getJSON());
+    if (currentValue === value) return;
+    valueRef.current = value;
+    editor.commands.setContent(markdownToComposerDocument(value), { emitUpdate: false });
+    setIsEditorEmpty(value.length === 0);
+  }, [editor, value, conversationId]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(!busy);
+    inputRef.current?.querySelectorAll<MathfieldElement>("math-field").forEach((field) => {
+      field.readOnly = busy;
+    });
+  }, [busy, editor]);
 
   // Drag-and-drop state. dragCounter ref solves the nested-element flicker:
   // dragenter on a child fires before dragleave on the parent, so counting
@@ -101,37 +177,9 @@ export function ChatComposer({
     };
   }, []);
 
-  // Re-measure on value change and on mount: shrink to auto first so a
-  // deleted line lets the box collapse, then grow to scrollHeight (clamped).
-  const measure = useCallback(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    const next = computeTextareaHeight(ta.scrollHeight, MIN_HEIGHT, maxForViewport());
-    ta.style.height = `${next}px`;
-  }, []);
-
-  useLayoutEffect(() => {
-    measure();
-  }, [value, measure]);
-
   useEffect(() => {
-    if (selectedTextContext) taRef.current?.focus();
-  }, [selectedTextContext]);
-
-  // Re-measure when the column width changes (paper-view divider drag
-  // reflows line wrapping) or the viewport height changes (cap depends on vh).
-  useEffect(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(ta);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [measure]);
+    if (selectedTextContext) editor?.commands.focus("end");
+  }, [editor, selectedTextContext]);
 
   // Only treat drags carrying real files as drop candidates; ignore text/link
   // drags so normal in-textarea drag-drop of selections is unaffected.
@@ -222,33 +270,18 @@ export function ChatComposer({
           )}
         </div>
       )}
-      <div className="chat-composer-input">
-        <textarea
-          ref={taRef}
-          className="composer-textarea"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          placeholder={placeholder}
-          rows={2}
-          disabled={busy}
-        />
+      <div
+        ref={inputRef}
+        className={`chat-composer-input composer-rich-input${busy ? " is-disabled" : ""}`}
+        onClick={(event) => {
+          if (!busy && event.target === event.currentTarget) editor?.commands.focus("end");
+        }}
+      >
+        {isEditorEmpty && (
+          <span className="composer-placeholder" aria-hidden="true">{placeholder}</span>
+        )}
+        <EditorContent editor={editor} className="composer-editor" />
       </div>
-
-      {showMathPreview && (
-        <section
-          className="composer-markdown-preview"
-          aria-label="Formula preview"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          <div className="composer-markdown-preview-label" aria-hidden="true">Preview</div>
-          <div className="composer-markdown-preview-body">
-            <Markdown enrichPaperLinks={false} children={previewValue} />
-          </div>
-        </section>
-      )}
 
       {attachments.length > 0 && (
         <div className="composer-attachments">

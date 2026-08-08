@@ -240,7 +240,7 @@ export function ChatPanel({
   }, []);
 
   // Handle paste — extract images from clipboard (silent skip for non-images).
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+  const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
@@ -269,6 +269,30 @@ export function ChatPanel({
   const handleDropFiles = useCallback((files: File[]) => {
     addFiles(files);
   }, [addFiles]);
+
+  // Keep this callback stable while the user edits the composer draft. It
+  // also has to stay above the missing-conversation return: an ephemeral empty
+  // thread is absent after refresh and can recover on the following render.
+  const createBranch = useCallback(async (messageIndex: number, excerpt: string) => {
+    if (!conv || busy || conv.type !== "paper") return;
+    setNotice(conv.id, "Creating branch…");
+    try {
+      const child = await branchFromMessage({
+        conversationId: conv.id,
+        messageIndex,
+        excerpt,
+      });
+      setNotice(conv.id, "");
+      if (child.type === "paper" && child.paper_id) {
+        navigate(`/paper/${encodeURIComponent(child.paper_id)}/${child.id}`);
+      } else {
+        navigate(`/chat/${child.id}`);
+      }
+    } catch (error: any) {
+      setNotice(conv.id, `Could not create branch: ${error?.message || "error"}`);
+      throw error;
+    }
+  }, [branchFromMessage, busy, conv?.id, conv?.type, navigate, setNotice]);
 
   if (!conv) return <div className="chat-panel"><p>No conversation.</p></div>;
 
@@ -527,37 +551,6 @@ export function ChatPanel({
     }
   }
 
-  function onKey(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
-
-  // Keep this callback stable while the user edits the composer draft. Every
-  // assistant MessageRow receives it; recreating it per keystroke defeats the
-  // row's memo boundary and re-runs Markdown/KaTeX rendering for all history.
-  const createBranch = useCallback(async (messageIndex: number, excerpt: string) => {
-    if (busy || c.type !== "paper") return;
-    setNotice(c.id, "Creating branch…");
-    try {
-      const child = await branchFromMessage({
-        conversationId: c.id,
-        messageIndex,
-        excerpt,
-      });
-      setNotice(c.id, "");
-      if (child.type === "paper" && child.paper_id) {
-        navigate(`/paper/${encodeURIComponent(child.paper_id)}/${child.id}`);
-      } else {
-        navigate(`/chat/${child.id}`);
-      }
-    } catch (error: any) {
-      setNotice(c.id, `Could not create branch: ${error?.message || "error"}`);
-      throw error;
-    }
-  }, [branchFromMessage, busy, c.id, c.type, navigate, setNotice]);
-
   return (
     <div className="chat-panel">
       <ChatErrorBoundary>
@@ -620,7 +613,6 @@ export function ChatPanel({
         onValueChange={setInput}
         onSend={() => send()}
         onStop={() => stop()}
-        onKeyDown={onKey}
         onPaste={handlePaste}
         onAttach={() => fileInputRef.current?.click()}
         onDropFiles={handleDropFiles}
