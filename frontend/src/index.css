@@ -721,6 +721,32 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .composer-textarea:focus { outline: none; }
 .composer-textarea::placeholder { color: var(--text-dim); }
 
+.composer-markdown-preview {
+  margin: 2px 0 4px; padding: 9px 11px 10px;
+  border-radius: var(--radius-md); background: var(--bg-3); color: var(--text);
+}
+.composer-markdown-preview-label {
+  margin-bottom: 5px; color: var(--text-dim); font-size: 11px; font-weight: 650;
+}
+.composer-markdown-preview-body {
+  max-height: 160px; overflow-y: auto; overflow-wrap: anywhere;
+  font-size: 14px; line-height: 1.5;
+}
+.composer-markdown-preview-body p { margin: 0 0 7px; }
+.composer-markdown-preview-body ul,
+.composer-markdown-preview-body ol { margin: 5px 0 7px; padding-left: 22px; }
+.composer-markdown-preview-body code {
+  padding: 1px 4px; border-radius: var(--radius-sm); background: var(--bg-2);
+  font-family: var(--font-mono); font-size: 0.88em;
+}
+.composer-markdown-preview .katex-display {
+  margin: 7px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden;
+  text-align: center;
+}
+.composer-markdown-preview .katex-display > .katex {
+  display: inline-block; max-width: none;
+}
+
 /* Attachment previews inside the composer (above the bar). */
 .composer-attachments {
   display: flex; gap: 6px; flex-wrap: wrap;
