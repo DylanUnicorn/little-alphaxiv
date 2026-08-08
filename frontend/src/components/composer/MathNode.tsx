@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { MathfieldElement } from "mathlive";
+import "mathlive";
+import type { MathfieldElement } from "mathlive";
 import "mathlive/fonts.css";
 
 function moveEditorCaret(props: NodeViewProps, side: "before" | "after"): void {
@@ -19,7 +20,11 @@ export function MathNodeView(props: NodeViewProps) {
     const mathfield = mathfieldRef.current;
     if (!mathfield) return;
 
-    mathfield.mathVirtualKeyboardPolicy = "manual";
+    // Touch devices open the keyboard on focus; desktop users get an
+    // unobstructed formula. The built-in toggle/menu are hidden by composer
+    // CSS because their tiny overlay steals clicks in compact inline formulas.
+    mathfield.mathVirtualKeyboardPolicy = "auto";
+    mathfield.menuItems = [];
     mathfield.smartFence = true;
     mathfield.readOnly = !props.editor.isEditable;
     if (mathfield.getValue("latex") !== latex) {
@@ -64,17 +69,15 @@ export function MathNodeView(props: NodeViewProps) {
       {/** React 18 accepts standards-based custom elements through the string
        * overload. MathLive upgrades this element and uses its initial text as
        * a readable fallback before the upgrade completes. */}
-      {MathfieldElement && (
-        <math-field
-          ref={(element) => {
-            mathfieldRef.current = element;
-          }}
-          aria-label={display ? "Editable display formula" : "Editable inline formula"}
-          class="composer-math-field"
-        >
-          {latex}
-        </math-field>
-      )}
+      <math-field
+        ref={(element) => {
+          mathfieldRef.current = element;
+        }}
+        aria-label={display ? "Editable display formula" : "Editable inline formula"}
+        class="composer-math-field"
+      >
+        {latex}
+      </math-field>
     </NodeViewWrapper>
   );
 }

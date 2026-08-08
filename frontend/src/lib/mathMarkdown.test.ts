@@ -39,6 +39,25 @@ describe("normalizeLatexMathDelimiters", () => {
     );
     expect(html).toContain("katex-display");
   });
+
+  it("separates display delimiters from prose on both sides", () => {
+    const source = "粘贴测试：$$\n\\frac{q^\\top k}{\\sqrt d}\n$$结束";
+    const normalized = normalizeLatexMathDelimiters(source);
+
+    expect(normalized).toBe(
+      "粘贴测试：\n$$\n\\frac{q^\\top k}{\\sqrt d}\n$$\n结束",
+    );
+    const html = renderToStaticMarkup(
+      React.createElement(ReactMarkdown, {
+        remarkPlugins: [remarkMath],
+        rehypePlugins: [rehypeKatex],
+        children: normalized,
+      }),
+    );
+    expect(html).toContain("katex-display");
+    expect(html).toContain("粘贴测试：");
+    expect(html).toContain("结束");
+  });
 });
 
 describe("hasRenderableMath", () => {

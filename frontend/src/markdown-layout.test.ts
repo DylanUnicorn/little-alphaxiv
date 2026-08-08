@@ -27,13 +27,14 @@ describe("user message markdown layout", () => {
   });
 });
 
-describe("composer math preview layout", () => {
-  it("bounds long previews and scrolls wide display math", () => {
+describe("editable composer math layout", () => {
+  it("bounds the unified editor and scrolls wide display formulas", () => {
     expect(stylesheet).toMatch(
-      /\.composer-markdown-preview-body\s*{[^}]*max-height:\s*160px;[^}]*overflow-y:\s*auto;/s,
+      /\.composer-rich-input\s*{[^}]*max-height:\s*min\(40vh, 240px\);[^}]*overflow-y:\s*auto;/s,
     );
     expect(stylesheet).toMatch(
-      /\.composer-markdown-preview \.katex-display\s*{[^}]*overflow-x:\s*auto;/s,
+      /\.composer-math-node\.is-display\s*{[^}]*overflow-x:\s*auto;/s,
     );
+    expect(stylesheet).not.toContain("composer-markdown-preview");
   });
 });
