@@ -86,6 +86,7 @@ export async function runConversation(opts: {
       signal,
       onDelta: (t) => callbacks.onAssistantDelta?.(t),
       onReasoning: (t) => callbacks.onReasoning?.(t),
+      onReconnect: () => callbacks.onStatus?.("Reconnecting to model service…"),
     });
 
     // Provider-reported token usage (if any) — the context-usage ring

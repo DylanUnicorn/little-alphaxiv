@@ -14,6 +14,7 @@ import { STYLE_PRESETS } from "../types";
 import { useConversations } from "../store/conversations";
 import { useSettings } from "../store/settings";
 import { runConversation, generateConversationTitle } from "../lib/llm";
+import { buildStreamFailureMessage, userFacingStreamError } from "../lib/chatFailure";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
 import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
@@ -501,21 +502,13 @@ export function ChatPanel({
         const errMsg =
           hasImage && !provider.vision_model && looksLikeImageError
             ? "This model doesn't support images. Add a vision model in Settings → Providers."
-            : rawMsg;
+            : userFacingStreamError(rawMsg, Boolean(buf.trim()));
         // Preserve whatever had already streamed before the error so the user
         // doesn't lose the in-progress answer when a stream is interrupted (e.g.
         // the connection dropped while the tab was backgrounded). Previously the
         // partial buffer was discarded and replaced with a bare error message,
         // so the output the user was reading would vanish mid-reply.
-        if (buf.trim()) {
-          await appendMessages(c.id, [
-            { role: "assistant", content: buf, ui: { error: `Response interrupted: ${errMsg}` } },
-          ]);
-        } else {
-          await appendMessages(c.id, [
-            { role: "assistant", content: `⚠️ ${errMsg}`, ui: { error: String(errMsg) } },
-          ]);
-        }
+        await appendMessages(c.id, [buildStreamFailureMessage(buf, String(errMsg))]);
       }
       setStatus("");
     } finally {

@@ -272,6 +272,8 @@ async def test_stream_persistent_blank_error_names_exception_type(client, monkey
 
     assert _ScriptedStreamClient.calls == 2
     assert "upstream stream error (ConnectError): ConnectError" in response.text
+    assert '"error_type": "ConnectError"' in response.text
+    assert '"retryable": true' in response.text
 
 
 @pytest.mark.asyncio
@@ -291,3 +293,4 @@ async def test_stream_does_not_retry_after_first_upstream_byte(client, monkeypat
     assert _ScriptedStreamClient.calls == 1
     assert "Partial" in response.text
     assert "upstream stream error (ReadError): connection reset" in response.text
+    assert '"retryable": false' in response.text
