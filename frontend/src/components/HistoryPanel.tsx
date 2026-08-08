@@ -2,6 +2,7 @@
 // root; selection-created conversations render beneath it as a branch tree.
 
 import { useConversations } from "../store/conversations";
+import { useChatRuntime } from "../store/chatRuntime";
 import type { Conversation } from "../types";
 import {
   collectConversationSubtreeIds,
@@ -44,6 +45,7 @@ function threadTitle(conversation: Conversation): string {
 export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Props) {
   const conversations = useConversations((state) => state.conversations);
   const remove = useConversations((state) => state.remove);
+  const generatingIds = useChatRuntime((state) => state.generatingIds);
   const threads = conversations.filter(
     (conversation) => conversation.type === "paper" && conversation.paper_id === arxivId,
   );
@@ -133,6 +135,7 @@ export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Pr
               <ConversationTree
                 nodes={history.nodes}
                 activeId={activeId}
+                generatingIds={generatingIds}
                 onSelect={onSelect}
                 onDeleteBranch={deleteBranch}
               />

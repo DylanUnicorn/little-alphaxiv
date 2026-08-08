@@ -12,13 +12,13 @@ import { useNavigate } from "react-router-dom";
 import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider, ModelInfo, TokenUsage } from "../types";
 import { STYLE_PRESETS } from "../types";
 import { useConversations } from "../store/conversations";
+import { EMPTY_CHAT_TURN, useChatRuntime } from "../store/chatRuntime";
 import { useSettings } from "../store/settings";
 import { runConversation, generateConversationTitle } from "../lib/llm";
 import { buildStreamFailureMessage, userFacingStreamError } from "../lib/chatFailure";
 import { truncateToFit, resolveForConv, estimateTokens, computeCalibration } from "../lib/contextBudget";
 import { resolveVisionFallback } from "../lib/visionFallback";
 import { isAbortError } from "../lib/chatStop";
-import { releaseSendLock, tryAcquireSendLock } from "../lib/chatSendLock";
 import {
   buildAssistantExcerptMessage,
   buildSelectedTextMessage,
@@ -126,12 +126,16 @@ export function ChatPanel({
   const searchSources = useSettings((s) => s.searchSources);
   const enabledSources = { openalex: searchSources.openalex.enabled, s2: searchSources.semanticScholar.enabled, anysearch: searchSources.anysearch.enabled };
   const aiOutputFormat = useSettings((s) => s.aiOutputFormat);
+  const turn = useChatRuntime((s) => s.turns[conversationId] ?? EMPTY_CHAT_TURN);
+  const startTurn = useChatRuntime((s) => s.startTurn);
+  const updateTurn = useChatRuntime((s) => s.updateTurn);
+  const appendReasoning = useChatRuntime((s) => s.appendReasoning);
+  const setNotice = useChatRuntime((s) => s.setNotice);
+  const stopTurn = useChatRuntime((s) => s.stopTurn);
+  const finishTurn = useChatRuntime((s) => s.finishTurn);
+  const { busy, status, streaming, reasoning } = turn;
 
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [streaming, setStreaming] = useState("");
-  const [reasoning, setReasoning] = useState("");
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const renderItems = useMemo(
@@ -140,15 +144,6 @@ export function ChatPanel({
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // AbortController for the current in-flight turn, if any. Null when idle.
-  // Clicking Stop aborts the streaming fetch (runConversation already threads
-  // the signal through to fetch); the catch block distinguishes that user abort
-  // from a real network/upstream error.
-  const abortRef = useRef<AbortController | null>(null);
-  // React state does not update synchronously. This ref closes the gap between
-  // entering send() and the next busy=true render so a fast double click/Enter
-  // cannot append the same user message and launch two concurrent LLM streams.
-  const sendLockRef = useRef(false);
   // Seed the paper's metadata into IDB (so PaperView/PdfViewer show real
   // title/authors/abstract instead of the bare-id fallback), then open it.
   // arXiv-id papers -> existing /api/pdf path; OA papers -> /api/pdf-url
@@ -215,6 +210,14 @@ export function ChatPanel({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+  }, [conversationId]);
+
+  // Draft inputs belong to the visible branch. In-flight output does not: it
+  // remains in chatRuntime under the conversation that launched the turn.
+  useEffect(() => {
+    setInput("");
+    setAttachments([]);
+    setReasoningOpen(true);
   }, [conversationId]);
 
   // Shared ingest: encode image File(s) to base64 data URLs and append to
@@ -326,7 +329,7 @@ export function ChatPanel({
   }
 
   function stop() {
-    abortRef.current?.abort();
+    stopTurn(c.id);
   }
 
   async function send(override?: string) {
@@ -339,10 +342,9 @@ export function ChatPanel({
     const sentAttachments = attachments;
     if ((!draft && sentAttachments.length === 0 && !composerSelectedTextContext) || busy) return;
     if (!provider) {
-      setStatus("No provider configured. Add one in Settings.");
+      setNotice(c.id, "No provider configured. Add one in Settings.");
       return;
     }
-    if (!tryAcquireSendLock(sendLockRef)) return;
 
     const userMsg: ChatMessage = {
       role: "user",
@@ -350,16 +352,15 @@ export function ChatPanel({
       ...(sentAttachments.length > 0 ? { attachments: [...sentAttachments] } : {}),
     };
     const controller = new AbortController();
-    abortRef.current = controller;
-    setBusy(true);
-    setStatus("Thinking…");
+    const launchConversationId = c.id;
+    // This synchronous store action closes the pre-render double-send gap for
+    // one conversation, while another branch remains free to start its turn.
+    if (!startTurn(launchConversationId, controller)) return;
     try {
-      await appendMessages(c.id, [userMsg]);
+      await appendMessages(launchConversationId, [userMsg]);
     } catch (e: any) {
-      setStatus(`Failed to save message: ${e?.message || "error"}`);
-      if (abortRef.current === controller) abortRef.current = null;
-      releaseSendLock(sendLockRef);
-      setBusy(false);
+      finishTurn(launchConversationId, controller);
+      setNotice(launchConversationId, `Failed to save message: ${e?.message || "error"}`);
       return;
     }
     setInput("");
@@ -376,7 +377,7 @@ export function ChatPanel({
         : pendingBranchExcerpt
           ? draft || pendingBranchExcerpt
           : draft;
-      rename(c.id, fallbackTitle.slice(0, 48) || (sentAttachments.length > 0 ? "Image chat" : "New chat"));
+      rename(launchConversationId, fallbackTitle.slice(0, 48) || (sentAttachments.length > 0 ? "Image chat" : "New chat"));
     }
 
     let buf = "";
@@ -401,8 +402,10 @@ export function ChatPanel({
         visionModel: provider.vision_model,
       });
       if (shouldSwap) {
-        void _updateSettings(c.id, { model: effectiveModel });
-        setStatus(`Switched to ${effectiveModel} for image input…`);
+        void _updateSettings(launchConversationId, { model: effectiveModel });
+        updateTurn(launchConversationId, controller, {
+          status: `Switched to ${effectiveModel} for image input…`,
+        });
       }
 
       const contextMsgs = getContextMessages(effectiveModel);
@@ -422,25 +425,31 @@ export function ChatPanel({
         callbacks: {
           onAssistantStart: () => {
             buf = "";
-            setStreaming("");
-            setReasoning("");
+            updateTurn(launchConversationId, controller, {
+              streaming: "",
+              reasoning: "",
+            });
           },
           onAssistantDelta: (t) => {
             buf += t;
-            setStreaming(buf);
+            updateTurn(launchConversationId, controller, { streaming: buf });
           },
           onReasoning: (t) => {
-            setReasoning((r) => (r + t).slice(-2000));
-            if (buf === "") setStatus("Thinking…");
+            appendReasoning(launchConversationId, controller, t);
+            if (buf === "") {
+              updateTurn(launchConversationId, controller, { status: "Thinking…" });
+            }
           },
           onAssistantMessage: (msg) => {
-            setStreaming("");
-            setReasoning("");
-            appendMessages(c.id, [msg]);
+            updateTurn(launchConversationId, controller, {
+              streaming: "",
+              reasoning: "",
+            });
+            appendMessages(launchConversationId, [msg]);
           },
-          onToolMessage: (msg) => appendMessages(c.id, [msg]),
-          onPapers: () => setStatus("Found papers…"),
-          onStatus: (s) => setStatus(s),
+          onToolMessage: (msg) => appendMessages(launchConversationId, [msg]),
+          onPapers: () => updateTurn(launchConversationId, controller, { status: "Found papers…" }),
+          onStatus: (s) => updateTurn(launchConversationId, controller, { status: s }),
           onUsage: (usage: TokenUsage, requestMessages: unknown[]) => {
             // Calibrate the heuristic estimate against the provider's real
             // prompt_tokens for this exact request, then persist so the
@@ -449,7 +458,7 @@ export function ChatPanel({
               requestMessages as { role: string; content: unknown }[]
             );
             const calibration = computeCalibration(usage.prompt_tokens, est);
-            void _updateSettings(c.id, {
+            void _updateSettings(launchConversationId, {
               last_usage: {
                 prompt_tokens: usage.prompt_tokens,
                 completion_tokens: usage.completion_tokens,
@@ -461,13 +470,13 @@ export function ChatPanel({
           },
         },
       });
-      setStatus("");
+      updateTurn(launchConversationId, controller, { status: "" });
       // Refine the first-turn title into a short LLM summary. Fire-and-forget;
       // the truncated fallback stays if this is slow or fails.
       if (wasFirstTurn) {
 
         void maybeSummarizeTitle({
-          convId: c.id,
+          convId: launchConversationId,
           type: c.type,
           paperId: c.paper_id,
           model: effectiveModel,
@@ -478,15 +487,17 @@ export function ChatPanel({
         });
       }
     } catch (e: any) {
-      setStreaming("");
-      setReasoning("");
+      updateTurn(launchConversationId, controller, {
+        streaming: "",
+        reasoning: "",
+      });
       if (isAbortError(controller.signal, e)) {
         // User clicked Stop. Keep whatever already streamed this round and mark
         // it "已停止" (dim, not red). If nothing streamed yet (stopped during a
         // search/tool phase before any assistant text), append nothing — the
         // turn just ends cleanly and the next send works normally.
         if (buf.trim()) {
-          await appendMessages(c.id, [
+          await appendMessages(launchConversationId, [
             { role: "assistant", content: buf, ui: { stopped: true } },
           ]);
         }
@@ -508,13 +519,11 @@ export function ChatPanel({
         // the connection dropped while the tab was backgrounded). Previously the
         // partial buffer was discarded and replaced with a bare error message,
         // so the output the user was reading would vanish mid-reply.
-        await appendMessages(c.id, [buildStreamFailureMessage(buf, String(errMsg))]);
+        await appendMessages(launchConversationId, [buildStreamFailureMessage(buf, String(errMsg))]);
       }
-      setStatus("");
+      updateTurn(launchConversationId, controller, { status: "" });
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      releaseSendLock(sendLockRef);
-      setBusy(false);
+      finishTurn(launchConversationId, controller);
     }
   }
 
@@ -530,24 +539,24 @@ export function ChatPanel({
   // row's memo boundary and re-runs Markdown/KaTeX rendering for all history.
   const createBranch = useCallback(async (messageIndex: number, excerpt: string) => {
     if (busy || c.type !== "paper") return;
-    setStatus("Creating branch…");
+    setNotice(c.id, "Creating branch…");
     try {
       const child = await branchFromMessage({
         conversationId: c.id,
         messageIndex,
         excerpt,
       });
-      setStatus("");
+      setNotice(c.id, "");
       if (child.type === "paper" && child.paper_id) {
         navigate(`/paper/${encodeURIComponent(child.paper_id)}/${child.id}`);
       } else {
         navigate(`/chat/${child.id}`);
       }
     } catch (error: any) {
-      setStatus(`Could not create branch: ${error?.message || "error"}`);
+      setNotice(c.id, `Could not create branch: ${error?.message || "error"}`);
       throw error;
     }
-  }, [branchFromMessage, busy, c.id, c.type, navigate]);
+  }, [branchFromMessage, busy, c.id, c.type, navigate, setNotice]);
 
   return (
     <div className="chat-panel">

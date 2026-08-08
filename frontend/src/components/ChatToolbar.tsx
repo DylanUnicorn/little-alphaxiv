@@ -6,6 +6,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useConversations } from "../store/conversations";
+import { useChatRuntime } from "../store/chatRuntime";
 import { useSettings } from "../store/settings";
 import { THEMES } from "../themes";
 import { STYLE_PRESETS, type StylePreset } from "../types";
@@ -35,6 +36,7 @@ export function ChatToolbar({
 }: Props) {
   const conversations = useConversations((s) => s.conversations);
   const activeConv = conversations.find((c) => c.id === conversationId);
+  const generatingIds = useChatRuntime((s) => s.generatingIds);
   const theme = useSettings((s) => s.theme);
   const setTheme = useSettings((s) => s.setTheme);
 
@@ -201,6 +203,7 @@ export function ChatToolbar({
           anchorRef={historyButtonRef}
           nodes={activeHistory?.nodes ?? []}
           activeId={conversationId}
+          generatingIds={generatingIds}
           revealedNodeId={revealedBranchId}
           onSelect={(id) => {
             closeQuickHistory();
