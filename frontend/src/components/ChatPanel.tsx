@@ -7,7 +7,16 @@
 //   - Per-conversation model override, style preset, context window
 //   - GLM reasoning_content display as "thinking" block
 
-import { memo, useEffect, useMemo, useRef, useState, useCallback, type CSSProperties } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  type ClipboardEvent as ReactClipboardEvent,
+  type CSSProperties,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import type { ChatMessage, Paper, Attachment, StylePreset, ConversationType, Provider, ModelInfo, TokenUsage } from "../types";
 import { STYLE_PRESETS } from "../types";
@@ -26,6 +35,7 @@ import {
 } from "../lib/selectedTextAskAi";
 import { buildChatRenderItems } from "../lib/agentActivity";
 import { isPendingBranchConversation } from "../lib/conversationBranches";
+import { writeRenderedMathSelection } from "../lib/renderedMathClipboard";
 import * as db from "../lib/db";
 import { openTarget } from "../lib/paperSource";
 import { PaperCard } from "./PaperCard";
@@ -46,6 +56,11 @@ const PAPER_SUGGESTIONS = [
   "Explain the methodology",
   "What are the limitations?",
 ];
+
+function handleRenderedMathCopy(event: ReactClipboardEvent<HTMLDivElement>) {
+  if (!writeRenderedMathSelection(window.getSelection(), event.clipboardData)) return;
+  event.preventDefault();
+}
 
 interface Props {
   conversationId: string;
@@ -554,7 +569,12 @@ export function ChatPanel({
   return (
     <div className="chat-panel">
       <ChatErrorBoundary>
-        <div className="chat-messages" ref={scrollRef} style={outputFormatStyle}>
+        <div
+          className="chat-messages"
+          ref={scrollRef}
+          style={outputFormatStyle}
+          onCopy={handleRenderedMathCopy}
+        >
           {conv.messages.length === 0 && !streaming && (
             <div className="chat-empty">
               <div className="empty-title">{conv.type === "paper" ? "Discuss this paper" : "Find papers with AI"}</div>
