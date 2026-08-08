@@ -394,6 +394,11 @@ async def llm_proxy(
                     continue
                 err = {
                     "error": True,
+                    "error_type": type(exc).__name__,
+                    # The browser may make one fresh proxy request only when the
+                    # upstream never produced bytes. Once output begins, replaying
+                    # could duplicate text or tool calls and is therefore unsafe.
+                    "retryable": not received_upstream_bytes,
                     "message": f"upstream stream error ({type(exc).__name__}): {detail}",
                 }
                 yield f"data: {json.dumps(err)}\n\n"

@@ -5,6 +5,50 @@
 import type { Paper, Provider, ProviderApiFormat, ModelInfo, TokenUsage, Conversation, Annotation } from "../types";
 
 const BASE = ""; // same-origin in dev via Vite proxy
+const CHAT_STREAM_MAX_ATTEMPTS = 2;
+const CHAT_STREAM_RECONNECT_DELAY_MS = 400;
+
+class ChatStreamError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = "ChatStreamError";
+  }
+}
+
+function isAbort(error: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (
+    typeof DOMException !== "undefined" &&
+    error instanceof DOMException &&
+    error.name === "AbortError"
+  );
+}
+
+function isFetchNetworkError(error: unknown): boolean {
+  return error instanceof TypeError || (
+    typeof DOMException !== "undefined" &&
+    error instanceof DOMException &&
+    error.name === "NetworkError"
+  );
+}
+
+function abortError(): DOMException {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
+async function waitForReconnect(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw abortError();
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, CHAT_STREAM_RECONNECT_DELAY_MS);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /** Stream a chat completion from the user's configured provider.
  *  Calls onDelta(token) for each streamed text token.
@@ -32,8 +76,9 @@ export async function streamChat(opts: {
   onDelta?: (token: string) => void;
   onReasoning?: (token: string) => void;
   onToolCallDelta?: (name: string, argsDelta: string) => void;
+  onReconnect?: (attempt: number, maxAttempts: number) => void;
 }): Promise<StreamResult> {
-  const { provider, messages, tools, model: modelOverride, signal, onDelta, onReasoning, onToolCallDelta } = opts;
+  const { provider, messages, tools, model: modelOverride, signal, onDelta, onReasoning, onToolCallDelta, onReconnect } = opts;
 
   const payload: Record<string, unknown> = {
     // Honor the per-conversation model override (e.g. a vision model the user
@@ -56,26 +101,50 @@ export async function streamChat(opts: {
     payload.tool_choice = "auto";
   }
 
-  const resp = await fetch(`${BASE}/api/llm`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      // Auth-aware: the backend resolves the provider row by id (or the user's
-      // default if null) and decrypts the stored api_key server-side. The
-      // plaintext key never crosses the wire from the browser anymore.
-      provider_id: provider.id,
-      payload,
-    }),
-    credentials: "include",
-    signal,
+  const requestBody = JSON.stringify({
+    // Auth-aware: the backend resolves the provider row by id (or the user's
+    // default if null) and decrypts the stored api_key server-side. The
+    // plaintext key never crosses the wire from the browser anymore.
+    provider_id: provider.id,
+    payload,
   });
 
-  if (!resp.ok || !resp.body) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`LLM proxy error ${resp.status}: ${text.slice(0, 300)}`);
+  for (let attempt = 1; attempt <= CHAT_STREAM_MAX_ATTEMPTS; attempt += 1) {
+    let receivedProgress = false;
+    try {
+      const resp = await fetch(`${BASE}/api/llm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+        credentials: "include",
+        signal,
+      });
+
+      if (!resp.ok || !resp.body) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(`LLM proxy error ${resp.status}: ${text.slice(0, 300)}`);
+      }
+
+      return await parseSSE(
+        resp.body,
+        onDelta,
+        onToolCallDelta,
+        onReasoning,
+        () => { receivedProgress = true; },
+      );
+    } catch (error) {
+      if (isAbort(error, signal)) throw error;
+      const retryable = !receivedProgress && (
+        (error instanceof ChatStreamError && error.retryable) ||
+        isFetchNetworkError(error)
+      );
+      if (!retryable || attempt >= CHAT_STREAM_MAX_ATTEMPTS) throw error;
+      onReconnect?.(attempt + 1, CHAT_STREAM_MAX_ATTEMPTS);
+      await waitForReconnect(signal);
+    }
   }
 
-  return parseSSE(resp.body, onDelta, onToolCallDelta, onReasoning);
+  throw new Error("Chat stream attempts exhausted");
 }
 
 /** Non-streaming chat completion from the user's configured provider.
@@ -127,7 +196,8 @@ async function parseSSE(
   stream: ReadableStream<Uint8Array>,
   onDelta?: (t: string) => void,
   onToolCallDelta?: (name: string, args: string) => void,
-  onReasoning?: (t: string) => void
+  onReasoning?: (t: string) => void,
+  onProgress?: () => void,
 ): Promise<StreamResult> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -157,10 +227,11 @@ async function parseSSE(
       }
       // error event injected by the proxy on upstream failure
       if (json.error) {
-        throw new Error(
+        throw new ChatStreamError(
           `upstream error${json.status ? ` ${json.status}` : ""}: ${
             (json.body || json.message || "").slice(0, 300)
-          }`
+          }`,
+          json.retryable === true,
         );
       }
       // Token usage arrives on the final chunk (often with choices: []), so it
@@ -179,13 +250,16 @@ async function parseSSE(
         // GLM/zai streams a separate "reasoning_content" chain before the real
         // content. We surface it as a "thinking" status, not as the answer.
         if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+          onProgress?.();
           onReasoning?.(delta.reasoning_content);
         }
         if (typeof delta.content === "string" && delta.content) {
+          onProgress?.();
           content += delta.content;
           onDelta?.(delta.content);
         }
         if (delta.tool_calls) {
+          if (delta.tool_calls.length > 0) onProgress?.();
           for (const tc of delta.tool_calls) {
             const idx = tc.index ?? 0;
             if (!toolCalls[idx]) {
