@@ -74,7 +74,7 @@ vi.mock("./ChatComposer", () => ({
   ChatComposer: ({ onValueChange }: { onValueChange: (value: string) => void }) => (
     React.createElement(
       "button",
-      { type: "button", onClick: () => onValueChange("draft changed") },
+      { type: "button", onClick: () => onValueChange("draft $x_i^2$ changed") },
       "Edit draft",
     )
   ),
@@ -87,7 +87,7 @@ describe("ChatPanel draft rendering", () => {
     runtime.markdown = 0;
   });
 
-  it("does not re-render historical Markdown when only the composer draft changes", () => {
+  it("does not re-render historical Markdown when the composer draft gains math", () => {
     const tree = create(React.createElement(ChatPanel, { conversationId: "paper-thread" }));
     expect(runtime.markdown).toBe(2);
 

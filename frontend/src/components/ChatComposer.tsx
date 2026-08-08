@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef, useEffect, useCallback, useState } from "react";
+import { useLayoutEffect, useRef, useEffect, useCallback, useDeferredValue, useState } from "react";
 import type { Attachment } from "../types";
 import { canSubmitComposer, computeTextareaHeight, pickImageFiles } from "../lib/chatComposer";
+import { hasRenderableMath } from "../lib/mathMarkdown";
 import { useSettings } from "../store/settings";
 import { ModelSelectPill } from "./ModelSelectPill";
 import { ContextRing } from "./ContextRing";
+import { Markdown } from "./Markdown";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -63,6 +65,8 @@ export function ChatComposer({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const anysearch = useSettings((s) => s.searchSources.anysearch);
   const setSearchSources = useSettings((s) => s.setSearchSources);
+  const previewValue = useDeferredValue(value);
+  const showMathPreview = hasRenderableMath(previewValue);
 
   // Drag-and-drop state. dragCounter ref solves the nested-element flicker:
   // dragenter on a child fires before dragleave on the parent, so counting
@@ -231,6 +235,20 @@ export function ChatComposer({
           disabled={busy}
         />
       </div>
+
+      {showMathPreview && (
+        <section
+          className="composer-markdown-preview"
+          aria-label="Formula preview"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <div className="composer-markdown-preview-label" aria-hidden="true">Preview</div>
+          <div className="composer-markdown-preview-body">
+            <Markdown enrichPaperLinks={false} children={previewValue} />
+          </div>
+        </section>
+      )}
 
       {attachments.length > 0 && (
         <div className="composer-attachments">

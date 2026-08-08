@@ -26,3 +26,14 @@ describe("user message markdown layout", () => {
     );
   });
 });
+
+describe("composer math preview layout", () => {
+  it("bounds long previews and scrolls wide display math", () => {
+    expect(stylesheet).toMatch(
+      /\.composer-markdown-preview-body\s*{[^}]*max-height:\s*160px;[^}]*overflow-y:\s*auto;/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.composer-markdown-preview \.katex-display\s*{[^}]*overflow-x:\s*auto;/s,
+    );
+  });
+});
