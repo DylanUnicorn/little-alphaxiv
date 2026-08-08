@@ -665,7 +665,7 @@ const MessageRow = memo(function MessageRow({
   if (msg.role === "user") {
     return (
       <div className="msg msg-user">
-        {msg.content}
+        <Markdown enrichPaperLinks={false} children={msg.content ?? ""} />
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="msg-attachments">
             {msg.attachments.map((att, i) => (

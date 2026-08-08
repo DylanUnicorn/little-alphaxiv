@@ -34,7 +34,13 @@ const REHYPE_PLUGINS: PluggableList = [
   rehypeCjkEmphasis,
 ];
 
-export function Markdown({ children }: { children: string }) {
+export function Markdown({
+  children,
+  enrichPaperLinks = true,
+}: {
+  children: string;
+  enrichPaperLinks?: boolean;
+}) {
   const navigate = useNavigate();
   const enableMathType = useSettings((s) => s.aiOutputFormat.enableMathType);
   const segments = enableMathType ? splitMathMlSegments(children) : [{ type: "markdown" as const, text: children }];
@@ -47,6 +53,13 @@ export function Markdown({ children }: { children: string }) {
         ...markdownCodeComponents,
         a({ href, children }) {
           const url = href ?? "";
+          if (!enrichPaperLinks) {
+            return (
+              <a href={href} target="_blank" rel="noreferrer noopener">
+                {children}
+              </a>
+            );
+          }
           const id = extractArxivId(url);
           if (id) {
             return (

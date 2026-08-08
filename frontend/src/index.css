@@ -446,7 +446,10 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 }
 .suggestion-chip:hover { border-color: var(--accent); background: var(--bg-3); color: var(--text); }
 .msg { margin-bottom: 16px; line-height: 1.55; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
-.msg-user { background: var(--user-bubble); padding: 10px 14px; border-radius: var(--radius-lg); margin-left: 80px; }
+.msg-user {
+  background: var(--user-bubble); padding: 10px 14px; border-radius: var(--radius-lg); margin-left: 80px;
+  white-space: normal;
+}
 .msg-assistant { color: var(--text); }
 .msg-assistant.pending { color: var(--text-dim); }
 .assistant-branch-action {
@@ -1276,6 +1279,34 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   max-width: none;
   font-size: calc(var(--ai-output-math-size, 1em) + 0.3em);
 }
+.msg-user p { margin: 0 0 8px; }
+.msg-user h1, .msg-user h2, .msg-user h3, .msg-user h4 {
+  margin: 10px 0 6px; color: var(--text); line-height: 1.25;
+}
+.msg-user h1 { font-size: 1.24em; }
+.msg-user h2 { font-size: 1.18em; }
+.msg-user h3, .msg-user h4 { font-size: 1.08em; }
+.msg-user ul, .msg-user ol { margin: 6px 0 8px; padding-left: 22px; }
+.msg-user li { margin: 3px 0; }
+.msg-user code {
+  padding: 1px 4px; border-radius: var(--radius-sm); background: var(--bg-3);
+  font-family: var(--font-mono); font-size: 0.88em;
+}
+.msg-user pre {
+  margin: 8px 0; padding: 10px 12px; overflow-x: auto;
+  border-radius: var(--radius-md); background: var(--code-bg);
+}
+.msg-user pre code { padding: 0; background: none; color: var(--code-fg); }
+.msg-user blockquote {
+  margin: 6px 0 8px; padding: 6px 10px; border-left: 2px solid var(--accent);
+  color: var(--text-dim); background: var(--accent-soft);
+}
+.msg-user a { color: var(--accent); }
+.msg-user .katex-display {
+  margin: 8px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden;
+  text-align: center;
+}
+.msg-user .katex-display > .katex { display: inline-block; max-width: none; }
 .mathml-block {
   display: block; overflow-x: auto; overflow-y: hidden;
   margin: calc(var(--ai-output-paragraph-spacing, 10px) + 1px) 0 calc(var(--ai-output-paragraph-spacing, 10px) + 2px);

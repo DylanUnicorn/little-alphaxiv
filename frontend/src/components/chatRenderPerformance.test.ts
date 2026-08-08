@@ -10,7 +10,10 @@ const conversationState = vi.hoisted(() => {
     type: "paper" as const,
     paper_id: "2401.00001",
     title: "Test paper",
-    messages: [{ role: "assistant" as const, content: "Rendered **answer**" }],
+    messages: [
+      { role: "user" as const, content: "Compare $q$ and $k$" },
+      { role: "assistant" as const, content: "Rendered **answer**" },
+    ],
     created_at: 1,
     updated_at: 1,
   };
@@ -86,12 +89,12 @@ describe("ChatPanel draft rendering", () => {
 
   it("does not re-render historical Markdown when only the composer draft changes", () => {
     const tree = create(React.createElement(ChatPanel, { conversationId: "paper-thread" }));
-    expect(runtime.markdown).toBe(1);
+    expect(runtime.markdown).toBe(2);
 
     act(() => {
       tree.root.findByType("button").props.onClick();
     });
 
-    expect(runtime.markdown).toBe(1);
+    expect(runtime.markdown).toBe(2);
   });
 });
