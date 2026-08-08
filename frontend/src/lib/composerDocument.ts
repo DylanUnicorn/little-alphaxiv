@@ -46,7 +46,7 @@ function appendText(content: JSONContent[], text: string): void {
   const lines = text.split("\n");
   lines.forEach((line, index) => {
     if (line) {
-      const previous = content.at(-1);
+      const previous = content[content.length - 1];
       if (previous?.type === "text") previous.text = `${previous.text ?? ""}${line}`;
       else content.push({ type: "text", text: line });
     }
