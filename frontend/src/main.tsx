@@ -3,6 +3,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { useSettings } from "./store/settings";
 import "katex/dist/katex.min.css";
+import "katex/contrib/copy-tex";
 import "./index.css";
 
 // NOTE: React.StrictMode is intentionally disabled. It double-mounts effects in

@@ -17,3 +17,12 @@ describe("assistant markdown blockquote layout", () => {
     );
   });
 });
+
+describe("user message markdown layout", () => {
+  it("uses normal Markdown whitespace and scrolls wide display math", () => {
+    expect(stylesheet).toMatch(/\.msg-user\s*{[^}]*white-space:\s*normal;/s);
+    expect(stylesheet).toMatch(
+      /\.msg-user \.katex-display\s*{[^}]*overflow-x:\s*auto;/s,
+    );
+  });
+});
