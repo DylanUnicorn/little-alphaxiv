@@ -2,7 +2,7 @@ import React from "react";
 import { act, create } from "react-test-renderer";
 // @ts-expect-error Frontend sources intentionally omit Node typings; Vitest runs in Node.
 import { readFileSync } from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./Tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactElement }) => children,
@@ -11,12 +11,13 @@ vi.mock("./Tooltip", () => ({
 import { UserMessageActions } from "./UserMessageActions";
 
 describe("UserMessageActions", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("copies canonical message text and exposes success feedback", async () => {
     const writeText = vi.fn(async () => undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
     const tree = create(
       <UserMessageActions text={"Compare $q$ and $k$"} editDisabled={false} onEdit={vi.fn()} />,
     );
