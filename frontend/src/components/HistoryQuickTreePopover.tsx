@@ -20,6 +20,7 @@ interface Props {
   nodes: Conversation[];
   activeId: string | null;
   generatingIds?: ReadonlySet<string>;
+  completedIds?: ReadonlySet<string>;
   revealedNodeId?: string | null;
   onSelect: (id: string) => void;
   onClose: () => void;
@@ -40,6 +41,7 @@ export function HistoryQuickTreePopover({
   nodes,
   activeId,
   generatingIds,
+  completedIds,
   revealedNodeId = null,
   onSelect,
   onClose,
@@ -92,6 +94,7 @@ export function HistoryQuickTreePopover({
         nodes={nodes}
         activeId={activeId}
         generatingIds={generatingIds}
+        completedIds={completedIds}
         revealedNodeId={revealedNodeId}
         onSelect={onSelect}
         compact

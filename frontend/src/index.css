@@ -1780,6 +1780,19 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   pointer-events: none;
   animation: conversation-node-generating 760ms linear infinite;
 }
+.conversation-tree-node-complete {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  z-index: 4;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--bg-sunken);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
+  pointer-events: none;
+}
 .conversation-tree-node.revealed {
   transform-origin: center;
   animation: conversation-branch-node-arrive 230ms 150ms cubic-bezier(0.22, 1, 0.36, 1) both;

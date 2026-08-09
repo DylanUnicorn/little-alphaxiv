@@ -107,4 +107,17 @@ describe("ChatPanel branch stream isolation", () => {
     });
     expect(renderedMarkdown(tree)).toContain("A is still answering");
   });
+
+  it("acknowledges a completed response when its branch becomes active", () => {
+    const controller = new AbortController();
+    useChatRuntime.getState().startTurn("branch-b", controller);
+    useChatRuntime.getState().finishTurn("branch-b", controller, true);
+    expect(useChatRuntime.getState().completedIds.has("branch-b")).toBe(true);
+
+    act(() => {
+      create(React.createElement(ChatPanel, { conversationId: "branch-b" }));
+    });
+
+    expect(useChatRuntime.getState().completedIds.has("branch-b")).toBe(false);
+  });
 });

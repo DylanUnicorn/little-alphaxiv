@@ -13,6 +13,7 @@ interface TreeProps {
   nodes: Conversation[];
   activeId: string | null;
   generatingIds?: ReadonlySet<string>;
+  completedIds?: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onDeleteBranch?: (id: string) => Promise<void> | void;
   compact?: boolean;
@@ -20,6 +21,7 @@ interface TreeProps {
 }
 
 const NO_GENERATING_NODES: ReadonlySet<string> = new Set<string>();
+const NO_COMPLETED_NODES: ReadonlySet<string> = new Set<string>();
 
 function nodeLabel(node: Conversation, isRoot: boolean): string {
   if (isRoot) return node.title ? `History root: ${node.title}` : "History root";
@@ -30,6 +32,7 @@ export function ConversationTree({
   nodes,
   activeId,
   generatingIds = NO_GENERATING_NODES,
+  completedIds = NO_COMPLETED_NODES,
   onSelect,
   onDeleteBranch,
   compact = false,
@@ -87,14 +90,15 @@ export function ConversationTree({
             const isRoot = node.id === root.id;
             const isRevealed = node.id === revealedNodeId;
             const isGenerating = generatingIds.has(node.id);
+            const isCompleted = !isGenerating && completedIds.has(node.id);
             const label = nodeLabel(node, isRoot);
             return (
               <button
                 key={node.id}
                 type="button"
-                className={`conversation-tree-node${isRoot ? " root" : ""}${isRoot && !rootHasChildren ? " unbranched" : ""}${isCurrent ? " current" : ""}${isInspected ? " inspected" : ""}${isRevealed ? " revealed" : ""}${isGenerating ? " generating" : ""}`}
+                className={`conversation-tree-node${isRoot ? " root" : ""}${isRoot && !rootHasChildren ? " unbranched" : ""}${isCurrent ? " current" : ""}${isInspected ? " inspected" : ""}${isRevealed ? " revealed" : ""}${isGenerating ? " generating" : ""}${isCompleted ? " completed-unviewed" : ""}`}
                 style={{ left: position.x - 14, top: position.y - 14 }}
-                aria-label={`${label}${isCurrent ? ", current node" : ""}${isGenerating ? ", generating response" : ""}`}
+                aria-label={`${label}${isCurrent ? ", current node" : ""}${isGenerating ? ", generating response" : ""}${isCompleted ? ", response ready, not viewed" : ""}`}
                 aria-current={isCurrent ? "step" : undefined}
                 data-node-id={node.id}
                 data-active={isCurrent ? "true" : "false"}
@@ -102,6 +106,7 @@ export function ConversationTree({
                 data-has-children={isRoot ? (rootHasChildren ? "true" : "false") : undefined}
                 data-revealed={isRevealed ? "true" : "false"}
                 data-generating={isGenerating ? "true" : "false"}
+                data-completed={isCompleted ? "true" : "false"}
                 title={compact ? undefined : label}
                 onMouseEnter={() => setInspectedId(node.id)}
                 onFocus={() => setInspectedId(node.id)}
@@ -109,6 +114,7 @@ export function ConversationTree({
               >
                 {isRoot && <span className="conversation-tree-root-marker" aria-hidden="true" />}
                 {isGenerating && <span className="conversation-tree-node-spinner" aria-hidden="true" />}
+                {isCompleted && <span className="conversation-tree-node-complete" aria-hidden="true" />}
               </button>
             );
           })}

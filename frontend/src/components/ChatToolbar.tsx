@@ -37,6 +37,7 @@ export function ChatToolbar({
   const conversations = useConversations((s) => s.conversations);
   const activeConv = conversations.find((c) => c.id === conversationId);
   const generatingIds = useChatRuntime((s) => s.generatingIds);
+  const completedIds = useChatRuntime((s) => s.completedIds);
   const theme = useSettings((s) => s.theme);
   const setTheme = useSettings((s) => s.setTheme);
 
@@ -204,6 +205,7 @@ export function ChatToolbar({
           nodes={activeHistory?.nodes ?? []}
           activeId={conversationId}
           generatingIds={generatingIds}
+          completedIds={completedIds}
           revealedNodeId={revealedBranchId}
           onSelect={(id) => {
             closeQuickHistory();
