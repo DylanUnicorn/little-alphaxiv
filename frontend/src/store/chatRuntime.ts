@@ -13,6 +13,7 @@ type TurnPatch = Partial<Pick<ChatTurnRuntime, "status" | "streaming" | "reasoni
 interface ChatRuntimeState {
   turns: Record<string, ChatTurnRuntime>;
   generatingIds: ReadonlySet<string>;
+  completedIds: ReadonlySet<string>;
   startTurn: (conversationId: string, controller: AbortController) => boolean;
   updateTurn: (
     conversationId: string,
@@ -26,7 +27,12 @@ interface ChatRuntimeState {
   ) => void;
   setNotice: (conversationId: string, status: string) => void;
   stopTurn: (conversationId: string) => void;
-  finishTurn: (conversationId: string, controller: AbortController) => void;
+  finishTurn: (
+    conversationId: string,
+    controller: AbortController,
+    notifyCompletion?: boolean,
+  ) => void;
+  acknowledgeCompletion: (conversationId: string) => void;
   resetForTests: () => void;
 }
 
@@ -53,22 +59,28 @@ function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T
 export const useChatRuntime = create<ChatRuntimeState>((set, get) => ({
   turns: {},
   generatingIds: new Set<string>(),
+  completedIds: new Set<string>(),
 
   startTurn: (conversationId, controller) => {
     if (get().turns[conversationId]?.busy) return false;
-    set((state) => ({
-      turns: {
-        ...state.turns,
-        [conversationId]: {
-          busy: true,
-          status: "Thinking…",
-          streaming: "",
-          reasoning: "",
-          controller,
+    set((state) => {
+      const completedIds = new Set(state.completedIds);
+      completedIds.delete(conversationId);
+      return {
+        turns: {
+          ...state.turns,
+          [conversationId]: {
+            busy: true,
+            status: "Thinking…",
+            streaming: "",
+            reasoning: "",
+            controller,
+          },
         },
-      },
-      generatingIds: new Set(state.generatingIds).add(conversationId),
-    }));
+        generatingIds: new Set(state.generatingIds).add(conversationId),
+        completedIds,
+      };
+    });
     return true;
   },
 
@@ -123,16 +135,31 @@ export const useChatRuntime = create<ChatRuntimeState>((set, get) => ({
     get().turns[conversationId]?.controller?.abort();
   },
 
-  finishTurn: (conversationId, controller) => set((state) => {
+  finishTurn: (conversationId, controller, notifyCompletion = false) => set((state) => {
     const current = state.turns[conversationId];
     if (!current || current.controller !== controller) return state;
     const generatingIds = new Set(state.generatingIds);
     generatingIds.delete(conversationId);
+    const completedIds = new Set(state.completedIds);
+    if (notifyCompletion) completedIds.add(conversationId);
+    else completedIds.delete(conversationId);
     return {
       turns: withoutKey(state.turns, conversationId),
       generatingIds,
+      completedIds,
     };
   }),
 
-  resetForTests: () => set({ turns: {}, generatingIds: new Set<string>() }),
+  acknowledgeCompletion: (conversationId) => set((state) => {
+    if (!state.completedIds.has(conversationId)) return state;
+    const completedIds = new Set(state.completedIds);
+    completedIds.delete(conversationId);
+    return { completedIds };
+  }),
+
+  resetForTests: () => set({
+    turns: {},
+    generatingIds: new Set<string>(),
+    completedIds: new Set<string>(),
+  }),
 }));

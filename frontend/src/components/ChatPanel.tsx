@@ -148,6 +148,7 @@ export function ChatPanel({
   const setNotice = useChatRuntime((s) => s.setNotice);
   const stopTurn = useChatRuntime((s) => s.stopTurn);
   const finishTurn = useChatRuntime((s) => s.finishTurn);
+  const acknowledgeCompletion = useChatRuntime((s) => s.acknowledgeCompletion);
   const { busy, status, streaming, reasoning } = turn;
 
   const [input, setInput] = useState("");
@@ -159,6 +160,17 @@ export function ChatPanel({
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeConversationIdRef = useRef<string | null>(conversationId);
+  activeConversationIdRef.current = conversationId;
+
+  useEffect(() => {
+    acknowledgeCompletion(conversationId);
+    return () => {
+      if (activeConversationIdRef.current === conversationId) {
+        activeConversationIdRef.current = null;
+      }
+    };
+  }, [acknowledgeCompletion, conversationId]);
   // Seed the paper's metadata into IDB (so PaperView/PdfViewer show real
   // title/authors/abstract instead of the bare-id fallback), then open it.
   // arXiv-id papers -> existing /api/pdf path; OA papers -> /api/pdf-url
@@ -562,7 +574,11 @@ export function ChatPanel({
       }
       updateTurn(launchConversationId, controller, { status: "" });
     } finally {
-      finishTurn(launchConversationId, controller);
+      finishTurn(
+        launchConversationId,
+        controller,
+        activeConversationIdRef.current !== launchConversationId,
+      );
     }
   }
 

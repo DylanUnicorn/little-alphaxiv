@@ -46,6 +46,7 @@ export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Pr
   const conversations = useConversations((state) => state.conversations);
   const remove = useConversations((state) => state.remove);
   const generatingIds = useChatRuntime((state) => state.generatingIds);
+  const completedIds = useChatRuntime((state) => state.completedIds);
   const threads = conversations.filter(
     (conversation) => conversation.type === "paper" && conversation.paper_id === arxivId,
   );
@@ -136,6 +137,7 @@ export function HistoryPanel({ arxivId, activeId, onSelect, onNew, onClose }: Pr
                 nodes={history.nodes}
                 activeId={activeId}
                 generatingIds={generatingIds}
+                completedIds={completedIds}
                 onSelect={onSelect}
                 onDeleteBranch={deleteBranch}
               />

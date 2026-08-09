@@ -68,6 +68,51 @@ describe("conversation-scoped chat runtime", () => {
     expect(useChatRuntime.getState().generatingIds.has("branch-a")).toBe(true);
   });
 
+  it("keeps a background completion visible until that conversation is viewed", () => {
+    const controller = new AbortController();
+    useChatRuntime.getState().startTurn("branch-a", controller);
+
+    useChatRuntime.getState().finishTurn("branch-a", controller, true);
+
+    expect(useChatRuntime.getState().generatingIds.has("branch-a")).toBe(false);
+    expect(useChatRuntime.getState().completedIds.has("branch-a")).toBe(true);
+
+    useChatRuntime.getState().acknowledgeCompletion("branch-a");
+
+    expect(useChatRuntime.getState().completedIds.has("branch-a")).toBe(false);
+  });
+
+  it("does not mark a response completed-unviewed when it finishes in the active branch", () => {
+    const controller = new AbortController();
+    useChatRuntime.getState().startTurn("branch-a", controller);
+
+    useChatRuntime.getState().finishTurn("branch-a", controller, false);
+
+    expect(useChatRuntime.getState().completedIds.has("branch-a")).toBe(false);
+  });
+
+  it("clears an older completion marker when the branch starts another turn", () => {
+    const first = new AbortController();
+    useChatRuntime.getState().startTurn("branch-a", first);
+    useChatRuntime.getState().finishTurn("branch-a", first, true);
+
+    useChatRuntime.getState().startTurn("branch-a", new AbortController());
+
+    expect(useChatRuntime.getState().completedIds.has("branch-a")).toBe(false);
+  });
+
+  it("does not let a stale controller create a completion marker", () => {
+    const oldController = new AbortController();
+    const newController = new AbortController();
+    useChatRuntime.getState().startTurn("branch-a", oldController);
+    useChatRuntime.getState().finishTurn("branch-a", oldController, false);
+    useChatRuntime.getState().startTurn("branch-a", newController);
+
+    useChatRuntime.getState().finishTurn("branch-a", oldController, true);
+
+    expect(useChatRuntime.getState().completedIds.has("branch-a")).toBe(false);
+  });
+
   it("keeps an idle notice scoped to one conversation", () => {
     useChatRuntime.getState().setNotice("branch-b", "No provider configured.");
 
