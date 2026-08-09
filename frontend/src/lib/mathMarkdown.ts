@@ -79,7 +79,7 @@ function normalizeTextMath(text: string): string {
   // occupy their own lines. Clipboard selections often attach content to the
   // same lines (`$$\\frac...` and `...theta.$$`), so canonicalize complete
   // unescaped pairs before parsing. Code regions have already been split out.
-  return normalizedDelimiters.replace(
+  const canonicalDisplayMath = normalizedDelimiters.replace(
     /(^|[^\\])\$\$([\s\S]*?)\$\$/g,
     (match, prefix: string, content: string, offset: number, source: string) => {
       const trimmed = content.trim();
@@ -90,4 +90,45 @@ function normalizeTextMath(text: string): string {
       return `${before}$$\n${trimmed}\n$$${after}`;
     },
   );
+
+  return normalizeLegacyCommandsInMath(canonicalDisplayMath);
+}
+
+/** Normalize legacy TeX commands only inside complete math ranges.
+ *
+ * Keeping this delimiter-aware prevents prose, code (already split by the
+ * caller), and a formula that is still being typed from being rewritten.
+ */
+function normalizeLegacyCommandsInMath(text: string): string {
+  let result = "";
+  let cursor = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "$" || isEscaped(text, index)) continue;
+
+    const isDisplay = text.startsWith("$$", index);
+    if (!isDisplay && index > 0 && text[index - 1] === "$" && !isEscaped(text, index - 1)) {
+      continue;
+    }
+
+    const delimiter: "$" | "$$" = isDisplay ? "$$" : "$";
+    const bodyStart = index + delimiter.length;
+    const close = findDelimiter(text, bodyStart, delimiter, isDisplay);
+    if (close < 0) {
+      if (isDisplay) index += 1;
+      continue;
+    }
+
+    const body = text.slice(bodyStart, close).replace(
+      /\\mbox(?=\s*\{)/g,
+      (command, offset: number, source: string) =>
+        isEscaped(source, offset) ? command : "\\text",
+    );
+    const rangeEnd = close + delimiter.length;
+    result += text.slice(cursor, bodyStart) + body + text.slice(close, rangeEnd);
+    cursor = rangeEnd;
+    index = rangeEnd - 1;
+  }
+
+  return result + text.slice(cursor);
 }
