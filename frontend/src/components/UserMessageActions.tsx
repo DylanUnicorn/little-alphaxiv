@@ -3,8 +3,8 @@ import { Tooltip } from "./Tooltip";
 
 interface Props {
   text: string;
-  editDisabled: boolean;
-  onEdit: () => void;
+  editDisabled?: boolean;
+  onEdit?: () => void;
 }
 
 type CopyState = "idle" | "copied" | "failed";
@@ -59,20 +59,22 @@ export function UserMessageActions({ text, editDisabled, onEdit }: Props) {
           )}
         </button>
       </Tooltip>
-      <Tooltip label="Edit message" side="bottom" showWhenDisabled>
-        <button
-          type="button"
-          className="user-message-action"
-          aria-label="Edit message"
-          disabled={editDisabled}
-          onClick={onEdit}
-        >
-          <svg viewBox="0 0 18 18" aria-hidden="true">
-            <path d="M3 15h3.1L14.7 6.4a1.7 1.7 0 0 0-2.4-2.4l-8.6 8.6L3 15Z" />
-            <path d="m10.9 5.4 2.4 2.4" />
-          </svg>
-        </button>
-      </Tooltip>
+      {onEdit && (
+        <Tooltip label="Edit message" side="bottom" showWhenDisabled>
+          <button
+            type="button"
+            className="user-message-action"
+            aria-label="Edit message"
+            disabled={editDisabled}
+            onClick={onEdit}
+          >
+            <svg viewBox="0 0 18 18" aria-hidden="true">
+              <path d="M3 15h3.1L14.7 6.4a1.7 1.7 0 0 0-2.4-2.4l-8.6 8.6L3 15Z" />
+              <path d="m10.9 5.4 2.4 2.4" />
+            </svg>
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 }

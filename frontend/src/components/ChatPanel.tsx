@@ -45,6 +45,7 @@ import { ChatComposer } from "./ChatComposer";
 import { AgentActivity } from "./AgentActivity";
 import { AssistantBranchAction } from "./AssistantBranchAction";
 import { UserMessageActions } from "./UserMessageActions";
+import { InlineUserMessageEditor, type InlineMessageDraft } from "./InlineUserMessageEditor";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -57,11 +58,6 @@ const PAPER_SUGGESTIONS = [
   "Explain the methodology",
   "What are the limitations?",
 ];
-const EDITING_MESSAGE_CONTEXT = {
-  label: "Editing message",
-  text: "Sending replaces this message and removes the replies after it.",
-};
-
 function handleRenderedMathCopy(event: ReactClipboardEvent<HTMLDivElement>) {
   if (!writeRenderedMathSelection(window.getSelection(), event.clipboardData)) return;
   event.preventDefault();
@@ -161,13 +157,28 @@ export function ChatPanel({
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
-  const [focusRequest, setFocusRequest] = useState(0);
+  const editableMessageIndex = useMemo(() => {
+    if (!conv) return null;
+    for (let index = conv.messages.length - 1; index >= 0; index -= 1) {
+      if (conv.messages[index]?.role !== "user") continue;
+      if (
+        typeof conv.branch_from_message_index === "number"
+        && index <= conv.branch_from_message_index
+      ) return null;
+      return index;
+    }
+    return null;
+  }, [conv]);
   const renderItems = useMemo(
     () => buildChatRenderItems(conv?.messages ?? []),
     [conv?.messages]
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sendRef = useRef<(
+    override?: string,
+    edited?: InlineMessageDraft & { messageIndex: number },
+  ) => Promise<void>>(async () => {});
   const activeConversationIdRef = useRef<string | null>(conversationId);
   activeConversationIdRef.current = conversationId;
 
@@ -256,20 +267,18 @@ export function ChatPanel({
     setReasoningOpen(true);
   }, [conversationId]);
 
-  const beginEditMessage = useCallback((messageIndex: number, message: ChatMessage) => {
-    if (message.role !== "user") return;
-    onRemoveSelectedText?.();
+  const beginEditMessage = useCallback((messageIndex: number) => {
+    if (busy || messageIndex !== editableMessageIndex) return;
     setEditingMessageIndex(messageIndex);
-    setInput(message.content ?? "");
-    setAttachments(message.attachments ? [...message.attachments] : []);
-    setFocusRequest((request) => request + 1);
-  }, [onRemoveSelectedText]);
+  }, [busy, editableMessageIndex]);
 
   const cancelMessageEdit = useCallback(() => {
     setEditingMessageIndex(null);
-    setInput("");
-    setAttachments([]);
   }, []);
+
+  const submitMessageEdit = useCallback((messageIndex: number, draft: InlineMessageDraft) => (
+    sendRef.current(undefined, { ...draft, messageIndex })
+  ), []);
 
   // Shared ingest: encode image File(s) to base64 data URLs and append to
   // attachments. Image-only (matches <input accept="image/*">); non-images
@@ -351,18 +360,11 @@ export function ChatPanel({
   const pendingBranchExcerpt = isPendingBranchConversation(c)
     ? c.branch_excerpt ?? null
     : null;
-  const composerSelectedTextContext = editingMessageIndex !== null
-    ? EDITING_MESSAGE_CONTEXT
-    : selectedTextContext
-      ? { text: selectedTextContext.text, label: `Page ${selectedTextContext.pageNumber}` }
-      : pendingBranchExcerpt
-        ? { text: pendingBranchExcerpt, label: "Selected reply" }
-        : null;
-  const composerOnRemoveSelectedText = editingMessageIndex !== null
-    ? cancelMessageEdit
-    : selectedTextContext
-      ? onRemoveSelectedText
-      : undefined;
+  const composerSelectedTextContext = selectedTextContext
+    ? { text: selectedTextContext.text, label: `Page ${selectedTextContext.pageNumber}` }
+    : pendingBranchExcerpt
+      ? { text: pendingBranchExcerpt, label: "Selected reply" }
+      : null;
   const outputFormatStyle = {
     "--ai-output-font-size": `${aiOutputFormat.fontSize}px`,
     "--ai-output-line-height": String(aiOutputFormat.lineHeight),
@@ -411,17 +413,19 @@ export function ChatPanel({
     stopTurn(c.id);
   }
 
-  async function send(override?: string) {
-    const draft = (override ?? input).trim();
-    const text = editingMessageIndex !== null
+  async function send(override?: string, edited?: InlineMessageDraft & { messageIndex: number }) {
+    if (!edited && editingMessageIndex !== null) return;
+    if (edited && (edited.messageIndex !== editingMessageIndex || edited.messageIndex !== editableMessageIndex)) return;
+    const draft = (edited ? edited.text : override ?? input).trim();
+    const text = edited
       ? draft
       : selectedTextContext
         ? buildSelectedTextMessage(selectedTextContext, draft)
         : pendingBranchExcerpt
           ? buildAssistantExcerptMessage(pendingBranchExcerpt, draft)
           : draft;
-    const sentAttachments = attachments;
-    const contextSuppliesContent = editingMessageIndex === null && !!composerSelectedTextContext;
+    const sentAttachments = edited ? edited.attachments : attachments;
+    const contextSuppliesContent = !edited && !!composerSelectedTextContext;
     if ((!draft && sentAttachments.length === 0 && !contextSuppliesContent) || busy) return;
     if (!provider) {
       setNotice(c.id, "No provider configured. Add one in Settings.");
@@ -435,7 +439,7 @@ export function ChatPanel({
     };
     const controller = new AbortController();
     const launchConversationId = c.id;
-    const editedMessageIndex = editingMessageIndex;
+    const editedMessageIndex = edited?.messageIndex ?? null;
     const sourceMessages = editedMessageIndex === null
       ? c.messages
       : c.messages.slice(0, editedMessageIndex);
@@ -453,9 +457,12 @@ export function ChatPanel({
       setNotice(launchConversationId, `Failed to save message: ${e?.message || "error"}`);
       return;
     }
-    setInput("");
-    setAttachments([]);
-    setEditingMessageIndex(null);
+    if (editedMessageIndex === null) {
+      setInput("");
+      setAttachments([]);
+    } else {
+      setEditingMessageIndex(null);
+    }
     if (editedMessageIndex === null && selectedTextContext) onSelectedTextSent?.(selectedTextContext);
 
     // First turn: set an instant title from the question (so the sidebar
@@ -622,6 +629,7 @@ export function ChatPanel({
       );
     }
   }
+  sendRef.current = send;
 
   return (
     <div className="chat-panel">
@@ -662,12 +670,12 @@ export function ChatPanel({
               onOpenPaper={onOpenPaper}
               branchEnabled={c.type === "paper"}
               branchDisabled={busy}
-              editDisabled={busy || (
-                typeof c.branch_from_message_index === "number"
-                && item.index <= c.branch_from_message_index
-              )}
+              editing={editingMessageIndex === item.index}
+              editDisabled={busy}
               onBranch={createBranch}
-              onEdit={beginEditMessage}
+              onEdit={item.index === editableMessageIndex ? beginEditMessage : undefined}
+              onCancelEdit={cancelMessageEdit}
+              onSubmitEdit={submitMessageEdit}
             />
           ))}
           {streaming && (
@@ -699,9 +707,12 @@ export function ChatPanel({
         onAttach={() => fileInputRef.current?.click()}
         onDropFiles={handleDropFiles}
         busy={busy}
+        disabled={editingMessageIndex !== null}
         placeholder={
           busy
             ? "…"
+            : editingMessageIndex !== null
+              ? "Finish editing the message above…"
             : conv.type === "paper"
               ? "Ask anything about this paper or highlight text..."
               : "Ask about papers, topics, or sources..."
@@ -709,14 +720,12 @@ export function ChatPanel({
         attachments={attachments}
         onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
         selectedTextContext={composerSelectedTextContext}
-        selectedTextContextCanSubmitWithoutText={editingMessageIndex === null}
-        onRemoveSelectedText={composerOnRemoveSelectedText}
+        onRemoveSelectedText={selectedTextContext ? onRemoveSelectedText : undefined}
         models={availableModels}
         currentModel={currentModel}
         onModelChange={handleModelChange}
         conversationId={c.id}
         systemPrompt={effectiveSystemPrompt}
-        focusRequest={focusRequest}
       />
       <input
         ref={fileInputRef}
@@ -737,9 +746,12 @@ const MessageRow = memo(function MessageRow({
   onOpenPaper,
   branchEnabled,
   branchDisabled,
+  editing,
   editDisabled,
   onBranch,
   onEdit,
+  onCancelEdit,
+  onSubmitEdit,
 }: {
   msg: ChatMessage;
   messageIndex: number;
@@ -747,26 +759,41 @@ const MessageRow = memo(function MessageRow({
   onOpenPaper: (paper: Paper) => void;
   branchEnabled: boolean;
   branchDisabled: boolean;
+  editing: boolean;
   editDisabled: boolean;
   onBranch: (messageIndex: number, excerpt: string) => Promise<void>;
-  onEdit: (messageIndex: number, message: ChatMessage) => void;
+  onEdit?: (messageIndex: number) => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (messageIndex: number, draft: InlineMessageDraft) => Promise<void> | void;
 }) {
   if (msg.role === "user") {
     return (
-      <div className="msg msg-user">
-        <Markdown enrichPaperLinks={false} children={msg.content ?? ""} />
-        {msg.attachments && msg.attachments.length > 0 && (
-          <div className="msg-attachments">
-            {msg.attachments.map((att, i) => (
-              <img key={i} src={att.data_url} alt={att.name || "attachment"} className="msg-attachment-img" />
-            ))}
-          </div>
+      <div className={`msg msg-user${editing ? " is-editing" : ""}`}>
+        {editing ? (
+          <InlineUserMessageEditor
+            initialText={msg.content ?? ""}
+            initialAttachments={msg.attachments ?? []}
+            submitting={editDisabled}
+            onCancel={onCancelEdit}
+            onSubmit={(draft) => onSubmitEdit(messageIndex, draft)}
+          />
+        ) : (
+          <>
+            <Markdown enrichPaperLinks={false} children={msg.content ?? ""} />
+            {msg.attachments && msg.attachments.length > 0 && (
+              <div className="msg-attachments">
+                {msg.attachments.map((att, i) => (
+                  <img key={i} src={att.data_url} alt={att.name || "attachment"} className="msg-attachment-img" />
+                ))}
+              </div>
+            )}
+            <UserMessageActions
+              text={msg.content ?? ""}
+              editDisabled={editDisabled}
+              onEdit={onEdit ? () => onEdit(messageIndex) : undefined}
+            />
+          </>
         )}
-        <UserMessageActions
-          text={msg.content ?? ""}
-          editDisabled={editDisabled}
-          onEdit={() => onEdit(messageIndex, msg)}
-        />
       </div>
     );
   }

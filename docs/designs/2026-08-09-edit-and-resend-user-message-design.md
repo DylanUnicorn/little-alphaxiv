@@ -1,5 +1,11 @@
 # Edit and Resend User Messages
 
+> Superseded for interaction behavior by
+> [Inline Last-Message Editing](./2026-08-09-inline-last-message-edit-design.md).
+> The persistence and truncation rules below remain the foundation; the newer
+> design moves editing out of the bottom composer and limits Edit to the latest
+> eligible user prompt.
+
 ## Interaction design
 
 Each user message gains a compact action row aligned to the lower-right edge of

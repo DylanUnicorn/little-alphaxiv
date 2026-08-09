@@ -24,20 +24,17 @@ interface Props {
   onAttach: () => void;
   onDropFiles: (files: File[]) => void;
   busy: boolean;
+  disabled?: boolean;
   placeholder: string;
   attachments: Attachment[];
   onRemoveAttachment: (index: number) => void;
   selectedTextContext?: { text: string; label: string } | null;
-  selectedTextContextCanSubmitWithoutText?: boolean;
   onRemoveSelectedText?: () => void;
   models: { id: string }[];
   currentModel: string;
   onModelChange: (id: string) => void;
   conversationId: string;
   systemPrompt: string;
-  /** Increment to move keyboard focus to the end after an external action
-   *  loads text into the controlled composer (for example, Edit message). */
-  focusRequest?: number;
 }
 
 export function ChatComposer({
@@ -49,19 +46,19 @@ export function ChatComposer({
   onAttach,
   onDropFiles,
   busy,
+  disabled = false,
   placeholder,
   attachments,
   onRemoveAttachment,
   selectedTextContext,
-  selectedTextContextCanSubmitWithoutText = true,
   onRemoveSelectedText,
   models,
   currentModel,
   onModelChange,
   conversationId,
   systemPrompt,
-  focusRequest,
 }: Props) {
+  const locked = busy || disabled;
   const inputRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const valueRef = useRef(value);
@@ -95,7 +92,7 @@ export function ChatComposer({
       MathNodeExtension,
     ],
     content: markdownToComposerDocument(value),
-    editable: !busy,
+    editable: !locked,
     immediatelyRender: false,
     editorProps: {
       attributes: {
@@ -144,11 +141,11 @@ export function ChatComposer({
 
   useEffect(() => {
     if (!editor) return;
-    editor.setEditable(!busy);
+    editor.setEditable(!locked);
     inputRef.current?.querySelectorAll<MathfieldElement>("math-field").forEach((field) => {
-      field.readOnly = busy;
+      field.readOnly = locked;
     });
-  }, [busy, editor]);
+  }, [editor, locked]);
 
   // Drag-and-drop state. dragCounter ref solves the nested-element flicker:
   // dragenter on a child fires before dragleave on the parent, so counting
@@ -158,6 +155,12 @@ export function ChatComposer({
   const dragCounter = useRef(0);
   const [rejectToast, setRejectToast] = useState<string | null>(null);
   const rejectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!locked) return;
+    dragCounter.current = 0;
+    setDragOver(false);
+  }, [locked]);
 
   // Cancel any pending reject-toast timer on unmount.
   useEffect(() => {
@@ -187,28 +190,23 @@ export function ChatComposer({
     if (selectedTextContext) editor?.commands.focus("end");
   }, [editor, selectedTextContext]);
 
-  useEffect(() => {
-    if (!editor || !focusRequest || busy) return;
-    editor.commands.focus("end");
-  }, [busy, editor, focusRequest]);
-
   // Only treat drags carrying real files as drop candidates; ignore text/link
   // drags so normal in-textarea drag-drop of selections is unaffected.
   const hasFiles = (e: React.DragEvent) =>
     Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
   const onDragEnter = useCallback((e: React.DragEvent) => {
-    if (!hasFiles(e)) return;
+    if (locked || !hasFiles(e)) return;
     e.preventDefault();
     dragCounter.current += 1;
     setDragOver(true);
-  }, []);
+  }, [locked]);
 
   const onDragOver = useCallback((e: React.DragEvent) => {
-    if (!hasFiles(e)) return;
+    if (locked || !hasFiles(e)) return;
     e.preventDefault(); // required to permit the drop
     e.dataTransfer.dropEffect = "copy";
-  }, []);
+  }, [locked]);
 
   const onDragLeave = useCallback((e: React.DragEvent) => {
     if (!hasFiles(e)) return;
@@ -221,7 +219,7 @@ export function ChatComposer({
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
-      if (!hasFiles(e)) return;
+      if (locked || !hasFiles(e)) return;
       e.preventDefault();
       dragCounter.current = 0;
       setDragOver(false);
@@ -238,14 +236,14 @@ export function ChatComposer({
         }, 2500);
       }
     },
-    [onDropFiles]
+    [locked, onDropFiles]
   );
 
   const canSend = canSubmitComposer(
     value,
     attachments.length,
-    !!selectedTextContext && selectedTextContextCanSubmitWithoutText,
-    busy,
+    !!selectedTextContext,
+    locked,
   );
 
   return (
@@ -274,7 +272,7 @@ export function ChatComposer({
               aria-label="Remove selected text"
               title="Remove selected text"
               onClick={onRemoveSelectedText}
-              disabled={busy}
+              disabled={locked}
             >
               ×
             </button>
@@ -283,9 +281,9 @@ export function ChatComposer({
       )}
       <div
         ref={inputRef}
-        className={`chat-composer-input composer-rich-input${busy ? " is-disabled" : ""}`}
+        className={`chat-composer-input composer-rich-input${locked ? " is-disabled" : ""}`}
         onClick={(event) => {
-          if (!busy && event.target === event.currentTarget) editor?.commands.focus("end");
+          if (!locked && event.target === event.currentTarget) editor?.commands.focus("end");
         }}
       >
         {isEditorEmpty && (
@@ -302,6 +300,7 @@ export function ChatComposer({
               <button
                 className="composer-attachment-remove"
                 onClick={() => onRemoveAttachment(i)}
+                disabled={locked}
                 aria-label="Remove attachment"
                 title="Remove attachment"
               >
@@ -318,7 +317,7 @@ export function ChatComposer({
             models={models}
             value={currentModel}
             onChange={onModelChange}
-            disabled={busy}
+            disabled={locked}
           />
           <Tooltip label={anysearch.enabled ? "Disable web search" : "Enable web search"} side="top">
             <button
@@ -326,7 +325,7 @@ export function ChatComposer({
               className={`composer-search-pill${anysearch.enabled ? " active" : ""}`}
               onClick={() => setSearchSources({ anysearch: { ...anysearch, enabled: !anysearch.enabled } })}
               aria-pressed={anysearch.enabled}
-              disabled={busy}
+              disabled={locked}
             >
               <span className="composer-search-icon" aria-hidden>◎</span>
               <span>Search</span>
@@ -337,7 +336,7 @@ export function ChatComposer({
               type="button"
               className="composer-icon-btn composer-attach-btn"
               onClick={onAttach}
-              disabled={busy}
+              disabled={locked}
             >
               <span className="composer-attach-glyph" aria-hidden>＋</span>
             </button>
@@ -350,7 +349,7 @@ export function ChatComposer({
               type="button"
               className={`composer-icon-btn composer-send-btn${busy ? " is-stop" : ""}`}
               onClick={busy ? (onStop ?? (() => {})) : onSend}
-              disabled={busy ? false : !canSend}
+              disabled={busy ? false : disabled || !canSend}
             >
               <span className="composer-send-glyph" aria-hidden>{busy ? "■" : "↑"}</span>
             </button>

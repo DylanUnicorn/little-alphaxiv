@@ -40,6 +40,13 @@ describe("UserMessageActions", () => {
     expect(edit.props.disabled).toBe(true);
   });
 
+  it("renders Copy without an Edit action for non-editable messages", () => {
+    const tree = create(<UserMessageActions text="Earlier question" />);
+
+    expect(tree.root.findByProps({ "aria-label": "Copy message" })).toBeTruthy();
+    expect(tree.root.findAllByProps({ "aria-label": "Edit message" })).toHaveLength(0);
+  });
+
   it("has hover, keyboard-focus, and touch visibility contracts", () => {
     const css = readFileSync(new URL("../index.css", import.meta.url), "utf8");
     expect(css).toMatch(/\.msg-user:hover\s+\.user-message-actions/);
