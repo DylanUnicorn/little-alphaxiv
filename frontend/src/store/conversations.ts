@@ -48,6 +48,11 @@ interface ConvState {
   }) => Promise<Conversation>;
   syncEmptyProvider: (id: string, providerId?: string) => void;
   appendMessages: (id: string, msgs: ChatMessage[]) => Promise<void>;
+  replaceFromUserMessage: (
+    id: string,
+    index: number,
+    replacement: ChatMessage,
+  ) => Promise<Conversation>;
   updateMessage: (
     id: string,
     index: number,
@@ -245,6 +250,30 @@ export const useConversations = create<ConvState>((set, get) => ({
       set((s) => ({
         conversations: s.conversations.map((c) => (c.id === id ? updated : c)),
       }));
+    }),
+
+  replaceFromUserMessage: async (id, index, replacement) =>
+    withConvLock(id, async () => {
+      const conv = get().conversations.find((candidate) => candidate.id === id);
+      if (!conv) throw new Error("Conversation not found.");
+      if (conv.messages[index]?.role !== "user" || replacement.role !== "user") {
+        throw new Error("Edit target must be a user message.");
+      }
+      const updated: Conversation = {
+        ...conv,
+        messages: [...conv.messages.slice(0, index), replacement],
+        updated_at: Date.now(),
+      };
+      // Publish only after the server accepts the destructive truncation. If
+      // persistence fails, the visible conversation and its later replies stay
+      // intact while the composer retains the edited draft for retry.
+      await persist(updated);
+      set((state) => ({
+        conversations: state.conversations.map((candidate) =>
+          candidate.id === id ? updated : candidate
+        ),
+      }));
+      return updated;
     }),
 
   updateMessage: async (id, index, patch) =>

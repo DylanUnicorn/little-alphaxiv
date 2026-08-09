@@ -92,7 +92,9 @@ describe("ChatPanel draft rendering", () => {
     expect(runtime.markdown).toBe(2);
 
     act(() => {
-      tree.root.findByType("button").props.onClick();
+      tree.root.findAllByType("button")
+        .find((button) => button.props.children === "Edit draft")!
+        .props.onClick();
     });
 
     expect(runtime.markdown).toBe(2);

@@ -44,6 +44,7 @@ import { ChatErrorBoundary } from "./ChatErrorBoundary";
 import { ChatComposer } from "./ChatComposer";
 import { AgentActivity } from "./AgentActivity";
 import { AssistantBranchAction } from "./AssistantBranchAction";
+import { UserMessageActions } from "./UserMessageActions";
 
 const GENERAL_SUGGESTIONS = [
   "Find recent papers on retrieval-augmented generation",
@@ -56,6 +57,10 @@ const PAPER_SUGGESTIONS = [
   "Explain the methodology",
   "What are the limitations?",
 ];
+const EDITING_MESSAGE_CONTEXT = {
+  label: "Editing message",
+  text: "Sending replaces this message and removes the replies after it.",
+};
 
 function handleRenderedMathCopy(event: ReactClipboardEvent<HTMLDivElement>) {
   if (!writeRenderedMathSelection(window.getSelection(), event.clipboardData)) return;
@@ -132,6 +137,7 @@ export function ChatPanel({
   const navigate = useNavigate();
   const conv = useConversations((s) => s.conversations.find((c) => c.id === conversationId));
   const appendMessages = useConversations((s) => s.appendMessages);
+  const replaceFromUserMessage = useConversations((s) => s.replaceFromUserMessage);
   const branchFromMessage = useConversations((s) => s.branchFromMessage);
   const rename = useConversations((s) => s.rename);
   // settings are updated via ChatToolbar callbacks or model selector
@@ -154,6 +160,8 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
   const renderItems = useMemo(
     () => buildChatRenderItems(conv?.messages ?? []),
     [conv?.messages]
@@ -244,8 +252,24 @@ export function ChatPanel({
   useEffect(() => {
     setInput("");
     setAttachments([]);
+    setEditingMessageIndex(null);
     setReasoningOpen(true);
   }, [conversationId]);
+
+  const beginEditMessage = useCallback((messageIndex: number, message: ChatMessage) => {
+    if (message.role !== "user") return;
+    onRemoveSelectedText?.();
+    setEditingMessageIndex(messageIndex);
+    setInput(message.content ?? "");
+    setAttachments(message.attachments ? [...message.attachments] : []);
+    setFocusRequest((request) => request + 1);
+  }, [onRemoveSelectedText]);
+
+  const cancelMessageEdit = useCallback(() => {
+    setEditingMessageIndex(null);
+    setInput("");
+    setAttachments([]);
+  }, []);
 
   // Shared ingest: encode image File(s) to base64 data URLs and append to
   // attachments. Image-only (matches <input accept="image/*">); non-images
@@ -327,14 +351,18 @@ export function ChatPanel({
   const pendingBranchExcerpt = isPendingBranchConversation(c)
     ? c.branch_excerpt ?? null
     : null;
-  const composerSelectedTextContext = selectedTextContext
-    ? { text: selectedTextContext.text, label: `Page ${selectedTextContext.pageNumber}` }
+  const composerSelectedTextContext = editingMessageIndex !== null
+    ? EDITING_MESSAGE_CONTEXT
+    : selectedTextContext
+      ? { text: selectedTextContext.text, label: `Page ${selectedTextContext.pageNumber}` }
       : pendingBranchExcerpt
         ? { text: pendingBranchExcerpt, label: "Selected reply" }
         : null;
-  const composerOnRemoveSelectedText = selectedTextContext
-    ? onRemoveSelectedText
-    : undefined;
+  const composerOnRemoveSelectedText = editingMessageIndex !== null
+    ? cancelMessageEdit
+    : selectedTextContext
+      ? onRemoveSelectedText
+      : undefined;
   const outputFormatStyle = {
     "--ai-output-font-size": `${aiOutputFormat.fontSize}px`,
     "--ai-output-line-height": String(aiOutputFormat.lineHeight),
@@ -362,7 +390,7 @@ export function ChatPanel({
   // tool_call that produced it. See lib/contextBudget.truncateToFit.
   // `modelId` is the EFFECTIVE model for this turn (may be the auto-swapped
   // vision model), so the ring + truncator use the right context window.
-  function getContextMessages(modelId: string): ChatMessage[] {
+  function getContextMessages(modelId: string, sourceMessages = c.messages): ChatMessage[] {
     const modelInfo = cachedModels.find((m) => m.id === modelId);
     const { capacity, reserve } = resolveForConv({
       model: { id: modelId, context_length: modelInfo?.context_length },
@@ -370,7 +398,7 @@ export function ChatPanel({
       reserveOverride: c.reserve_tokens,
     });
     const { messages } = truncateToFit(
-      c.messages,
+      sourceMessages,
       capacity,
       reserve,
       effectiveSystemPrompt,
@@ -385,13 +413,16 @@ export function ChatPanel({
 
   async function send(override?: string) {
     const draft = (override ?? input).trim();
-    const text = selectedTextContext
-      ? buildSelectedTextMessage(selectedTextContext, draft)
-      : pendingBranchExcerpt
-        ? buildAssistantExcerptMessage(pendingBranchExcerpt, draft)
-        : draft;
+    const text = editingMessageIndex !== null
+      ? draft
+      : selectedTextContext
+        ? buildSelectedTextMessage(selectedTextContext, draft)
+        : pendingBranchExcerpt
+          ? buildAssistantExcerptMessage(pendingBranchExcerpt, draft)
+          : draft;
     const sentAttachments = attachments;
-    if ((!draft && sentAttachments.length === 0 && !composerSelectedTextContext) || busy) return;
+    const contextSuppliesContent = editingMessageIndex === null && !!composerSelectedTextContext;
+    if ((!draft && sentAttachments.length === 0 && !contextSuppliesContent) || busy) return;
     if (!provider) {
       setNotice(c.id, "No provider configured. Add one in Settings.");
       return;
@@ -404,11 +435,19 @@ export function ChatPanel({
     };
     const controller = new AbortController();
     const launchConversationId = c.id;
+    const editedMessageIndex = editingMessageIndex;
+    const sourceMessages = editedMessageIndex === null
+      ? c.messages
+      : c.messages.slice(0, editedMessageIndex);
     // This synchronous store action closes the pre-render double-send gap for
     // one conversation, while another branch remains free to start its turn.
     if (!startTurn(launchConversationId, controller)) return;
     try {
-      await appendMessages(launchConversationId, [userMsg]);
+      if (editedMessageIndex === null) {
+        await appendMessages(launchConversationId, [userMsg]);
+      } else {
+        await replaceFromUserMessage(launchConversationId, editedMessageIndex, userMsg);
+      }
     } catch (e: any) {
       finishTurn(launchConversationId, controller);
       setNotice(launchConversationId, `Failed to save message: ${e?.message || "error"}`);
@@ -416,12 +455,14 @@ export function ChatPanel({
     }
     setInput("");
     setAttachments([]);
-    if (selectedTextContext) onSelectedTextSent?.(selectedTextContext);
+    setEditingMessageIndex(null);
+    if (editedMessageIndex === null && selectedTextContext) onSelectedTextSent?.(selectedTextContext);
 
     // First turn: set an instant title from the question (so the sidebar
     // updates immediately), then refine it with an LLM summary once the
     // assistant replies (see maybeSummarizeTitle below).
-    const wasFirstTurn = c.messages.length === 0 || !!pendingBranchExcerpt;
+    const wasFirstTurn = editedMessageIndex === 0
+      || (editedMessageIndex === null && (c.messages.length === 0 || !!pendingBranchExcerpt));
     if (wasFirstTurn) {
       const fallbackTitle = selectedTextContext
         ? draft || `Page ${selectedTextContext.pageNumber} excerpt`
@@ -439,7 +480,7 @@ export function ChatPanel({
     // reflects reality. Images persist in history, so once true it stays true
     // until that message is truncated out — which is why the swap is sticky.
     // Declared OUTSIDE try: the catch block below also reads hasImage.
-    const hasImage = [...c.messages, userMsg].some(
+    const hasImage = [...sourceMessages, userMsg].some(
       (m) =>
         m.role === "user" &&
         !!m.attachments &&
@@ -459,7 +500,7 @@ export function ChatPanel({
         });
       }
 
-      const contextMsgs = getContextMessages(effectiveModel);
+      const contextMsgs = getContextMessages(effectiveModel, sourceMessages);
       const history: ChatMessage[] = [...contextMsgs, userMsg];
       const { newMessages } = await runConversation({
         provider,
@@ -621,7 +662,12 @@ export function ChatPanel({
               onOpenPaper={onOpenPaper}
               branchEnabled={c.type === "paper"}
               branchDisabled={busy}
+              editDisabled={busy || (
+                typeof c.branch_from_message_index === "number"
+                && item.index <= c.branch_from_message_index
+              )}
               onBranch={createBranch}
+              onEdit={beginEditMessage}
             />
           ))}
           {streaming && (
@@ -663,12 +709,14 @@ export function ChatPanel({
         attachments={attachments}
         onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
         selectedTextContext={composerSelectedTextContext}
+        selectedTextContextCanSubmitWithoutText={editingMessageIndex === null}
         onRemoveSelectedText={composerOnRemoveSelectedText}
         models={availableModels}
         currentModel={currentModel}
         onModelChange={handleModelChange}
         conversationId={c.id}
         systemPrompt={effectiveSystemPrompt}
+        focusRequest={focusRequest}
       />
       <input
         ref={fileInputRef}
@@ -689,7 +737,9 @@ const MessageRow = memo(function MessageRow({
   onOpenPaper,
   branchEnabled,
   branchDisabled,
+  editDisabled,
   onBranch,
+  onEdit,
 }: {
   msg: ChatMessage;
   messageIndex: number;
@@ -697,7 +747,9 @@ const MessageRow = memo(function MessageRow({
   onOpenPaper: (paper: Paper) => void;
   branchEnabled: boolean;
   branchDisabled: boolean;
+  editDisabled: boolean;
   onBranch: (messageIndex: number, excerpt: string) => Promise<void>;
+  onEdit: (messageIndex: number, message: ChatMessage) => void;
 }) {
   if (msg.role === "user") {
     return (
@@ -710,6 +762,11 @@ const MessageRow = memo(function MessageRow({
             ))}
           </div>
         )}
+        <UserMessageActions
+          text={msg.content ?? ""}
+          editDisabled={editDisabled}
+          onEdit={() => onEdit(messageIndex, msg)}
+        />
       </div>
     );
   }
