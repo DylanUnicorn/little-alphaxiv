@@ -450,6 +450,55 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   background: var(--user-bubble); padding: 10px 14px; border-radius: var(--radius-lg); margin-left: 80px;
   margin-bottom: 34px; position: relative; white-space: normal;
 }
+.msg-user.is-editing {
+  padding: 8px;
+  margin-left: clamp(16px, 8vw, 80px);
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.inline-message-editor { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.inline-message-editor textarea {
+  display: block; width: 100%; min-height: 72px; max-height: min(46vh, 360px);
+  resize: none; overflow-y: auto; padding: 8px 9px;
+  border: 0; border-radius: var(--radius-md); outline: 0;
+  background: transparent; color: var(--text);
+  font: 400 15px/1.55 var(--font-sans); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.inline-message-editor textarea:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 68%, transparent);
+}
+.inline-message-editor textarea:disabled { cursor: wait; opacity: 0.72; }
+.inline-message-editor-attachments { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 8px; }
+.inline-message-editor-attachment {
+  position: relative; width: 58px; height: 58px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.inline-message-editor-attachment img { width: 100%; height: 100%; object-fit: cover; }
+.inline-message-editor-attachment button {
+  position: absolute; top: 3px; right: 3px; display: grid; place-items: center;
+  width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 82%, transparent); color: var(--text);
+  box-shadow: var(--shadow-sm); cursor: pointer; font: 500 15px/1 var(--font-sans);
+}
+.inline-message-editor-attachment button:focus-visible,
+.inline-message-editor-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.inline-message-editor-actions {
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;
+  gap: 8px; padding: 0 6px 2px;
+}
+.inline-message-editor-hint { margin-right: auto; color: var(--text-dim); font-size: 11px; }
+.inline-message-editor-actions button {
+  min-height: 32px; padding: 6px 12px; border-radius: var(--radius-md);
+  font: 600 12px/1 var(--font-sans); cursor: pointer;
+}
+.inline-message-editor-cancel {
+  border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+}
+.inline-message-editor-cancel:hover:not(:disabled) { background: var(--bg-3); color: var(--text); }
+.inline-message-editor-submit { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-contrast); }
+.inline-message-editor-submit:hover:not(:disabled) { filter: brightness(1.06); }
+.inline-message-editor-actions button:disabled { cursor: not-allowed; opacity: 0.48; }
 .user-message-actions {
   position: absolute; right: 3px; bottom: -29px;
   display: flex; align-items: center; gap: 2px; height: 26px;
@@ -480,6 +529,11 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .user-message-actions { transition: none; }
+  .inline-message-editor-actions button { transition: none; }
+}
+@media (max-width: 520px) {
+  .msg-user.is-editing { margin-left: 0; }
+  .inline-message-editor-hint { flex-basis: 100%; }
 }
 .msg-assistant { color: var(--text); }
 .msg-assistant.pending { color: var(--text-dim); }
