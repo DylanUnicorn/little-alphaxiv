@@ -448,7 +448,38 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
 .msg { margin-bottom: 16px; line-height: 1.55; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
 .msg-user {
   background: var(--user-bubble); padding: 10px 14px; border-radius: var(--radius-lg); margin-left: 80px;
-  white-space: normal;
+  margin-bottom: 34px; position: relative; white-space: normal;
+}
+.user-message-actions {
+  position: absolute; right: 3px; bottom: -29px;
+  display: flex; align-items: center; gap: 2px; height: 26px;
+  color: var(--text-dim); opacity: 0; pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.msg-user:hover .user-message-actions,
+.msg-user:focus-within .user-message-actions {
+  opacity: 1; pointer-events: auto; transform: translateY(0);
+}
+.user-message-action {
+  position: relative; display: inline-grid; place-items: center;
+  width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: inherit; cursor: pointer;
+}
+.user-message-action::before { content: ""; position: absolute; inset: -7px -4px; }
+.user-message-action:hover { background: var(--bg-3); color: var(--text); }
+.user-message-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.user-message-action:disabled { color: var(--text-dim); cursor: not-allowed; opacity: 0.45; }
+.user-message-action svg {
+  width: 17px; height: 17px; fill: none; stroke: currentColor;
+  stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round;
+}
+.user-message-action.is-copied { color: var(--accent); }
+@media (hover: none) {
+  .user-message-actions { opacity: 1; pointer-events: auto; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .user-message-actions { transition: none; }
 }
 .msg-assistant { color: var(--text); }
 .msg-assistant.pending { color: var(--text-dim); }

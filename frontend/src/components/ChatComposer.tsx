@@ -28,12 +28,16 @@ interface Props {
   attachments: Attachment[];
   onRemoveAttachment: (index: number) => void;
   selectedTextContext?: { text: string; label: string } | null;
+  selectedTextContextCanSubmitWithoutText?: boolean;
   onRemoveSelectedText?: () => void;
   models: { id: string }[];
   currentModel: string;
   onModelChange: (id: string) => void;
   conversationId: string;
   systemPrompt: string;
+  /** Increment to move keyboard focus to the end after an external action
+   *  loads text into the controlled composer (for example, Edit message). */
+  focusRequest?: number;
 }
 
 export function ChatComposer({
@@ -49,12 +53,14 @@ export function ChatComposer({
   attachments,
   onRemoveAttachment,
   selectedTextContext,
+  selectedTextContextCanSubmitWithoutText = true,
   onRemoveSelectedText,
   models,
   currentModel,
   onModelChange,
   conversationId,
   systemPrompt,
+  focusRequest,
 }: Props) {
   const inputRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -181,6 +187,11 @@ export function ChatComposer({
     if (selectedTextContext) editor?.commands.focus("end");
   }, [editor, selectedTextContext]);
 
+  useEffect(() => {
+    if (!editor || !focusRequest || busy) return;
+    editor.commands.focus("end");
+  }, [busy, editor, focusRequest]);
+
   // Only treat drags carrying real files as drop candidates; ignore text/link
   // drags so normal in-textarea drag-drop of selections is unaffected.
   const hasFiles = (e: React.DragEvent) =>
@@ -233,7 +244,7 @@ export function ChatComposer({
   const canSend = canSubmitComposer(
     value,
     attachments.length,
-    !!selectedTextContext,
+    !!selectedTextContext && selectedTextContextCanSubmitWithoutText,
     busy,
   );
 
