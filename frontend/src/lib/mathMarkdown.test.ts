@@ -58,6 +58,54 @@ describe("normalizeLatexMathDelimiters", () => {
     expect(html).toContain("粘贴测试：");
     expect(html).toContain("结束");
   });
+
+  it("renders legacy mbox text in AI display formulas", () => {
+    const source = String.raw`\[
+x^l = W\mbox{-MSA Block}(x^{l-1})
+
+x^{l+1} = SW\mbox{-MSA Block}(x^l)
+\]`;
+    const normalized = normalizeLatexMathDelimiters(source);
+
+    expect(normalized).toContain(String.raw`W\text{-MSA Block}`);
+    expect(normalized).toContain(String.raw`SW\text{-MSA Block}`);
+    expect(normalized).not.toContain(String.raw`\mbox`);
+
+    const html = renderToStaticMarkup(
+      React.createElement(ReactMarkdown, {
+        remarkPlugins: [remarkMath],
+        rehypePlugins: [[rehypeKatex, { throwOnError: false, strict: "ignore" }]],
+        children: normalized,
+      }),
+    );
+    expect(html).toContain("MSA Block");
+    expect(html).not.toContain("katex-error");
+    expect(html).not.toContain(String.raw`\mbox`);
+  });
+
+  it("normalizes mbox nested inside another math command", () => {
+    const source = String.raw`$G\left(\operatorname{signed\mbox{-}log}(\Delta x)\right)$`;
+
+    expect(normalizeLatexMathDelimiters(source))
+      .toBe(String.raw`$G\left(\operatorname{signed\text{-}log}(\Delta x)\right)$`);
+  });
+
+  it("leaves mbox untouched outside complete math", () => {
+    const source = [
+      String.raw`Prose \mbox{literal}.`,
+      String.raw`Inline code: \`\mbox{code}\`.`,
+      "```tex\n\\mbox{fenced}\n```",
+      String.raw`Incomplete $\mbox{draft}`,
+      String.raw`Complete $\mbox{math}$.`,
+    ].join("\n");
+    const normalized = normalizeLatexMathDelimiters(source);
+
+    expect(normalized).toContain(String.raw`Prose \mbox{literal}.`);
+    expect(normalized).toContain(String.raw`\`\mbox{code}\``);
+    expect(normalized).toContain("```tex\n\\mbox{fenced}\n```");
+    expect(normalized).toContain(String.raw`Incomplete $\mbox{draft}`);
+    expect(normalized).toContain(String.raw`Complete $\text{math}$.`);
+  });
 });
 
 describe("hasRenderableMath", () => {
