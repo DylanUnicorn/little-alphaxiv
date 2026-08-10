@@ -3,6 +3,8 @@ fetch it directly. We query the public arXiv Atom API and return clean JSON.
 """
 from __future__ import annotations
 
+import asyncio
+import time
 import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import urlencode
@@ -20,6 +22,59 @@ _NS = {
     "arxiv": "http://arxiv.org/schemas/atom",
 }
 _TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
+_ARXIV_MIN_INTERVAL_SECONDS = 3.0
+_ARXIV_MAX_ATTEMPTS = 2
+_ARXIV_TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
+_arxiv_slot_lock = asyncio.Lock()
+_arxiv_last_request_started = 0.0
+
+
+async def _wait_for_arxiv_slot() -> None:
+    """Serialize request starts to respect arXiv's public API rate limit."""
+    global _arxiv_last_request_started
+    async with _arxiv_slot_lock:
+        wait = max(
+            0.0,
+            _arxiv_last_request_started + _ARXIV_MIN_INTERVAL_SECONDS - time.monotonic(),
+        )
+        if wait:
+            await asyncio.sleep(wait)
+        _arxiv_last_request_started = time.monotonic()
+
+
+def _retry_after_seconds(response: httpx.Response) -> float:
+    raw = response.headers.get("Retry-After", "")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.0
+
+
+async def _get_arxiv(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    """GET arXiv with one bounded retry for transport and transient failures."""
+    for attempt in range(_ARXIV_MAX_ATTEMPTS):
+        await _wait_for_arxiv_slot()
+        try:
+            response = await client.get(
+                url,
+                headers={"User-Agent": "little-alphaxiv/0.1"},
+            )
+        except httpx.RequestError:
+            if attempt + 1 >= _ARXIV_MAX_ATTEMPTS:
+                raise
+            continue
+
+        if (
+            response.status_code not in _ARXIV_TRANSIENT_STATUSES
+            or attempt + 1 >= _ARXIV_MAX_ATTEMPTS
+        ):
+            return response
+
+        retry_after = _retry_after_seconds(response)
+        if retry_after:
+            await asyncio.sleep(retry_after)
+
+    raise RuntimeError("unreachable arXiv retry state")
 
 
 def _text(el: ET.Element | None, path: str, default: str = "") -> str:
@@ -99,7 +154,7 @@ async def fetch_arxiv_by_id(arxiv_id: str) -> dict[str, Any] | None:
     url = f"{_ARXIV_API}?{urlencode({'id_list': base})}"
     async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
         try:
-            resp = await client.get(url, headers={"User-Agent": "little-alphaxiv/0.1"})
+            resp = await _get_arxiv(client, url)
         except httpx.RequestError:
             return None
     if resp.status_code != 200:
@@ -137,10 +192,17 @@ async def search_arxiv(
     url = f"{_ARXIV_API}?{urlencode(params)}"
     async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
         try:
-            resp = await client.get(url, headers={"User-Agent": "little-alphaxiv/0.1"})
+            resp = await _get_arxiv(client, url)
         except httpx.RequestError as exc:
             raise HTTPException(status_code=502, detail=f"arxiv request error: {exc}") from exc
 
+    if resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After") or str(int(_ARXIV_MIN_INTERVAL_SECONDS))
+        raise HTTPException(
+            status_code=429,
+            detail="arXiv rate limit persisted after retry; try again later",
+            headers={"Retry-After": retry_after},
+        )
     if resp.status_code != 200:
         raise HTTPException(
             status_code=502,
