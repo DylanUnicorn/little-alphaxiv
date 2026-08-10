@@ -46,7 +46,36 @@ export async function runConversation(opts: {
   const apiMessages: unknown[] = [];
   if (systemPrompt)
     apiMessages.push({ role: "system", content: systemPrompt });
+  const pendingToolCalls = new Map<string, string>();
+  const appendMissingToolResults = () => {
+    for (const [toolCallId, name] of pendingToolCalls) {
+      apiMessages.push({
+        role: "tool",
+        tool_call_id: toolCallId,
+        name,
+        content: `${name} did not complete in a previous turn; retry if the result is still needed`,
+      });
+    }
+    pendingToolCalls.clear();
+  };
   for (const m of messages) {
+    if (m.role === "tool") {
+      if (!m.tool_call_id || !pendingToolCalls.has(m.tool_call_id)) {
+        // A tool output without an immediately preceding matching call is
+        // invalid for both Chat Completions and Responses API histories.
+        continue;
+      }
+      apiMessages.push({
+        role: "tool",
+        content: m.content,
+        tool_call_id: m.tool_call_id,
+        name: pendingToolCalls.get(m.tool_call_id) || m.name,
+      });
+      pendingToolCalls.delete(m.tool_call_id);
+      continue;
+    }
+    if (pendingToolCalls.size) appendMissingToolResults();
+
     // strip UI-only fields before sending
     // For user messages with attachments, convert to OpenAI multimodal format
     if (m.role === "user" && m.attachments && m.attachments.length > 0) {
@@ -70,7 +99,13 @@ export async function runConversation(opts: {
         ...(m.name ? { name: m.name } : {}),
       });
     }
+    if (m.role === "assistant" && m.tool_calls) {
+      for (const toolCall of m.tool_calls) {
+        pendingToolCalls.set(toolCall.id, toolCall.function.name);
+      }
+    }
   }
+  if (pendingToolCalls.size) appendMissingToolResults();
 
   const newMessages: ChatMessage[] = [];
   let guard = 0; // cap tool-call rounds to avoid infinite loops
@@ -120,26 +155,40 @@ export async function runConversation(opts: {
       }
       if (tc.function.name === "search_arxiv") {
         callbacks.onStatus?.("Searching arXiv…");
-        const res = await searchArxiv(
-          args.query ?? "",
-          args.max_results ?? 8
-        );
-        callbacks.onPapers?.(res.results);
-        const toolMsg: ChatMessage = {
-          role: "tool",
-          tool_call_id: tc.id,
-          name: "search_arxiv",
-          content: JSON.stringify(res.results.slice(0, 8)),
-          ui: { papers: res.results },
-        };
-        apiMessages.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          name: "search_arxiv",
-          content: JSON.stringify(res.results.slice(0, 8)),
-        });
-        newMessages.push(toolMsg);
-        callbacks.onToolMessage?.(toolMsg);
+        try {
+          const res = await searchArxiv(
+            args.query ?? "",
+            args.max_results ?? 8
+          );
+          callbacks.onPapers?.(res.results);
+          const toolMsg: ChatMessage = {
+            role: "tool",
+            tool_call_id: tc.id,
+            name: "search_arxiv",
+            content: JSON.stringify(res.results.slice(0, 8)),
+            ui: { papers: res.results },
+          };
+          apiMessages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            name: "search_arxiv",
+            content: JSON.stringify(res.results.slice(0, 8)),
+          });
+          newMessages.push(toolMsg);
+          callbacks.onToolMessage?.(toolMsg);
+        } catch (e: any) {
+          const msg = `arxiv search failed (${e?.message ?? "error"}); retry with a revised query or use another available search source`;
+          const toolMsg: ChatMessage = {
+            role: "tool",
+            tool_call_id: tc.id,
+            name: "search_arxiv",
+            content: msg,
+          };
+          apiMessages.push(toolMsg);
+          newMessages.push(toolMsg);
+          callbacks.onToolMessage?.(toolMsg);
+          callbacks.onStatus?.("");
+        }
       } else if (tc.function.name === "search_openalex") {
         callbacks.onStatus?.("Searching OpenAlex…");
         try {
