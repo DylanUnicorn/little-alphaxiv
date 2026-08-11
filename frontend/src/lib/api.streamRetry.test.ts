@@ -86,6 +86,26 @@ describe("streamChat reconnect", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("surfaces structured proxy error bodies without crashing the SSE parser", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse({
+      error: true,
+      retryable: false,
+      status: 400,
+      body: {
+        error: {
+          message: "Invalid request payload",
+          type: "invalid_request_error",
+        },
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(streamChat({ provider, messages: [] })).rejects.toThrow(
+      'upstream error 400: {"error":{"message":"Invalid request payload","type":"invalid_request_error"}}',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not reconnect an aborted request", async () => {
     const controller = new AbortController();
     controller.abort();
