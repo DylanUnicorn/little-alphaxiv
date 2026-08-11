@@ -35,6 +35,18 @@ function abortError(): DOMException {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
+function formatStreamErrorDetail(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  try {
+    const serialized = JSON.stringify(value);
+    if (typeof serialized === "string") return serialized;
+  } catch {
+    // Fall through for values that cannot be represented as JSON.
+  }
+  return String(value);
+}
+
 async function waitForReconnect(signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw abortError();
   await new Promise<void>((resolve, reject) => {
@@ -227,10 +239,9 @@ async function parseSSE(
       }
       // error event injected by the proxy on upstream failure
       if (json.error) {
+        const detail = formatStreamErrorDetail(json.body || json.message || "");
         throw new ChatStreamError(
-          `upstream error${json.status ? ` ${json.status}` : ""}: ${
-            (json.body || json.message || "").slice(0, 300)
-          }`,
+          `upstream error${json.status ? ` ${json.status}` : ""}: ${detail.slice(0, 300)}`,
           json.retryable === true,
         );
       }
