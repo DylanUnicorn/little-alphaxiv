@@ -708,7 +708,7 @@ function groupIntoLines(items: any[]): string[] {
   return lines;
 }
 
-function PdfPage({
+export function PdfPage({
   doc,
   pageNumber,
   zoom,
@@ -755,11 +755,11 @@ function PdfPage({
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
+    let canvasTask: { promise: Promise<unknown>; cancel: () => void } | null = null;
     let textTask: TextLayerRenderTask | null = null;
     (async () => {
       const page = await doc.getPage(pageNumber);
       if (cancelled) {
-        page.cleanup();
         return;
       }
       // scale so the page fills the container width at zoom=1
@@ -778,26 +778,28 @@ function PdfPage({
         canvas.style.height = `${viewport.height}px`;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         try {
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          canvasTask = page.render({ canvasContext: ctx, viewport });
+          await canvasTask.promise;
         } catch {
           /* render cancelled */
         }
       }
 
-      if (!cancelled) {
-        setRendered(true);
-        // Signal to the scroll-restore logic (PdfViewer) that this page has
-        // finished its first canvas paint and its wrap height is now real.
-        wrapRef.current?.setAttribute("data-rendered", "1");
-        if (!renderedOnceRef.current) {
-          renderedOnceRef.current = true;
-          onRendered?.();
-        }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        if (cancelled) {
-          page.cleanup();
-          return;
-        }
+      if (cancelled) {
+        return;
+      }
+
+      setRendered(true);
+      // Signal to the scroll-restore logic (PdfViewer) that this page has
+      // finished its first canvas paint and its wrap height is now real.
+      wrapRef.current?.setAttribute("data-rendered", "1");
+      if (!renderedOnceRef.current) {
+        renderedOnceRef.current = true;
+        onRendered?.();
+      }
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (cancelled) {
+        return;
       }
 
       // text layer for selection
@@ -825,10 +827,12 @@ function PdfPage({
           /* ignore */
         }
       }
+      if (cancelled) return;
       page.cleanup();
     })();
     return () => {
       cancelled = true;
+      canvasTask?.cancel();
       textTask?.cancel();
     };
   }, [doc, pageNumber, visible, zoom, containerWidth]);
