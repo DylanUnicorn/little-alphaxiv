@@ -23,6 +23,7 @@ import { groupByDate } from "../lib/dates";
 import * as db from "../lib/db";
 import { hasRealTitle } from "../lib/paperMeta";
 import type { Conversation } from "../types";
+import { SidebarActionIcon } from "./SidebarActionIcon";
 import { Tooltip } from "./Tooltip";
 import { SidebarConversationTypeIcon } from "./SidebarConversationTypeIcon";
 
@@ -148,10 +149,14 @@ export function Sidebar() {
           <button className="icon-btn" onClick={newChat}>+</button>
         </Tooltip>
         <Tooltip label="Open Paper" side="right">
-          <button className="icon-btn" onClick={() => openLocalPaper()}>📄</button>
+          <button className="icon-btn" onClick={() => openLocalPaper()}>
+            <SidebarActionIcon name="open-paper" />
+          </button>
         </Tooltip>
         <Tooltip label="Settings" side="right">
-          <button className="icon-btn" onClick={() => navigate("/settings")}>⚙</button>
+          <button className="icon-btn" onClick={() => navigate("/settings")}>
+            <SidebarActionIcon name="settings" />
+          </button>
         </Tooltip>
       </aside>
     );
