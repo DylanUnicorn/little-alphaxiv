@@ -330,14 +330,22 @@ canvas, .pdf-textlayer, .pdf-page-canvas-wrap { transition: none; }
   color: var(--text-faint); padding: 10px 8px 4px; display: flex; align-items: center; gap: 6px;
 }
 .conv-item {
-  display: flex; align-items: center; gap: 6px; padding: 8px 8px; border-radius: 7px;
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px;
   cursor: pointer; font-size: 13px; color: var(--text-dim); margin-bottom: 2px;
 }
 .conv-item:hover { background: var(--bg-3); color: var(--text); }
 .conv-item.active { background: var(--accent-soft); color: var(--text); }
 .conv-item.active .conv-title { color: var(--text); }
 .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-tag { font-size: 11px; opacity: 0.8; }
+.conv-type-icon {
+  width: 26px; height: 26px; flex: 0 0 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px; background: var(--bg-3); color: var(--text);
+  transition: color var(--transition-base), background var(--transition-base);
+}
+.conv-type-icon svg { display: block; width: 18px; height: 18px; }
+.conv-item:hover .conv-type-icon { background: var(--accent-soft); color: var(--accent); }
+.conv-item.active .conv-type-icon { background: var(--accent); color: var(--accent-contrast); }
 .conv-del {
   border: none; background: none; color: var(--text-dim); cursor: pointer;
   font-size: 16px; line-height: 1; opacity: 0; padding: 0 2px;

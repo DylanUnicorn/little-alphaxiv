@@ -24,6 +24,7 @@ import * as db from "../lib/db";
 import { hasRealTitle } from "../lib/paperMeta";
 import type { Conversation } from "../types";
 import { Tooltip } from "./Tooltip";
+import { SidebarConversationTypeIcon } from "./SidebarConversationTypeIcon";
 
 type Item =
   | { kind: "general"; conv: Conversation }
@@ -37,7 +38,7 @@ function itemTs(it: Item): number {
 /** Sidebar label for a paper group: prefer the paper's real cached title (looked
  *  up from the paper cache so a row created before this fix — titled
  *  `📄 sha256:…` — heals without waiting for the user to ask a question), then
- *  the most-recent thread's real title, then the `📄 <id>` fallback. */
+ *  the most-recent thread's real title, then the paper-id fallback. */
 function paperGroupLabel(
   paperId: string,
   cachedTitle: string | undefined,
@@ -46,7 +47,7 @@ function paperGroupLabel(
   if (cachedTitle && hasRealTitle({ title: cachedTitle }, paperId)) return cachedTitle;
   const t = rep.title;
   if (t && t !== "Paper discussion" && !t.startsWith("📄")) return t;
-  return `📄 ${paperId}`;
+  return paperId;
 }
 
 export function Sidebar() {
@@ -184,7 +185,7 @@ export function Sidebar() {
                       navigate(`/chat/${it.conv.id}`);
                     }}
                   >
-                    <span className="conv-tag">💬</span>
+                    <SidebarConversationTypeIcon type="general" />
                     <span className="conv-title">{it.conv.title || "New chat"}</span>
                     <Tooltip label="Delete" side="top">
                       <button
@@ -210,7 +211,7 @@ export function Sidebar() {
                     navigate(`/paper/${encodeURIComponent(it.paperId)}/${it.rep.id}`);
                   }}
                 >
-                  <span className="conv-tag">📄</span>
+                  <SidebarConversationTypeIcon type="paper" />
                   <span className="conv-title">{title}</span>
                   {it.threads.length > 1 && <span className="conv-count">{it.threads.length}</span>}
                   <Tooltip label={`Delete all ${it.threads.length} conversation(s) for this paper`} side="top">
