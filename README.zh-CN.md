@@ -22,6 +22,18 @@ key，数据留在你自己的服务器上。
 
 ## 🎬 演示
 
+### 介绍视频
+
+<p align="center">
+  <a href="https://www.bilibili.com/video/BV1dm3X6gEqH">
+    <img src="https://i2.hdslb.com/bfs/archive/25386bf61a3c74a68e6ec6c114a0daf138745081.jpg" width="720" alt="在哔哩哔哩观看 Little Alphaxiv 介绍视频" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://www.bilibili.com/video/BV1dm3X6gEqH">▶ 在哔哩哔哩观看「自部署的论文阅读，纯净的阅读体验」</a>
+</p>
+
 | 通用聊天 → 论文发现 | 论文视图（PDF + 助手 + 批注） |
 |:---:|:---:|
 | <img src="./example_demo/main-paper-chat.gif" width="420" alt="通用聊天发现论文" /> | <img src="./example_demo/pdf-preview-page.gif" width="420" alt="论文视图：PDF、助手与批注" /> |

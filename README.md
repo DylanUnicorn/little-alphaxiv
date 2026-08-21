@@ -22,6 +22,18 @@ paper-aware assistant. Bring your own key. Your data stays on your server.
 
 ## 🎬 Demos
 
+### Introduction video
+
+<p align="center">
+  <a href="https://www.bilibili.com/video/BV1dm3X6gEqH">
+    <img src="https://i2.hdslb.com/bfs/archive/25386bf61a3c74a68e6ec6c114a0daf138745081.jpg" width="720" alt="Watch the Little Alphaxiv introduction video on Bilibili" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://www.bilibili.com/video/BV1dm3X6gEqH">▶ Watch “自部署的论文阅读，纯净的阅读体验” on Bilibili</a>
+</p>
+
 | General chat → paper discovery | Paper view (PDF + assistant + annotations) |
 |:---:|:---:|
 | <img src="./example_demo/main-paper-chat.gif" width="420" alt="General chat discovering papers" /> | <img src="./example_demo/pdf-preview-page.gif" width="420" alt="Paper view with PDF, assistant, and annotations" /> |
