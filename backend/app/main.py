@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from . import paths, security
 from .db import close_db, init_db
+from .version import APP_VERSION
 from .routers import (
     annotations,
     auth,
@@ -69,7 +70,7 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-app = FastAPI(title="Little Alphaxiv Proxy", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Little Alphaxiv Proxy", version=APP_VERSION, lifespan=lifespan)
 
 # Credentials now flow through httpOnly cookies, so CORS must use pinned origins
 # (allow_credentials=True is incompatible with allow_origins=["*"]).
@@ -112,6 +113,11 @@ app.include_router(zotero.router, prefix="/api")
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+async def version() -> dict[str, str]:
+    return {"version": APP_VERSION}
 
 
 # Serve the built frontend in production (same-origin → no CORS friction).

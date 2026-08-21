@@ -23,6 +23,7 @@ import { groupByDate } from "../lib/dates";
 import * as db from "../lib/db";
 import { hasRealTitle } from "../lib/paperMeta";
 import type { Conversation } from "../types";
+import { AppVersion } from "./AppVersion";
 import { SidebarActionIcon } from "./SidebarActionIcon";
 import { Tooltip } from "./Tooltip";
 import { SidebarConversationTypeIcon } from "./SidebarConversationTypeIcon";
@@ -281,6 +282,7 @@ export function Sidebar() {
           <SidebarActionIcon name="log-out" />
           <span>Log out</span>
         </button>
+        <AppVersion />
       </div>
     </aside>
   );

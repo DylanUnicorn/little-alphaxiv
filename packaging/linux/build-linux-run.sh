@@ -8,13 +8,25 @@ APP_NAME="LittleAlphaxiv"
 OUT_ROOT="$ROOT/app"
 BUILD_ROOT="$OUT_ROOT/.build"
 APP_DIR="$BUILD_ROOT/$APP_NAME"
+VERSION_FILE="$ROOT/VERSION"
 
-if [ -n "${LAX_APP_VERSION:-}" ]; then
-  VERSION="$LAX_APP_VERSION"
-elif git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  VERSION="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || git -C "$ROOT" rev-parse --short HEAD)"
-else
-  VERSION="$(date +%Y%m%d)"
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "[build-linux-run] Missing release version file: $VERSION_FILE" >&2
+  exit 1
+fi
+APP_VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
+if [ -z "$APP_VERSION" ]; then
+  echo "[build-linux-run] VERSION must not be empty." >&2
+  exit 1
+fi
+
+# Keep the historical v-prefixed artifact names by default. An explicit
+# override may change the prefix, but not the release identity embedded in the
+# payload and displayed by the running app.
+VERSION="${LAX_APP_VERSION:-v$APP_VERSION}"
+if [ "${VERSION#v}" != "$APP_VERSION" ]; then
+  echo "[build-linux-run] LAX_APP_VERSION ($VERSION) does not match VERSION ($APP_VERSION)." >&2
+  exit 1
 fi
 
 PAYLOAD="$BUILD_ROOT/${APP_NAME}-${VERSION}-payload.tar.gz"
@@ -88,6 +100,7 @@ cp -a "$ROOT/backend/alembic" "$APP_DIR/backend/alembic"
 cp "$ROOT/backend/alembic.ini" "$APP_DIR/backend/alembic.ini"
 cp "$ROOT/backend/requirements.txt" "$APP_DIR/backend/requirements.txt"
 cp -a "$ROOT/frontend/dist" "$APP_DIR/frontend/dist"
+cp "$VERSION_FILE" "$APP_DIR/VERSION"
 cp "$ROOT/LICENSE" "$APP_DIR/LICENSE"
 cp "$ROOT/README.md" "$APP_DIR/README.md"
 cp "$ROOT/README.zh-CN.md" "$APP_DIR/README.zh-CN.md"
