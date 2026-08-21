@@ -143,10 +143,14 @@ export function Sidebar() {
     return (
       <aside className="sidebar sidebar-collapsed">
         <Tooltip label="Expand sidebar" side="right">
-          <button className="icon-btn" onClick={expand}>»</button>
+          <button className="icon-btn" onClick={expand}>
+            <SidebarActionIcon name="expand-sidebar" />
+          </button>
         </Tooltip>
         <Tooltip label="New chat" side="right">
-          <button className="icon-btn" onClick={newChat}>+</button>
+          <button className="icon-btn" onClick={newChat}>
+            <SidebarActionIcon name="new-chat" />
+          </button>
         </Tooltip>
         <Tooltip label="Open Paper" side="right">
           <button className="icon-btn" onClick={() => openLocalPaper()}>
@@ -167,7 +171,9 @@ export function Sidebar() {
       <div className="sidebar-head">
         <span className="logo"><span className="logo-mark">α</span> little alphaxiv</span>
         <Tooltip label="Collapse sidebar" side="bottom">
-          <button className="icon-btn head-collapse" onClick={collapse}>«</button>
+          <button className="icon-btn head-collapse" onClick={collapse}>
+            <SidebarActionIcon name="collapse-sidebar" />
+          </button>
         </Tooltip>
       </div>
       <button className="new-chat-btn" onClick={newChat}>+ New chat</button>
@@ -260,7 +266,10 @@ export function Sidebar() {
             ))}
           </select>
         </div>
-        <button className="settings-btn" onClick={() => navigate("/settings")}>⚙ Settings</button>
+        <button className="settings-btn" onClick={() => navigate("/settings")}>
+          <SidebarActionIcon name="settings" />
+          <span>Settings</span>
+        </button>
         <button
           className="settings-btn"
           onClick={async () => {
@@ -268,7 +277,10 @@ export function Sidebar() {
             useSettings.getState().reset();
             window.location.assign("/login");
           }}
-        >⎋ Log out</button>
+        >
+          <SidebarActionIcon name="log-out" />
+          <span>Log out</span>
+        </button>
       </div>
     </aside>
   );

@@ -5,12 +5,27 @@ import { describe, expect, it } from "vitest";
 
 import { SidebarActionIcon } from "./SidebarActionIcon";
 
-function renderIcon(name: "open-paper" | "settings") {
+type IconName =
+  | "expand-sidebar"
+  | "collapse-sidebar"
+  | "new-chat"
+  | "open-paper"
+  | "settings"
+  | "log-out";
+
+function renderIcon(name: IconName) {
   return create(<SidebarActionIcon name={name} />).root;
 }
 
 describe("SidebarActionIcon", () => {
-  it.each(["open-paper", "settings"] as const)(
+  it.each([
+    "expand-sidebar",
+    "collapse-sidebar",
+    "new-chat",
+    "open-paper",
+    "settings",
+    "log-out",
+  ] as const)(
     "renders the %s variant with the shared theme-aware line style",
     (name) => {
       const svg = renderIcon(name).findByType("svg");
@@ -19,7 +34,7 @@ describe("SidebarActionIcon", () => {
         viewBox: "0 0 24 24",
         fill: "none",
         stroke: "currentColor",
-        strokeWidth: 2,
+        strokeWidth: name === "new-chat" ? 2.4 : 2,
         strokeLinecap: "round",
         strokeLinejoin: "round",
         "aria-hidden": true,
@@ -49,14 +64,78 @@ describe("SidebarActionIcon", () => {
     );
   });
 
-  it("keeps both SVG variants centered in the existing collapsed button", () => {
+  it("draws mirrored panel arrows for expand and collapse", () => {
+    const expand = renderIcon("expand-sidebar");
+    const collapse = renderIcon("collapse-sidebar");
+
+    expect(expand.findByType("rect").props).toMatchObject({
+      x: "3", y: "3", width: "18", height: "18", rx: "2",
+    });
+    expect(expand.findAllByType("path").map((node) => node.props.d)).toEqual([
+      "M9 3v18",
+      "m14 9 3 3-3 3",
+    ]);
+    expect(collapse.findAllByType("path").map((node) => node.props.d)).toEqual([
+      "M9 3v18",
+      "m16 9-3 3 3 3",
+    ]);
+  });
+
+  it("draws New chat as a visually weighted centered plus", () => {
+    const paths = renderIcon("new-chat")
+      .findAllByType("path")
+      .map((node) => node.props.d);
+
+    expect(paths).toEqual(["M12 5v14", "M5 12h14"]);
+  });
+
+  it("draws Log out as a door with an outward arrow", () => {
+    const paths = renderIcon("log-out")
+      .findAllByType("path")
+      .map((node) => node.props.d);
+
+    expect(paths).toEqual([
+      "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4",
+      "m16 17 5-5-5-5",
+      "M21 12H9",
+    ]);
+  });
+
+  it("replaces the sidebar's remaining platform glyphs with SVG variants", () => {
+    const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+
+    expect(source).not.toContain(">»</button>");
+    expect(source).not.toContain(">«</button>");
+    expect(source).not.toContain("⚙ Settings");
+    expect(source).not.toContain("⎋ Log out");
+    for (const name of [
+      "expand-sidebar",
+      "collapse-sidebar",
+      "new-chat",
+      "settings",
+      "log-out",
+    ]) {
+      expect(source).toContain('name="' + name + '"');
+    }
+  });
+
+  it("keeps SVG actions centered at the right size for each sidebar context", () => {
     const css = readFileSync(new URL("../index.css", import.meta.url), "utf8");
 
     expect(css).toMatch(
-      /\.sidebar-collapsed \.icon-btn\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*padding:\s*0;/s,
+      /\.icon-btn\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*padding:\s*0;/s,
     );
     expect(css).toMatch(
       /\.sidebar-action-icon\s*\{[^}]*width:\s*20px;[^}]*height:\s*20px;[^}]*flex:\s*none;/s,
+    );
+    expect(css).toMatch(
+      /\.head-collapse \.sidebar-action-icon\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/s,
+    );
+    expect(css).toMatch(
+      /\.settings-btn\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*gap:\s*7px;/s,
+    );
+    expect(css).toMatch(
+      /\.settings-btn \.sidebar-action-icon\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;/s,
     );
   });
 });
