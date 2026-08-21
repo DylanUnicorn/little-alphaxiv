@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## What this is
 
@@ -16,11 +16,17 @@ Act on your own judgment — don't checkpoint every change. If you spot a bug or
 
 ## Workflow (always work in a fresh worktree → PR)
 
-For every task, start a **new worktree** under `.claude/worktrees/` and do all edits, testing, and iteration there — never work directly on `main`. `main` is **protected**: it can only be updated via a passing pull request (CI: frontend `typecheck` + `vitest`, backend `pytest`). No approving reviews are required (early-stage project) and commits need not be signed — but the **CI checks must pass** before a PR can merge.
+For every task, start a **new worktree** under `.Codex/worktrees/` and do all edits, testing, and iteration there — never work directly on `main`. `main` is **protected**: it can only be updated via a passing pull request (CI: frontend `typecheck` + `vitest`, backend `pytest`). No approving reviews are required (early-stage project) and commits need not be signed — but the **CI checks must pass** before a PR can merge.
 
 When the change is ready: push the worktree branch to `origin`, open a PR, wait for CI to go green, then merge via GitHub (merge commit is fine — `Merge worktree: ...`-style history is preserved). If another agent's PR is mid-merge, wait a bit and retry instead of racing it; if it conflicts with your branch, rebase onto the latest `main` and resolve. After the merge lands, pull `main` locally, remove the worktree (remove the `node_modules` junction first — see "Working in worktrees" below), delete the local feature branch, and delete its remote branch from `origin` (`git push origin --delete <branch>` or the equivalent GitHub API operation). Before deleting any branch, verify that its PR is merged, no open PR still uses it, and it is not `main`, a protected branch, or an unmerged branch. Finish by pruning stale remote-tracking refs and checking the local worktree and remote branch lists so completed work leaves no worktree branch behind. Never `git push --force` to `main` (blocked) and never delete it (blocked).
 
 ## Commands
+
+### Docker (local deployment)
+- Start or rebuild the self-hosted app from the repository root: `cd deploy && docker compose up -d --build`. It serves the bundled frontend and API at `http://127.0.0.1:8000` and persists runtime data in `deploy/data/`.
+- Verify startup before reporting success: `cd deploy && docker compose ps`, then `Invoke-WebRequest http://127.0.0.1:8000/api/health | Select-Object -ExpandProperty StatusCode` (expect `200`). If the healthcheck is still `starting`, wait briefly and retry; inspect `docker compose logs --tail=100 little-alphaxiv` on failure.
+- Follow logs with `cd deploy && docker compose logs -f little-alphaxiv`; stop only when requested with `cd deploy && docker compose down`.
+- Do **not** add `--remove-orphans`, run `docker compose down -v`, or delete `deploy/data/` unless the user explicitly asks: other Compose projects may have containers/data on the same Docker host, and `deploy/data/.lax_secret_key` protects encrypted provider keys and sessions.
 
 ### Frontend (`cd frontend`)
 - `npm run dev` — Vite dev server on `:5173` (proxies `/api/*` → `http://127.0.0.1:8000`)
@@ -104,7 +110,7 @@ On a conversation's first turn, `ChatPanel.send()` immediately sets a truncated-
 
 ## Working in worktrees
 
-Feature work happens in git worktrees under `.claude/worktrees/`. In a fresh worktree, `frontend/node_modules` is a **junction/symlink to the main repo's `frontend/node_modules`** — so `npm install` is usually unnecessary. To remove a worktree, delete the node_modules junction first (e.g. `rmdir` the link), then remove the worktree; never recursively delete a junctioned `node_modules` from the worktree side, and kill any orphaned `vite` process before removal.
+Feature work happens in git worktrees under `.Codex/worktrees/`. In a fresh worktree, `frontend/node_modules` is a **junction/symlink to the main repo's `frontend/node_modules`** — so `npm install` is usually unnecessary. To remove a worktree, delete the node_modules junction first (e.g. `rmdir` the link), then remove the worktree; never recursively delete a junctioned `node_modules` from the worktree side, and kill any orphaned `vite` process before removal.
 
 - **If the junction target is incomplete** (e.g. vite fails with `Cannot find package '@babel/core'` — the main repo's `node_modules` can drift out of sync with `package-lock.json`), remove the junction (`rm frontend/node_modules`) and run `npm install` in the worktree for a complete private install. That real `node_modules` dir is gitignored.
 - **Orphan backend processes**: `uvicorn --reload` spawns a multiprocessing worker; if the parent dies, the worker can keep holding `:8000` as an orphan socket that `Get-NetTCPConnection` reports under a now-dead PID (hard to kill, may need a reboot). Always stop the backend with **Ctrl+C** in its window, never by closing it. Before assuming "my code is broken," check whether a stale server is serving old code on the port.
