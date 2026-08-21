@@ -8,6 +8,11 @@ Run from the repository root:
 packaging/linux/build-linux-run.sh
 ```
 
+`VERSION` at the repository root is the release source of truth. Before making
+a release, update that file and keep `frontend/package.json` synchronized. The
+builder reads `VERSION`, uses it for the default `v<version>` artifact name, and
+copies the file into the payload so the running app reports the same value.
+
 The script creates `app/` at the repository root. That directory is ignored by
 Git and contains:
 
@@ -16,7 +21,8 @@ Git and contains:
   `aarch64`); build on the target architecture.
 - `.build/` — temporary packaging files, including the assembled app payload.
 
-To set an explicit release version:
+To set the artifact version explicitly, use the same value as `VERSION` (an
+optional leading `v` is accepted). A conflicting value fails the build:
 
 ```bash
 LAX_APP_VERSION=v0.1.0 packaging/linux/build-linux-run.sh

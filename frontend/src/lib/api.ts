@@ -634,6 +634,23 @@ async function jfetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${BASE}${path}`, { ...init, credentials: "include" });
 }
 
+/** Return the version read from the backend's packaged VERSION file. */
+export async function getAppVersion(): Promise<string> {
+  const response = await jfetch("/api/version", { cache: "no-store" });
+  if (!response.ok) throw new Error(await errText(response));
+  const body: unknown = await response.json();
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("version" in body) ||
+    typeof body.version !== "string" ||
+    !body.version.trim()
+  ) {
+    throw new Error("Invalid app version response");
+  }
+  return body.version.trim();
+}
+
 export async function register(username: string, email: string, password: string): Promise<Me> {
   const r = await jfetch("/api/auth/register", {
     method: "POST",
