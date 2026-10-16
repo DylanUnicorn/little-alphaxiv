@@ -27,6 +27,29 @@ export function HighlightLayer({ pageNumber, pageSize }: Props) {
   const [bubble, setBubble] = useState<BubblePos | null>(null);
   const pendingRef = useRef<{ rects: { left: number; top: number; width: number; height: number }[]; text: string } | null>(null);
 
+  // Turning highlight mode off cancels the in-progress color-pick operation.
+  // The mouseup listener below intentionally ignores events while the mode is
+  // disabled, so without this effect a bubble captured just before the toggle
+  // would stay mounted until another text selection happened to replace it.
+  useEffect(() => {
+    if (!highlightOn) {
+      pendingRef.current = null;
+      setBubble(null);
+      window.getSelection()?.removeAllRanges();
+      return;
+    }
+
+    // ESC cancels the pending color pick while keeping highlight mode on, as
+    // specified for the other in-progress annotation operations.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      pendingRef.current = null;
+      setBubble(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [highlightOn]);
+
   // The color bubble must be CLICKABLE. It cannot live inside this .highlight-layer:
   // .highlight-layer is z-index 1 (a stacking context), so any child — even one
   // styled z-index: 5 — paints BELOW .pdf-textlayer (z-index 2, pointer-events:
